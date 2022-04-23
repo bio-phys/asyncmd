@@ -4,7 +4,7 @@
 
 ## Synopsis
 
-asyncmd - asyncmd is a library to write concurrent code to run and analyze molecular dynamics simulations using python async/await synthax.
+asyncmd is a library to write **concurrent** code to run and analyze molecular dynamics simulations using pythons **async/await** synthax.
 
 ## Code Example
 
@@ -12,7 +12,8 @@ Show what the library does as concisely as possible, developers should be able t
 
 ## Motivation
 
-A short description of the motivation behind the creation and maintenance of the project. This should explain **why** the project exists.
+Molecular dynamics simulations are fun and we can learn a lot about the simulated system. Running many molecular dynamics simulations of the same system concurrently is tedious, error-prone and boring but we can learn even more about the simulated system and are more efficient in doing so.
+This library addresses the tedious, error-prone and boring part of setting up many similar simulations, but it leaves you with the fun part of understanding the simulated system.
 
 ## Installation
 
@@ -36,4 +37,7 @@ You could (and should) give props to all the people who contributed to the code.
 
 ## License
 
-A short snippet describing the license (MIT, Apache, etc.)
+GPL v3 (or later)
+
+---
+<sub>This README.md is printed from 100% recycled electrons.</sub>
