@@ -14,7 +14,6 @@ This library addresses the tedious, error-prone and boring part of setting up ma
 ## Code Example
 
 Run 4 gromacs engines concurently from the same starting configuration (`conf.trr`) for `10000` integration steps each:
-(TODO: exchange for slurmGmxEngine?)
 ```python
 import asyncmd
 import asyncmd.gromacs as asyncgmx
@@ -22,10 +21,10 @@ import asyncmd.gromacs as asyncgmx
 init_conf = asyncmd.Trajectory(trajectory_file="conf.trr", structure_file="conf.gro")
 mdps = [asyncgmx.MDP("config.mdp") for _ in range(4)]
 # MDConfig objects (like MDP) behave like dictionaries and are easy to modify
-for i, mdp in mdps:
-    # here we just modify the output frequency for every engine seperately
+for i, mdp in enumerate(mdps):
+    # here we just modify the output frequency for every engine separately
     # but you can set any mdp option like this
-    # Note how they are even in the correct types? I.e. that nstxout is an int?
+    # Note how the values are in the correct types? I.e. that they are ints?
     mdp["nstxout"] *= (i + 1)
     mdp["nstvout"] *= (i + 1)
 engines = [asyncgmx.GmxEngine(mdp=mdp, gro_file="conf.gro", top_file="topol.top",
@@ -43,7 +42,6 @@ await asyncio.gather(*(e.prepare(starting_configuration=init_conf,
 
 trajs = await asyncio.gather(*(e.run_steps(nsteps=10000) for e in engines))
 ```
-(TODO: show trajectory function wrapper?)
 
 For an in-depth introduction see also the `examples` folder in this repository which contains jupyter notebooks on various topics.
 
