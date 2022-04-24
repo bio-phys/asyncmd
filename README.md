@@ -6,14 +6,46 @@
 
 asyncmd is a library to write **concurrent** code to run and analyze molecular dynamics simulations using pythons **async/await** synthax.
 
-## Code Example
-
-Show what the library does as concisely as possible, developers should be able to figure out **how** your project solves their problem by looking at the code example. Make sure the API you are showing off is obvious, and that your code is short and concise.
-
 ## Motivation
 
 Molecular dynamics simulations are fun and we can learn a lot about the simulated system. Running many molecular dynamics simulations of the same system concurrently is tedious, error-prone and boring but we can learn even more about the simulated system and are more efficient in doing so.
 This library addresses the tedious, error-prone and boring part of setting up many similar simulations, but it leaves you with the fun part of understanding the simulated system.
+
+## Code Example
+
+Run 4 gromacs engines concurently from the same starting configuration (`conf.trr`) for `10000` integration steps each:
+(TODO: exchange for slurmGmxEngine?)
+```python
+import asyncmd
+import asyncmd.gromacs as asyncgmx
+
+init_conf = asyncmd.Trajectory(trajectory_file="conf.trr", structure_file="conf.gro")
+mdps = [asyncgmx.MDP("config.mdp") for _ in range(4)]
+# MDConfig objects (like MDP) behave like dictionaries and are easy to modify
+for i, mdp in mdps:
+    # here we just modify the output frequency for every engine seperately
+    # but you can set any mdp option like this
+    # Note how they are even in the correct types? I.e. that nstxout is an int?
+    mdp["nstxout"] *= (i + 1)
+    mdp["nstvout"] *= (i + 1)
+engines = [asyncgmx.GmxEngine(mdp=mdp, gro_file="conf.gro", top_file="topol.top",
+                              # optional (can be omited or None), however naturally without an index file
+                              # you can not reference custom groups in the .mdp-file or MDP object
+                              ndx_file="index.ndx",
+                              )
+           for mdp in mdps]
+
+await asyncio.gather(*(e.prepare(starting_configuration=init_conf,
+                                 workdir=".", deffnm=f"engine{i}")
+                       for i, e in enumerate(engines))
+                       )
+                     )
+
+trajs = await asyncio.gather(*(e.run_steps(nsteps=10000) for e in engines))
+```
+(TODO: show trajectory function wrapper?)
+
+For an in-depth introduction see also the `examples` folder in this repository which contains jupyter notebooks on various topics.
 
 ## Installation
 

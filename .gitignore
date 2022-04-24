@@ -1,3 +1,6 @@
+# Visualstudio Code per project settings folder
+.vscode
+
 # ---> Python
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -71,6 +74,7 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/build/
 
 # PyBuilder
 .pybuilder/
