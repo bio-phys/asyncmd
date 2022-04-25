@@ -45,7 +45,8 @@ class GmxEngine(MDEngine):
     subprocesses responsibly...or crash your workstation ;)
     The `SlurmGmxEngine` alleviates this problem somewhat by submitting the
     (computationally expensive) mdruns via SLURM...in that case please have in
-    mind that your colleagues might also want to use the cluster :)
+    mind that your colleagues might also want to use the cluster, also someone
+    might have set a job/submission limit :)
 
     Notable functions:
     ------------------
@@ -90,16 +91,20 @@ class GmxEngine(MDEngine):
         """
         Initialize a `GmxEngine`.
 
-        Parameters:
-        -----------
-        mdconfig - `aimmd.distributed.MDP`, the molecular dynamics parameters
-        gro_file - absolute or relative path to a gromacs structure file
-        top_file - absolute or relative path to a gromacs topolgy (.top) file
-        ndx_file - (optional) absolute or relative path to a gromacs index file
-
         Note that all attributes can be set at intialization by passing keyword
         arguments with their name, e.g. mdrun_extra_args="-ntomp 2" to instruct
         gromacs to use 2 openMP threads.
+
+        Parameters
+        ----------
+        mdconfig: MDP
+            The molecular dynamics parameters.
+        gro_file: str
+            Absolute or relative path to a gromacs structure file.
+        top_file: str
+            Absolute or relative path to a gromacs topolgy (.top) file.
+        ndx_file: str or None
+            Optional, absolute or relative path to a gromacs index file.
         """
         # make it possible to set any attribute via kwargs
         # check the type for attributes with default values
