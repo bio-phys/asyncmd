@@ -25,7 +25,30 @@ logger = logging.getLogger(__name__)
 
 
 def nstout_from_mdp(mdp: MDP, traj_type: str = "TRR") -> int:
-    """Get lowest output frequency for gromacs trajectories from MDP class."""
+    """
+    Get minimum number of steps between outputs for trajectories from MDP.
+
+    Parameters
+    ----------
+    mdp : MDP
+        Config object from which the output step should be read.
+    traj_type : str, optional
+        Trajectory format for which output step should be read, "XTC" or "TRR",
+        by default "TRR".
+
+    Returns
+    -------
+    int
+        Minimum number of steps between two writes.
+
+    Raises
+    ------
+    ValueError
+        Raised when an unknown trajectory format `traj_type` is given.
+    ValueError
+        Raised when the given MDP would result in no output for the given
+        trajectory format `traj_type`.
+    """
     if traj_type.upper() == "TRR":
         keys = ["nstxout", "nstvout", "nstfout"]
     elif traj_type.upper() == "XTC":
@@ -54,9 +77,26 @@ def nstout_from_mdp(mdp: MDP, traj_type: str = "TRR") -> int:
 
 def get_all_traj_parts(folder: str, deffnm: str,
                        traj_type: str = "TRR") -> "list[Trajectory]":
-    """Find and return a list of trajectory parts produced by a GmxEngine."""
-    # NOTE: this assumes all files/parts are ther, i.e. nothing was deleted
-    #       we just check for the highest number and also assume the tpr exists
+    """
+    Find and return a list of trajectory parts produced by a GmxEngine.
+
+    NOTE: This assumes all files/parts are there, i.e. nothing was deleted
+          we just check for the highest number and also assume they all exist.
+
+    Parameters
+    ----------
+    folder : str
+        path to a folder to search for trajectory parts
+    deffnm : str
+        deffnm (prefix of filenames) used in the simulation
+    traj_type : str, optional
+        Trajectory file ending("XTC", "TRR", "TNG", ...), by default "TRR"
+
+    Returns
+    -------
+    list[Trajectory]
+        Ordered list of all trajectory parts with given deffnm and type.
+    """
     ending = traj_type.lower()
     traj_files = get_all_file_parts(folder=folder, deffnm=deffnm,
                                     file_ending=ending)
@@ -68,9 +108,26 @@ def get_all_traj_parts(folder: str, deffnm: str,
 
 
 def get_all_file_parts(folder: str, deffnm: str, file_ending: str) -> "list[str]":
-    """Find and return all files with given ending produced by GmxEngine."""
-    # NOTE: this assumes all files/parts are ther, i.e. nothing was deleted
-    #       we just check for the highest number and also assume they exist
+    """
+    Find and return all files with given ending produced by GmxEngine.
+
+    NOTE: This assumes all files/parts are there, i.e. nothing was deleted
+          we just check for the highest number and also assume they all exist.
+
+    Parameters
+    ----------
+    folder : str
+        Path to a folder to search for trajectory parts.
+    deffnm : str
+        deffnm (prefix of filenames) used in the simulation.
+    file_ending : str
+        File ending of the requested filetype (with or without preceeding ".").
+
+    Returns
+    -------
+    list[str]
+        Ordered list of filepaths for files with given ending.
+    """
     def partnum_suffix(num):
         # construct gromacs num part suffix from simulation_part
         num_suffix = str(num)
@@ -98,7 +155,21 @@ def ensure_mdp_options(mdp: MDP, genvel: str = "no", continuation: str = "yes") 
     """
     Ensure that some commonly used mdp options have the given values.
 
-    Modifies the MDP inplace but also returns it.
+    NOTE: Modifies the `MDP` inplace and returns it.
+
+    Parameters
+    ----------
+    mdp : MDP
+        Config object for which values should be ensured.
+    genvel : str, optional
+        Value for genvel option ("yes" or "no"), by default "no".
+    continuation : str, optional
+        Value for continuation option ("yes" or "no"), by default "yes".
+
+    Returns
+    -------
+    MDP
+        Reference to input config object with values for options as given.
     """
     try:
         # make sure we do not generate velocities with gromacs
