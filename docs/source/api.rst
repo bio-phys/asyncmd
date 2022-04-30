@@ -1,6 +1,38 @@
 API
 ===
 
+trajectory
+**********
+The :py:mod:`asyncmd.trajectory` module contains a
+:py:class:`asyncmd.Trajectory` class which is the return object for all MD
+engines. There are also a number of `TrajectoryFunctionWrapper` classes which
+can be used to wrapp (python) functions or arbitrary executables for easy
+asyncronous application on :py:class:`asyncmd.Trajectory`, either submitted
+via slurm or ran locally.
+
+
+Trajectory
+----------
+.. autoclass:: asyncmd.Trajectory
+   :members:
+   :special-members:
+
+
+TrajectoryFunctionWrappers
+--------------------------
+
+.. autoclass:: asyncmd.trajectory.PyTrajectoryFunctionWrapper
+   :members:
+   :special-members:
+   :inherited-members:
+
+.. autoclass:: asyncmd.trajectory.SlurmTrajectoryFunctionWrapper
+   :members:
+   :special-members:
+   :inherited-members:
+
+
+
 gromacs
 *******
 
@@ -20,11 +52,13 @@ MDP
 .. autoclass:: asyncmd.gromacs.MDP
       :members:
 
-Engines
--------
+Engine classes
+--------------
 .. autoclass:: asyncmd.gromacs.GmxEngine
       :members:
       :special-members:
+      :inherited-members:
+
 
 .. autoclass:: asyncmd.gromacs.SlurmGmxEngine
       :members:
@@ -33,8 +67,8 @@ Engines
 
 
 
-module layout
-*************
+Hierachical module layout
+*************************
 
 .. autosummary::
    :recursive:

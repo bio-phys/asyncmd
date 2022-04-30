@@ -12,3 +12,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+from .functionwrapper import (PyTrajectoryFunctionWrapper,
+                              SlurmTrajectoryFunctionWrapper,
+                              )

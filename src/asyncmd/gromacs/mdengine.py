@@ -66,24 +66,6 @@ class GmxEngine(MDEngine):
         the MDP settings we will still write xtc and trr, but return only the
         trajectories with matching ending.
     """
-
-#    Methods
-#    -------
-#    prepare(starting_configuration, workdir, deffnm)
-#        Run grompp and prepare a fresh simulation (starting at "part0001").
-#    run(nsteps=None, walltime=None, steps_per_part=False)
-#        Run MD simulation for given number of steps or/and a given walltime.
-#    run_walltime(walltime)
-#        Run simulation for given walltime.
-#    run_steps(nsteps, steps_per_part=False)
-#        Run simulation for specified number of steps.
-#    prepare_from_files(workdir, deffnm)
-#        Can be used to continue/restart an existing run from files.
-#    apply_constraints(conf_in, conf_out_name, wdir=".")
-#        Apply constraints to given configuration.
-#    generate_velocities(conf_in, conf_out_name, wdir=".", constraints=True)
-#        Generate random MB velocities for given configuration.
-
     # local prepare and option to run a local gmx (mainly for testing)
     _grompp_executable = "gmx grompp"
     _mdrun_executable = "gmx mdrun"
@@ -101,7 +83,7 @@ class GmxEngine(MDEngine):
 
     def __init__(self, mdconfig, gro_file, top_file, ndx_file=None, **kwargs):
         """
-        Initialize a `GmxEngine`.
+        Initialize a :class:`GmxEngine`.
 
         Note that all attributes can be set at intialization by passing keyword
         arguments with their name, e.g. mdrun_extra_args="-ntomp 2" to instruct
@@ -201,6 +183,14 @@ class GmxEngine(MDEngine):
 
     @property
     def current_trajectory(self):
+        """
+        Return the last finished trajectory (part).
+
+        Returns
+        -------
+        Trajectory
+            Last complete trajectory produced by this engine.
+        """
         if self._simulation_part == 0:
             # we could check if self_proc is set (which prepare sets to None)
             # this should make sure that calling current trajectory after
@@ -364,6 +354,24 @@ class GmxEngine(MDEngine):
         return self._frames_done
 
     async def apply_constraints(self, conf_in, conf_out_name, wdir="."):
+        """
+        Apply constraints to given configuration.
+
+        Parameters
+        ----------
+        conf_in : asyncmd.Trajectory
+            A (one-frame) trajectory whose first frame we will constrain.
+        conf_out_name : str
+            Output path for the constrained configuration.
+        wdir : str, optional
+            Working directory for the constraint engine, by default ".",
+            a subfolder with random name will be created.
+
+        Returns
+        -------
+        Trajectory
+            The constrained configuration.
+        """
         return await self._0step_md(conf_in=conf_in,
                                     conf_out_name=conf_out_name,
                                     wdir=wdir,
@@ -373,6 +381,27 @@ class GmxEngine(MDEngine):
 
     async def generate_velocities(self, conf_in, conf_out_name, wdir=".",
                                   constraints=True):
+        """
+        Generate random Maxwell-Boltzmann velocities for given configuration.
+
+        Parameters
+        ----------
+        conf_in : asyncmd.Trajectory
+            A (one-frame) trajectory whose first frame we will constrain.
+        conf_out_name : str
+            Output path for the constrained configuration.
+        wdir : str, optional
+            Working directory for the constraint engine, by default ".",
+            a subfolder with random name will be created.
+        constraints : bool, optional
+            Whether to also apply constraints, by default True.
+
+        Returns
+        -------
+        Trajectory
+            The configuration with random velocities and optionally constraints
+            enforced.
+        """
         return await self._0step_md(conf_in=conf_in,
                                     conf_out_name=conf_out_name,
                                     wdir=wdir,
@@ -465,13 +494,17 @@ class GmxEngine(MDEngine):
         """
         Prepare a fresh simulation (starting with part0001).
 
-        Parameters:
-        -----------
-        starting_configuration - `aimmd.distributed.Trajectory` with a trr traj
-                                 or None, then the initial configuration is the
-                                 gro-file
-        workdir - absolute or relative path to an exisiting directory
-        deffnm - the name (prefix) to use for all files
+        Parameters
+        ----------
+        starting_configuration : asyncmd.Trajectory or None
+            A (trr) trajectory of which we take the first frame as starting
+            configuration (including velocities) or None, then the initial
+            configuration is the gro-file.
+        workdir : str
+            Absolute or relative path to an exisiting directory to use as
+            working directory.
+        deffnm : str
+            The name (prefix) to use for all files.
         """
         # deffnm is the default name/prefix for all outfiles (as in gmx)
         self.workdir = workdir  # sets to abspath and check if it is a dir
@@ -481,7 +514,7 @@ class GmxEngine(MDEngine):
         elif isinstance(starting_configuration, Trajectory):
             trr_in = starting_configuration.trajectory_file
         else:
-            raise TypeError("starting_configuration must be None or a wrapped "
+            raise TypeError("Starting_configuration must be None or a wrapped "
                             + f"trr ({Trajectory}).")
         self._deffnm = deffnm
         # check 'simulation-part' option in mdp file / MDP options
@@ -567,11 +600,13 @@ class GmxEngine(MDEngine):
 
         Expects all files to exists, will (probably) fail otherwise.
 
-        Parameters:
-        -----------
-        workdir - absolute or relative path to an existing directory
-        deffnm - the name (prefix) to use for all files, must be the same as
-                 for the previous run
+        Parameters
+        ----------
+        workdir : str
+            Absolute or relative path to an exisiting directory to use as
+            working directory.
+        deffnm : str
+            The name (prefix) to use for all files.
         """
         self.workdir = workdir
         previous_trajs = get_all_traj_parts(self.workdir, deffnm=deffnm,
@@ -632,15 +667,18 @@ class GmxEngine(MDEngine):
         Note that you can pass both nsteps and walltime and the simulation will
         stop on the condition that is reached first.
 
-        Parameters:
-        -----------
-        nsteps - int or None, integration steps to run for either in total
-                 [as measured since the last call to `self.prepare()`]
-                 or in the newly generated trajectory part,
-                 see also the steps_per_part argument
-        walltime - float or None, (maximum) walltime in hours
-        steps_per_part - bool (default False), if True nsteps are the steps to
-                         do in the new trajectory part
+        Parameters
+        ----------
+        nsteps : int or None
+            Integration steps to run for either in total [as measured since the
+            last call to `self.prepare()`] or in the newly generated trajectory
+            part, see also the steps_per_part argument.
+        walltime : float or None
+            (Maximum) walltime in hours, `None` means unlimited.
+        steps_per_part : bool
+            If True nsteps are the steps to do in the new trajectory part, else
+            the total number of steps since the last call to `prepare()` are
+            counted, default False.
         """
         # generic run method is actually easier to implement for gmx :D
         if not self.ready_for_run:
@@ -698,13 +736,16 @@ class GmxEngine(MDEngine):
         """
         Run simulation for specified number of steps.
 
-        Parameters:
-        -----------
-        nsteps - int, integration steps to run for either in total [as measured
-                 since the last call to `self.prepare()`]
-                 or in the newly generated trajectory part
-        steps_per_part - bool (default False), if True nsteps are the steps to
-                         do in the new trajectory part
+        Parameters
+        ----------
+        nsteps : int or None
+            Integration steps to run for either in total [as measured since the
+            last call to `self.prepare()`] or in the newly generated trajectory
+            part, see also the steps_per_part argument.
+        steps_per_part : bool
+            If True nsteps are the steps to do in the new trajectory part, else
+            the total number of steps since the last call to `prepare()` are
+            counted, default False.
         """
         return await self.run(nsteps=nsteps, steps_per_part=steps_per_part)
 
@@ -712,9 +753,10 @@ class GmxEngine(MDEngine):
         """
         Run simulation for a given walltime.
 
-        Parameters:
-        -----------
-        walltime - float or None, (maximum) walltime in hours
+        Parameters
+        ----------
+        walltime : float or None
+            (Maximum) walltime in hours, `None` means unlimited.
         """
         return await self.run(walltime=walltime)
 
@@ -810,22 +852,26 @@ class SlurmGmxEngine(GmxEngine):
     def __init__(self, mdp, gro_file, top_file, sbatch_script, ndx_file=None,
                  **kwargs):
         """
-        Initialize a `SlurmGmxEngine`.
+        Initialize a :class:`SlurmGmxEngine`.
 
-        Parameters:
-        -----------
-        mdp - `aimmd.distributed.MDP`, the molecular dynamics parameters
-        gro_file - absolute or relative path to a gromacs structure file
-        top_file - absolute or relative path to a gromacs topolgy (.top) file
-        sbatch_script - absolute or relative path to a slurm sbatch script
-                        or a string with the content of the sbatch script
-                        NOTE that the submission script must contain the
-                        following placeholders (also see the examples folder):
-                            {mdrun_cmd} - will be replaced by the command to
-                                          run gmx mdrun
-                            {jobname} - will be replaced by the name of the job
-                                        containing the deffnm of the mdrun
-        ndx_file - (optional) absolute or relative path to a gromacs index file
+        Parameters
+        ----------
+        mdp : MDP
+            The molecular dynamics parameters.
+        gro_file: str
+            Absolute or relative path to a gromacs structure file.
+        top_file: str
+            Absolute or relative path to a gromacs topolgy (.top) file.
+        sbatch_script : str
+            Absolute or relative path to a slurm sbatch script or a string with
+            the content of the sbatch script.
+            NOTE: The submission script must contain the following placeholders
+                  (also see the examples folder):
+                    {mdrun_cmd} - will be replaced by the command to run mdrun
+                    {jobname} - will be replaced by the name of the job
+                                (usually the deffnm of the mdrun)
+        ndx_file: str or None
+            Optional, absolute or relative path to a gromacs index file.
 
         Note that all attributes can be set at intialization by passing keyword
         arguments with their name, e.g. mdrun_extra_args="-ntomp 2" to instruct
@@ -844,6 +890,24 @@ class SlurmGmxEngine(GmxEngine):
         self.sbatch_script = sbatch_script
 
     async def apply_constraints(self, conf_in, conf_out_name, wdir="."):
+        """
+        Apply constraints to given configuration.
+
+        Parameters
+        ----------
+        conf_in : asyncmd.Trajectory
+            A (one-frame) trajectory whose first frame we will constrain.
+        conf_out_name : str
+            Output path for the constrained configuration.
+        wdir : str, optional
+            Working directory for the constraint engine, by default ".",
+            a subfolder with random name will be created.
+
+        Returns
+        -------
+        Trajectory
+            The constrained configuration.
+        """
         return await self._0step_md(conf_in=conf_in,
                                     conf_out_name=conf_out_name,
                                     wdir=wdir,
@@ -853,6 +917,27 @@ class SlurmGmxEngine(GmxEngine):
 
     async def generate_velocities(self, conf_in, conf_out_name, wdir=".",
                                   constraints=True):
+        """
+        Generate random Maxwell-Boltzmann velocities for given configuration.
+
+        Parameters
+        ----------
+        conf_in : asyncmd.Trajectory
+            A (one-frame) trajectory whose first frame we will constrain.
+        conf_out_name : str
+            Output path for the constrained configuration.
+        wdir : str, optional
+            Working directory for the constraint engine, by default ".",
+            a subfolder with random name will be created.
+        constraints : bool, optional
+            Whether to also apply constraints, by default True.
+
+        Returns
+        -------
+        Trajectory
+            The configuration with random velocities and optionally constraints
+            enforced.
+        """
         return await self._0step_md(conf_in=conf_in,
                                     conf_out_name=conf_out_name,
                                     wdir=wdir,
