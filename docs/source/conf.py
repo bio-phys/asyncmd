@@ -65,5 +65,5 @@ autosummary_ignore_module_all = True  # default = True
 # -- Options for autodoc extension -------------------------------------------
 autodoc_default_options = {
                     # document members (default = False)
-                    "members": True,
+                    "members": False,
                            }

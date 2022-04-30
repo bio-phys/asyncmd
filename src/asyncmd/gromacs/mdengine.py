@@ -48,29 +48,41 @@ class GmxEngine(MDEngine):
     mind that your colleagues might also want to use the cluster, also someone
     might have set a job/submission limit :)
 
-    Notable functions:
-    ------------------
-        - `prepare()` provides grompp functionality
-        - `run()`, `run_walltime`, `run_steps()` start/run MD simulations
-        - `prepare_from_files()` can be used to continue a previous MD run
-
-    Notable properties:
-    -------------------
-        - `nstout`, `frames_done`, `steps_done` adn `time_done` provide
-          read-only access to the trajectory output frequency and frames/steps/
-          time done in total for the current deffnm and workdir
-
-    Notable attributes:
-    -------------------
-        - `grompp_executable`/`mdrun_executable` can be used to customize the
-          name or path to the respective executables
-        - `grompp_extra_args`/`mdrun_extra_args` can be used to pass extra
-          command line arguments to the respective executables
-        - `output_traj_type` sets the trajectory type (ending) this engine
-          returns/looks for; Note that we simply ignore all other trajectories,
-          i.e. depending on the MDP settings we will still write xtc and trr,
-          but return only one of them
+    Attributes
+    ----------
+    grompp_executable : str
+        Name or path to the grompp executable, by default "gmx grompp".
+    mdrun_executable : str
+        Name or path to the mdrun executable, by default "gmx mdrun".
+    grompp_extra_args : str
+        Can be used to pass extra command line arguments to grompp calls,
+        e.g. "-maxwarn 1".
+    mdrun_extra_args : str
+        Can be used to pass extra command line arguments to mdrun calls,
+        e.g. "-ntomp 8".
+    output_traj_type : str
+        Sets the trajectory type (ending) this engine returns/looks for.
+        Note that we simply ignore all other trajectories, i.e. depending on
+        the MDP settings we will still write xtc and trr, but return only the
+        trajectories with matching ending.
     """
+
+#    Methods
+#    -------
+#    prepare(starting_configuration, workdir, deffnm)
+#        Run grompp and prepare a fresh simulation (starting at "part0001").
+#    run(nsteps=None, walltime=None, steps_per_part=False)
+#        Run MD simulation for given number of steps or/and a given walltime.
+#    run_walltime(walltime)
+#        Run simulation for given walltime.
+#    run_steps(nsteps, steps_per_part=False)
+#        Run simulation for specified number of steps.
+#    prepare_from_files(workdir, deffnm)
+#        Can be used to continue/restart an existing run from files.
+#    apply_constraints(conf_in, conf_out_name, wdir=".")
+#        Apply constraints to given configuration.
+#    generate_velocities(conf_in, conf_out_name, wdir=".", constraints=True)
+#        Generate random MB velocities for given configuration.
 
     # local prepare and option to run a local gmx (mainly for testing)
     _grompp_executable = "gmx grompp"
