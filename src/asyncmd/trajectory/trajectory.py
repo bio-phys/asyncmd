@@ -29,14 +29,10 @@ class Trajectory:
 
     Keep track of the paths of the trajectory and the structure file.
     Caches values for (wrapped) functions acting on the trajectory.
-    Also makes vailable (and caches) a number of useful attributes, namely:
-        - first_step (integration step of first frame in this trajectory [part])
-        - last_step (integration step of the last frame in this trajectory [part])
-        - dt (the timeintervall between subsequent *frames* [not steps])
-        - first_time (the integration time of the first frame)
-        - last_time (the integration time of the last frame)
-        - length (number of frames in this trajectory)
-        - nstout (number of integration steps between subsequent frames)
+    Also makes available (and caches) a number of useful attributes, e.g.
+    `first_step` and `last_step` (the first and last intergation step in the
+    trajectory), `dt`, `first_time`, `last_time`, `length` (in frames) and
+    `nstout`.
 
     NOTE: first_step and last_step is only useful for trajectories that come
           directly from a MDEngine. As soon as the trajecory has been

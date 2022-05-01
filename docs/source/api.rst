@@ -1,5 +1,5 @@
-API
-===
+API (Overview by submodules)
+============================
 
 trajectory
 **********
@@ -67,8 +67,8 @@ Engine classes
 
 
 
-Hierachical module layout
-*************************
+API (Hierachical module layout plan)
+====================================
 
 .. autosummary::
    :recursive:

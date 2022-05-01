@@ -90,19 +90,32 @@ class TrajectoryFunctionWrapper:
         pass
 
     async def __call__(self, value):
+        """
+        Apply wrapped function asyncronously on given trajectory.
+
+        Parameters
+        ----------
+        value : asyncmd.Trajectory
+            Input trajectory.
+
+        Returns
+        -------
+        iterable, usually list or np.ndarray
+            The values of the wrapped function when applied on the trajectory.
+        """
         if isinstance(value, Trajectory) and self.id is not None:
             return await value._apply_wrapped_func(self.id, self)
         else:
             raise ValueError(f"{type(self)} must be called"
-                             + " with an `aimmd.distributed.Trajectory` "
+                             + " with an `asyncmd.Trajectory` "
                              + f"but was called with {type(value)}.")
 
 
 class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
-    """Wrap python functions for use on `aimmd.distributed.Trajectory."""
-    # wrap functions for use on aimmd.distributed.Trajectory
+    """Wrap python functions for use on :class:`asyncmd.Trajectory`."""
+    # wrap functions for use on asyncmd.Trajectory
     # makes sure that we check for cached values if we apply the wrapped func
-    # to an aimmd.distributed.Trajectory
+    # to an asyncmd.Trajectory
     def __init__(self, function, call_kwargs={}, **kwargs):
         super().__init__(**kwargs)
         self._func = None
@@ -153,6 +166,19 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             self._func = value
 
     async def get_values_for_trajectory(self, traj):
+        """
+        Apply wrapped function asyncronously on given trajectory.
+
+        Parameters
+        ----------
+        traj : asyncmd.Trajectory
+            Input trajectory.
+
+        Returns
+        -------
+        iterable, usually list or np.ndarray
+            The values of the wrapped function when applied on the trajectory.
+        """
         loop = asyncio.get_running_loop()
         async with _SEMAPHORES["MAX_PROCESS"]:
             # fill in additional kwargs (if any)
@@ -180,6 +206,19 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         return vals
 
     async def __call__(self, value):
+        """
+        Apply wrapped function asyncronously on given trajectory.
+
+        Parameters
+        ----------
+        value : asyncmd.Trajectory
+            Input trajectory.
+
+        Returns
+        -------
+        iterable, usually list or np.ndarray
+            The values of the wrapped function when applied on the trajectory.
+        """
         if isinstance(value, Trajectory) and self.id is not None:
             return await value._apply_wrapped_func(self.id, self)
         else:
@@ -213,44 +252,43 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
     See also the examples for a reference (python) implementation of multiple
     different functions/executables for use with this class.
 
-    Notable attributes:
-    -------------------
-    slurm_jobname - Used as name for the job in slurm and also as part of the
-                    filename for the submission script that will be written
-                    (and deleted if everything goes well) for every trajectory.
+    Attributes
+    ----------
+    slurm_jobname : str
+        Used as name for the job in slurm and also as part of the filename for
+        the submission script that will be written (and deleted if everything
+        goes well) for every trajectory.
     """
 
     def __init__(self, executable, sbatch_script, call_kwargs={},
                  load_results_func=None, **kwargs):
         """
-        Initialize `SlurmTrajectoryFunctionWrapper`.
-
-        Parameters:
-        -----------
-        executable - absolute or relative path to an executable or name of an
-                     executable available via the environment (e.g. via the
-                      $PATH variable on LINUX)
-        sbatch_script - path to a sbatch submission script file or string with
-                        the content of a submission script.
-                        NOTE that the submission script must contain the
-                        following placeholders (also see the examples folder):
-                            {cmd_str} - will be replaced by the command to call
-                                        the executable on a given trajectory
-                            {jobname} - will be replaced by the name of the job
-                                        containing the hash of the function
-        call_kwargs - dictionary of additional arguments to pass to the
-                      executable, they will be added to the call as pair
-                      ' {key} {val}', note that in case you want to pass single
-                      command line flags (like '-v') this can be achieved by
-                      setting key='-v' and val='', i.e. to the empty string
-        load_results_func - None or function to call to customize the loading
-                            of the results, if a function it will be called
-                            with the full path to the results file (as in the
-                            call to the executable) and should return a numpy
-                            array containing the loaded values
+        Initialize :class:`SlurmTrajectoryFunctionWrapper`.
 
         Note that all attributes can be set via __init__ by passing them as
         keyword arguments.
+
+        Parameters
+        ----------
+        executable : str
+            Absolute or relative path to an executable or name of an executable
+            available via the environment (e.g. via the $PATH variable on LINUX)
+        sbatch_script : str
+            Path to a sbatch submission script file or string with the content
+            of a submission script. Note that the submission script must
+            contain the following placeholders (also see the examples folder):
+                {cmd_str} - Replaced by the command to call the executable on a given trajectory.
+                {jobname} - Replaced by the name of the job containing the hash of the function.
+        call_kwargs : dict
+            Dictionary of additional arguments to pass to the executable, they
+            will be added to the call as pair ' {key} {val}', note that in case
+            you want to pass single command line flags (like '-v') this can be
+            achieved by setting key='-v' and val='', i.e. to the empty string.
+        load_results_func : None or function
+            Function to call to customize the loading of the results.
+            If a function is supplied, it will be called with the full path to
+            the results file (as in the call to the executable) and should
+            return a numpy array containing the loaded values.
         """
         # property defaults before superclass init to be resettable via kwargs
         self._slurm_jobname = None
@@ -317,6 +355,19 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         self._id = self._get_id_str()  # get the new hash/id
 
     async def get_values_for_trajectory(self, traj):
+        """
+        Apply wrapped function asyncronously on given trajectory.
+
+        Parameters
+        ----------
+        traj : asyncmd.Trajectory
+            Input trajectory.
+
+        Returns
+        -------
+        iterable, usually list or np.ndarray
+            The values of the wrapped function when applied on the trajectory.
+        """
         # first construct the path/name for the numpy npy file in which we expect
         # the results to be written
         tra_dir, tra_name = os.path.split(traj.trajectory_file)

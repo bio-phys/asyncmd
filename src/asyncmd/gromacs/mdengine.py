@@ -864,12 +864,10 @@ class SlurmGmxEngine(GmxEngine):
             Absolute or relative path to a gromacs topolgy (.top) file.
         sbatch_script : str
             Absolute or relative path to a slurm sbatch script or a string with
-            the content of the sbatch script.
-            NOTE: The submission script must contain the following placeholders
-                  (also see the examples folder):
-                    {mdrun_cmd} - will be replaced by the command to run mdrun
-                    {jobname} - will be replaced by the name of the job
-                                (usually the deffnm of the mdrun)
+            the content of the sbatch script. Note that the submission script
+            must contain the following placeholders (see also the examples folder):
+                {mdrun_cmd} - Replaced by the command to run mdrun
+                {jobname} - Replaced by the name of the job (usually the deffnm of the mdrun)
         ndx_file: str or None
             Optional, absolute or relative path to a gromacs index file.
 
