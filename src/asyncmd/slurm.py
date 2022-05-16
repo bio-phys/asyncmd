@@ -244,6 +244,8 @@ class SlurmClusterMediator:
     #       ...currently we have all the state -> exitcode logic in SlurmProcess
     #       until we parse exitcodes from sacct here that probably makes sense?!
 
+    # TODO/FIXME: we have one func for success and one for fail?
+    # TODO: make this one function? 'notify_of_job_done(success, listofnodes)'?
     def notify_of_job_fail(self, listofnodes: "list[str]") -> None:
         # TODO? use slurm_job_state to decide if we even supect the node is broken?!
         # NOTE: I (hejung) think it is smarter to handle that on the level of
