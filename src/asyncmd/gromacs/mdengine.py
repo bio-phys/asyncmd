@@ -592,7 +592,13 @@ class GmxEngine(MDEngine):
             _SEMAPHORES["MAX_FILES_OPEN"].release()
         if return_code != 0:
             # this assumes POSIX
-            raise RuntimeError(f"grompp had non-zero return code ({return_code}).")
+            raise RuntimeError("grompp had non-zero return code "
+                               + f"({return_code}).\n"
+                               + "\n--------\n"
+                               + f"stderr: \n--------\n {stderr.decode()}"
+                               + "\n--------\n"
+                               + f"stdout: \n--------\n {stdout.decode()}"
+                               )
 
     async def prepare_from_files(self, workdir, deffnm):
         """
