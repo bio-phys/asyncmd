@@ -1,3 +1,6 @@
+# MacOS finder/search subfolders
+.DS_Store
+
 # Visualstudio Code per project settings folder
 .vscode
 
