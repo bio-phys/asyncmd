@@ -14,6 +14,7 @@ This library addresses the tedious, error-prone and boring part of setting up ma
 ## Code Example
 
 Run 4 gromacs engines concurently from the same starting configuration (`conf.trr`) for `10000` integration steps each:
+
 ```python
 import asyncmd
 import asyncmd.gromacs as asyncgmx
@@ -37,7 +38,6 @@ engines = [asyncgmx.GmxEngine(mdp=mdp, gro_file="conf.gro", top_file="topol.top"
 await asyncio.gather(*(e.prepare(starting_configuration=init_conf,
                                  workdir=".", deffnm=f"engine{i}")
                        for i, e in enumerate(engines))
-                       )
                      )
 
 trajs = await asyncio.gather(*(e.run_steps(nsteps=10000) for e in engines))
@@ -47,11 +47,23 @@ For an in-depth introduction see also the `examples` folder in this repository w
 
 ## Installation
 
-Provide code examples and explanations of how to get the project.
+### pip install directly from the repository
+
+```bash
+git clone https://gitea.kotspeicher.de/AIMMD/asyncmd.git
+cd asyncmd
+pip install -e .
+```
 
 ## API Reference
 
-Depending on the size of the project, if it is small and simple enough the reference docs can be added to the README. For medium size to larger projects it is important to at least provide a link to where the API reference docs live.
+The documentation can be build with [sphinx]:
+
+```bash
+sphinx-build -b html docs/source docs/build/html
+```
+
+Use ```python pip install -e .[docs]``` to install the requirements to build the documentation.
 
 ## Tests
 
@@ -71,3 +83,5 @@ GPL v3 (or later)
 
 ---
 <sub>This README.md is printed from 100% recycled electrons.</sub>
+
+[sphinx]: https://www.sphinx-doc.org/en/master/index.html
