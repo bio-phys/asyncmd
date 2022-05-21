@@ -57,31 +57,54 @@ pip install -e .
 
 ## API Reference
 
-The documentation can be build with [sphinx]:
+The documentation can be build with [sphinx], use e.g. the following to build it in html format:
 
 ```bash
 sphinx-build -b html docs/source docs/build/html
 ```
 
-Use ```python pip install -e .[docs]``` to install the requirements to build the documentation.
+Use ```pip install -e .[docs]``` to install the requirements needed to build the documentation.
 
 ## Tests
 
-Describe and show how to run the tests with code examples.
+Tests use [pytest]. To run them just install asycmd with the test requirements
+
+```bash
+git clone https://gitea.kotspeicher.de/AIMMD/asyncmd.git
+cd asyncmd
+pip install -e .[test]
+```
+
+And then run the tests (against the installed version) as
+
+```bash
+pytest -v asyncmd
+```
 
 ## Developers
 
-Let people know how they can dive into the project, include important links to things like wiki, issue trackers, coding style guide, irc, twitter accounts if applicable.
+For the developer install I recommend:
+
+```bash
+git clone https://gitea.kotspeicher.de/AIMMD/asyncmd.git
+cd asyncmd
+pip install -e .[dev]
+```
+
+This will in addition to the requirements to run the tests and to build the documentation install [flake8] and some of its plugins, such that you get yelled at to write nicely foramted code. It will also install [coverage] and its [pytest-cov] plugin such that you have an idea of the test coverage for your newly added code.
 
 ## Contributors
 
-You could (and should) give props to all the people who contributed to the code.
+This project was originally conceived and started by Hendrik Jung in 2021/2022. For the current list of contributors please see the file ```__about__.py``` or check the string ```asyncmd.__author__```.
 
 ## License
 
-GPL v3 (or later)
+asyncmd is under the terms of the GNU general public license version 3 or later, i.e. SPDX identifier "GPL-3.0-or-later".
 
 ---
 <sub>This README.md is printed from 100% recycled electrons.</sub>
 
 [sphinx]: https://www.sphinx-doc.org/en/master/index.html
+[flake8]: https://pypi.org/project/flake8/
+[pytest]: https://docs.pytest.org/en/latest/
+[pytest-cov]: https://pypi.org/project/pytest-cov/

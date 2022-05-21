@@ -43,10 +43,10 @@ class GmxEngine(MDEngine):
     An async/await enabled wrapper around gromacs grompp and gromacs mdrun.
     Please use the power of concurrent execution of computationally bound
     subprocesses responsibly...or crash your workstation ;)
-    The `SlurmGmxEngine` alleviates this problem somewhat by submitting the
+    The :class:`SlurmGmxEngine` alleviates this problem somewhat by submitting the
     (computationally expensive) mdruns via SLURM...in that case please have in
-    mind that your colleagues might also want to use the cluster, also someone
-    might have set a job/submission limit :)
+    mind that your colleagues might also want to use the cluster, and also that
+    someone might have set a job/submission limit :)
 
     Attributes
     ----------
@@ -360,7 +360,7 @@ class GmxEngine(MDEngine):
         Parameters
         ----------
         conf_in : asyncmd.Trajectory
-            A (one-frame) trajectory whose first frame we will constrain.
+            A (one-frame) trajectory, only the first frame will be used.
         conf_out_name : str
             Output path for the constrained configuration.
         wdir : str, optional
@@ -387,9 +387,9 @@ class GmxEngine(MDEngine):
         Parameters
         ----------
         conf_in : asyncmd.Trajectory
-            A (one-frame) trajectory whose first frame we will constrain.
+            A (one-frame) trajectory, only the first frame will be used.
         conf_out_name : str
-            Output path for the constrained configuration.
+            Output path for the velocity randomized configuration.
         wdir : str, optional
             Working directory for the constraint engine, by default ".",
             a subfolder with random name will be created.
@@ -828,6 +828,7 @@ class GmxEngine(MDEngine):
 
 # TODO: DOCUMENT!
 class SlurmGmxEngine(GmxEngine):
+    __doc__ = GmxEngine.__doc__
     # use local prepare (i.e. grompp) of GmxEngine then submit run to slurm
     # we reuse the `GmxEngine._proc` to keep a reference to a `SlurmProcess`
     # which emulates the API of `asyncio.subprocess.Process` and can (for our
@@ -871,9 +872,10 @@ class SlurmGmxEngine(GmxEngine):
         sbatch_script : str
             Absolute or relative path to a slurm sbatch script or a string with
             the content of the sbatch script. Note that the submission script
-            must contain the following placeholders (see also the examples folder):
-                {mdrun_cmd} - Replaced by the command to run mdrun
-                {jobname} - Replaced by the name of the job (usually the deffnm of the mdrun)
+            must contain the following placeholders (see also the examples
+            folder):
+             - {mdrun_cmd} : Replaced by the command to run mdrun
+             - {jobname} : Replaced by the name of the job (usually the deffnm of the mdrun)
         ndx_file: str or None
             Optional, absolute or relative path to a gromacs index file.
 
