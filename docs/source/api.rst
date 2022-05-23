@@ -104,12 +104,24 @@ All molecular dynamics engines should subclass the abstract base class
 :py:class:`asyncmd.mdengine.MDEngine`, which defines the common interface
 expected from all py:module:`asyncmd` engine classes.
 
+In addition the module :py:mod:`asyncmd.mdengine` defines exceptions that the
+engines should raise when applicable. Currently defined are:
+
+- :py:class:`asyncmd.mdengine.EngineError` (a generic error, should be
+  raised when no more specific error applies)
+
+- :py:class:`asyncmd.mdengine.EngineCrashedError` (should be raised when the
+  wrapped MD engine code raises an exception during the MD integration)
+
 .. autoclass:: asyncmd.mdengine.MDEngine
    :members:
    :member-order: bysource
    :inherited-members:
    :undoc-members:
 
+.. autoclass:: asyncmd.mdengine.EngineError
+
+.. autoclass:: asyncmd.mdengine.EngineCrashedError
 
 API (Hierachical module layout plan)
 ====================================
