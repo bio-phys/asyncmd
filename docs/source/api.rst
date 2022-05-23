@@ -46,19 +46,19 @@ machine as the python process.
 MDP
 ---
 .. autoclass:: asyncmd.gromacs.MDP
-      :members:
+   :members:
 
 Engine classes
 --------------
 .. autoclass:: asyncmd.gromacs.GmxEngine
-      :members:
-      :special-members:
-      :inherited-members:
+   :members:
+   :special-members:
+   :inherited-members:
 
 .. autoclass:: asyncmd.gromacs.SlurmGmxEngine
-      :members:
-      :special-members:
-      :inherited-members:
+   :members:
+   :special-members:
+   :inherited-members:
 
 API (For developers)
 ====================
@@ -87,8 +87,9 @@ must be empty, e.g. ``{}``. If the option/key is present but without associated
 value(s) the list in the dict must be empty, e.g. ``{key: []}``.
 
 .. autoclass:: asyncmd.mdconfig.MDConfig
-      :member-order: bysource
-      :members: write, parse
+   :member-order: bysource
+   :members: write, parse
+   :inherited-members:
 
 .. autoclass:: asyncmd.mdconfig.LineBasedMDConfig
    :member-order: bysource
@@ -100,6 +101,13 @@ Molecular dynamics simulation engine wrappers (:py:class:`asyncmd.mdengine.MDEng
 *************************************************************************************
 
 TODO!
+
+.. autoclass:: asyncmd.mdengine.MDEngine
+   :members:
+   :member-order: bysource
+   :inherited-members:
+   :undoc-members:
+
 
 API (Hierachical module layout plan)
 ====================================

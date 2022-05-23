@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import abc
+from .trajectory.trajectory import Trajectory
 
 
 class EngineError(Exception):
@@ -26,8 +27,12 @@ class EngineCrashedError(EngineError):
 
 
 class MDEngine(abc.ABC):
+    """
+    Abstract bas class to define the common interface of all :class:`MDEngine`.
+    """
     @abc.abstractmethod
-    async def apply_constraints(self, conf_in, conf_out_name):
+    async def apply_constraints(self, conf_in: Trajectory,
+                                conf_out_name: str) -> Trajectory:
         # apply constraints to given conf_in, write conf_out_name and return it
         raise NotImplementedError
 
@@ -35,32 +40,34 @@ class MDEngine(abc.ABC):
     # TODO: think about the most general interface!
     # NOTE: We assume that we do not change the system for/in one engine,
     #       i.e. .top, .ndx, mdp-object, ...?! should go into __init__
-    async def prepare(self, starting_configuration, workdir, deffnm):
+    async def prepare(self, starting_configuration: Trajectory, workdir: str,
+                      deffnm: str) -> None:
         raise NotImplementedError
 
     @abc.abstractmethod
     # TODO: should this be a classmethod?
     #@classmethod
-    async def prepare_from_files(self, workdir, deffnm):
+    async def prepare_from_files(self, workdir: str, deffnm: str) -> None:
         # this should prepare the engine to continue a previously stopped simulation
         # starting with the last trajectory part in workdir that is compatible with deffnm
         raise NotImplementedError
 
     @abc.abstractmethod
-    async def run_walltime(self, walltime):
+    async def run_walltime(self, walltime: float) -> Trajectory:
         # run for specified walltime
         # NOTE: must be possible to run this multiple times after preparing once!
         raise NotImplementedError
 
     @abc.abstractmethod
-    async def run_steps(self, nsteps, steps_per_part=False):
+    async def run_steps(self, nsteps: int,
+                        steps_per_part: bool = False) -> Trajectory:
         # run for specified number of steps
         # NOTE: not sure if we need it, but could be useful
         # NOTE: make sure we can run multiple times after preparing once!
         raise NotImplementedError
 
     @abc.abstractproperty
-    def current_trajectory(self):
+    def current_trajectory(self) -> Trajectory:
         # return current trajectory: Trajectory or None
         # if we retun a Trajectory it is either what we are working on atm
         # or the trajectory we finished last
@@ -75,12 +82,13 @@ class MDEngine(abc.ABC):
         #       so cls.output_traj_type must also be the string
         raise NotImplementedError
 
+    # TODO/FIXME: remove this function?
     # NOTE: I think we wont really need/use this anyway since the run_ funcs
     #       are all awaitable
     @abc.abstractproperty
-    def running(self):
+    def running(self) -> bool:
         raise NotImplementedError
 
     @abc.abstractproperty
-    def steps_done(self):
+    def steps_done(self) -> int:
         raise NotImplementedError
