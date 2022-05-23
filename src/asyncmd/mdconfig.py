@@ -14,6 +14,7 @@
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import os
 import abc
+import typing
 import shutil
 import logging
 import collections
@@ -25,42 +26,86 @@ logger = logging.getLogger(__name__)
 class FlagChangeList(collections.abc.MutableSequence):
     """A list that knows if it has been changed after initializing."""
 
-    def __init__(self, data):
+    def __init__(self, data: list) -> None:
+        """
+        Initialize a `FlagChangeList`.
+
+        Parameters
+        ----------
+        data : list
+            The data this `FlagChangeList` will hold.
+
+        Raises
+        ------
+        TypeError
+            Raised when data is not a :class:`list`.
+        """
         if not isinstance(data, list):
             raise TypeError("FlagChangeList must be initialized with a list.")
         self._data = data
         self._changed = False
 
     @property
-    def changed(self):
+    def changed(self) -> bool:
+        """
+        Whether this `FlagChangeList` has been modified since creation.
+
+        Returns
+        -------
+        bool
+        """
         return self._changed
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self._data.__repr__()
 
-    def __getitem__(self, key):
-        return self._data.__getitem__(key)
+    def __getitem__(self, index: int) -> typing.Any:
+        return self._data.__getitem__(index)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self._data.__len__()
 
-    def __setitem__(self, key, value):
-        self._data.__setitem__(key, value)
+    def __setitem__(self, index: int, value) -> None:
+        self._data.__setitem__(index, value)
         self._changed = True
 
-    def __delitem__(self, key):
-        self._data.__delitem__(key)
+    def __delitem__(self, index: int) -> None:
+        self._data.__delitem__(index)
         self._changed = True
 
-    def insert(self, key, value):
-        self._data.insert(key, value)
+    def insert(self, index: int, value: typing.Any):
+        """
+        Insert `value` at position given by `index`.
+
+        Parameters
+        ----------
+        index : int
+            The index of the new value in the `FlagChangeList`.
+        value : typing.Any
+            The value to insert into this `FlagChangeList`.
+        """
+        self._data.insert(index, value)
         self._changed = True
 
 
 class TypedFlagChangeList(FlagChangeList):
-    """A `FlagChangeList` with an ensured type for individual list items."""
+    """
+    A :class:`FlagChangeList` with an ensured type for individual list items.
+    """
 
-    def __init__(self, data, dtype):
+    def __init__(self, data: typing.Iterable, dtype) -> None:
+        """
+        Initialize a `TypedFlagChangeList`.
+
+        Parameters
+        ----------
+        data : Iterable
+            (Initial) data for this `TypedFlagChangeList`.
+        dtype : Callable datatype
+            The datatype for all entries in this `TypedFlagChangeList`. Will be
+            called on every value seperately and is expected to convert to the
+            desired datatype.
+        """
         self._dtype = dtype  # set first to use in _convert_type method
         if getattr(data, '__len__', None) is None:
             # convienience for singular options,
@@ -70,22 +115,33 @@ class TypedFlagChangeList(FlagChangeList):
             # strings have a length but we still do not want to split them into
             # single letters, so just put a list around
             data = [data]
-        typed_data = [self._convert_type(v, key=i) for i, v in enumerate(data)]
+        typed_data = [self._convert_type(v, index=i)
+                      for i, v in enumerate(data)]
         super().__init__(data=typed_data)
 
-    def _convert_type(self, value, key=None):
-        # here we ignore key, but passing it should in principal make it
+    def _convert_type(self, value, index=None):
+        # here we ignore index, but passing it should in principal make it
         # possible to use different dtypes for different indices
         return self._dtype(value)
 
-    def __setitem__(self, key, value):
-        typed_value = self._convert_type(value, key=key)
-        self._data.__setitem__(key, typed_value)
+    def __setitem__(self, index: int, value) -> None:
+        typed_value = self._convert_type(value, index=index)
+        self._data.__setitem__(index, typed_value)
         self._changed = True
 
-    def insert(self, key, value):
-        typed_value = self._convert_type(value, key=key)
-        self._data.insert(key, typed_value)
+    def insert(self, index: int, value) -> None:
+        """
+        Insert `value` at position given by `index`.
+
+        Parameters
+        ----------
+        index : int
+            The index of the new value in the `TypedFlagChangeList`.
+        value : typing.Any
+            The value to insert into this `TypedFlagChangeList`.
+        """
+        typed_value = self._convert_type(value, index=index)
+        self._data.insert(index, typed_value)
         self._changed = True
 
 
@@ -137,9 +193,14 @@ class LineBasedMDConfig(MDConfig):
     #  overwrite only the '_check_type()' method]
     _SPECIAL_PARAM_DISPATCH = {}
 
-    def __init__(self, original_file):
+    def __init__(self, original_file: str) -> None:
         """
-        original_file - path to original config file (absolute or relative)
+        Initialize a :class:`LineBasedMDConfig`.
+
+        Parameters
+        ----------
+        original_file : str
+            Path to original config file (absolute or relative).
         """
         self._config = {}
         self._changed = False
@@ -149,9 +210,11 @@ class LineBasedMDConfig(MDConfig):
 
     def _construct_type_dispatch(self):
         def convert_len1_list_or_singleton(val, dtype):
-            # helper func that accepts len1 lists (as expected from `_parse_line`)
-            # but that also accepts single values and converts them to given type
-            # (which is what we expects the users to do when they set singleton vals)
+            # helper func that accepts len1 lists
+            # (as expected from `_parse_line`)
+            # but that also accepts single values and converts them to given
+            # dtype (which is what we expect can/will happen when the users set
+            # singleton vals, i.e. "val" instead of ["val"]
             if getattr(val, '__len__', None) is None:
                 return dtype(val)
             else:
@@ -167,39 +230,53 @@ class LineBasedMDConfig(MDConfig):
                                                               dtype=str)
                                                       )
         type_dispatch.update({param: lambda l: TypedFlagChangeList(
-                                                                   data=l,
-                                                                   dtype=float
+                                                                data=l,
+                                                                dtype=float
                                                                    )
                               for param in self._FLOAT_PARAMS})
         type_dispatch.update({param: lambda v: convert_len1_list_or_singleton(
-                                                                    val=v,
-                                                                    dtype=float,
+                                                                val=v,
+                                                                dtype=float,
                                                                               )
                               for param in self._FLOAT_SINGLETON_PARAMS})
         type_dispatch.update({param: lambda l: TypedFlagChangeList(
-                                                                   data=l,
-                                                                   dtype=int,
+                                                                data=l,
+                                                                dtype=int,
                                                                    )
                               for param in self._INT_PARAMS})
         type_dispatch.update({param: lambda v: convert_len1_list_or_singleton(
-                                                                    val=v,
-                                                                    dtype=int,
+                                                                val=v,
+                                                                dtype=int,
                                                                               )
                               for param in self._INT_SINGLETON_PARAMS})
         type_dispatch.update(self._SPECIAL_PARAM_DISPATCH)
         return type_dispatch
 
-    def __getstate__(self):
+    def __getstate__(self) -> dict:
         state = self.__dict__.copy()
         state["_type_dispatch"] = None
         return state
 
-    def __setstate__(self, state):
+    def __setstate__(self, state: dict) -> None:
         self.__dict__.update(state)
         self._type_dispatch = self._construct_type_dispatch()
 
     @abc.abstractmethod
-    def _parse_line(self, line):
+    def _parse_line(self, line: str) -> dict:
+        """
+        Parse a line of the configuration file and return a :class:`dict`.
+
+        Parameters
+        ----------
+        line : str
+            A single line of the read-in configuration file
+
+        Returns
+        ------
+        parsed : dict
+            Dictionary with a single (key, list of value(s)) pair representing
+            the parsed line.
+        """
         # NOTE: this is the only function needed to complete the class,
         #       the rest of this metaclass assumes the following for this func:
         # it must parse a single line and return the key, list of value(s) pair
@@ -212,30 +289,38 @@ class LineBasedMDConfig(MDConfig):
     def __getitem__(self, key):
         return self._config[key]
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         typed_value = self._type_dispatch[key](value)
         self._config[key] = typed_value
         self._changed = True
 
-    def __delitem__(self, key):
+    def __delitem__(self, key) -> None:
         self._config.__delitem__(key)
         self._changed = True
 
     def __iter__(self):
         return self._config.__iter__()
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self._config.__len__()
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self._config.__repr__()
 
     @property
-    def original_file(self):
+    def original_file(self) -> str:
+        """
+        Return the original config file this :class:`LineBasedMDConfig` parsed.
+
+        Returns
+        -------
+        str
+            Path to the original file.
+        """
         return self._original_file
 
     @original_file.setter
-    def original_file(self, value):
+    def original_file(self, value: str) -> None:
         # NOTE: (re)setting the file also replaces the current config with
         #       what we parse from that file
         value = os.path.abspath(value)
@@ -245,17 +330,24 @@ class LineBasedMDConfig(MDConfig):
         self.parse()
 
     @property
-    def changed(self):
-        """Indicate if the current configuration differs from original_file."""
+    def changed(self) -> bool:
+        """
+        Indicate if the current configuration differs from original_file.
+
+        Returns
+        -------
+        bool
+            Whether we changed the configuration w.r.t. ``original_file``.
+        """
         # NOTE: we default to False, i.e. we expect that anything that
         #       does not have a self.changed attribute is not a container
         #       and we (the dictionary) would know that it changed
-        single_vals_changed = [getattr(v, "changed", False)
-                               for v in self._config.values()]
-        return self._changed or any(single_vals_changed)
+        return self._changed or any([getattr(v, "changed", False)
+                                     for v in self._config.values()]
+                                    )
 
     def parse(self):
-        """Parse the current `self.original_file` to update own state."""
+        """Parse the current ``self.original_file`` to update own state."""
         with open(self.original_file, "r") as f:
             file_content = f.read()
         parsed = {}
@@ -283,13 +375,21 @@ class LineBasedMDConfig(MDConfig):
                         for key, value in parsed.items()}
         self._changed = False
 
-    def write(self, outfile, overwrite=False):
+    def write(self, outfile: str, overwrite: bool = False) -> None:
         """
         Write current configuration to outfile.
 
-        outfile - path to outfile (relative or absolute)
-        overwrite - bool (default=False), if True overwrite existing files,
-                    if False and the file exists raise an error
+        Parameters
+        ----------
+        outfile : str
+            Path to outfile (relative or absolute).
+        overwrite : bool, optional
+            If True overwrite existing files, by default False.
+
+        Raises
+        ------
+        ValueError
+            Raised when `overwrite=False` but `outfile` exists.
         """
         outfile = os.path.abspath(outfile)
         if os.path.exists(outfile) and not overwrite:
@@ -304,7 +404,9 @@ class LineBasedMDConfig(MDConfig):
                 line = f"{key}{self._KEY_VALUE_SEPARATOR}"
                 try:
                     if len(value) > 0:
-                        line += self._INTER_VALUE_CHAR.join(str(v) for v in value)
+                        line += self._INTER_VALUE_CHAR.join(str(v)
+                                                            for v in value
+                                                            )
                 except TypeError:
                     # (probably) not a Sequence/Iterable,
                     # i.e. one of the singleton options

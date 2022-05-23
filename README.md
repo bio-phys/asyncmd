@@ -63,7 +63,7 @@ The documentation can be build with [sphinx], use e.g. the following to build it
 sphinx-build -b html docs/source docs/build/html
 ```
 
-Use ```pip install -e .[docs]``` to install the requirements needed to build the documentation.
+Use ```pip install -e .\[docs\]``` to install the requirements needed to build the documentation.
 
 ## Tests
 
@@ -72,7 +72,7 @@ Tests use [pytest]. To run them just install asycmd with the test requirements
 ```bash
 git clone https://gitea.kotspeicher.de/AIMMD/asyncmd.git
 cd asyncmd
-pip install -e .[test]
+pip install -e .\[test\]
 ```
 
 And then run the tests (against the installed version) as
@@ -88,7 +88,7 @@ For the developer install I recommend:
 ```bash
 git clone https://gitea.kotspeicher.de/AIMMD/asyncmd.git
 cd asyncmd
-pip install -e .[dev]
+pip install -e .\[dev\]
 ```
 
 This will in addition to the requirements to run the tests and to build the documentation install [flake8] and some of its plugins, such that you get yelled at to write nicely foramted code. It will also install [coverage] and its [pytest-cov] plugin such that you have an idea of the test coverage for your newly added code.

@@ -10,13 +10,11 @@ can be used to wrapp (python) functions or arbitrary executables for easy
 asyncronous application on :py:class:`asyncmd.Trajectory`, either submitted
 via slurm or ran locally.
 
-
 Trajectory
 ----------
 .. autoclass:: asyncmd.Trajectory
    :members:
    :special-members:
-
 
 TrajectoryFunctionWrappers
 --------------------------
@@ -30,8 +28,6 @@ TrajectoryFunctionWrappers
    :members:
    :special-members:
    :inherited-members:
-
-
 
 gromacs
 *******
@@ -59,13 +55,51 @@ Engine classes
       :special-members:
       :inherited-members:
 
-
 .. autoclass:: asyncmd.gromacs.SlurmGmxEngine
       :members:
       :special-members:
       :inherited-members:
 
+API (For developers)
+====================
 
+This section is relevant for developers of :py:mod:`asyncmd`, e.g. when you
+want to add the option to steer additional molecular dynamcis engines like NAMD.
+
+Molecular dynamcis configuration file parsing and writing (:py:class:`asyncmd.mdconfig.MDConfig`)
+*************************************************************************************************
+
+All molecular dynamics configuration file wrappers should subclass
+:py:class:`asyncmd.mdconfig.MDConfig`. This class defines the two abstract
+methods ``parse()`` and ``write()`` as well as the dictionary-like interface by
+subclassing from :class:`collections.abc.MutableMapping`.
+
+Most often you can probably subclass
+:py:class:`asyncmd.mdconfig.LineBasedMDConfig` directly. This has the advantage
+that you will only need to define the datatypes of the values (if you want
+them to be typed) and define a function that knows how to parse single lines of
+the config file format. To this end you should overwrite the abstract method
+:py:func:`asyncmd.mdconfig.LineBasedMDConfig._parse_line` in your subclass.
+The function will get single lines to parse is expected to return the key, list
+of value(s) pair as a :py:class:`dict` with one item, e.g.
+``{key: list of value(s)}``. If the line is parsed as comment the returned dict
+must be empty, e.g. ``{}``. If the option/key is present but without associated
+value(s) the list in the dict must be empty, e.g. ``{key: []}``.
+
+.. autoclass:: asyncmd.mdconfig.MDConfig
+      :member-order: bysource
+      :members: write, parse
+
+.. autoclass:: asyncmd.mdconfig.LineBasedMDConfig
+   :member-order: bysource
+   :members:
+   :private-members:
+   :inherited-members:
+
+Molecular dynamcis simulation engine wrappers (:py:class:`asyncmd.mdengine.MDEngine`)
+*************************************************************************************
+
+TODO!
 
 API (Hierachical module layout plan)
 ====================================
@@ -75,54 +109,3 @@ API (Hierachical module layout plan)
    :toctree: generated
 
    asyncmd
-
-
-
-
-..
-   .. automodule:: asyncmd.gromacs.mdengine
-      :member-order: bysource
-      :members:
-      :special-members:
-
-..
-   main (test what actually is here?)
-   **********************************
-   .. automodule:: asyncmd
-      :members:
-      :private-members:
-      :special-members:
-
-   gromacs
-   *******
-
-   mdconfig
-   --------
-   .. automodule:: asyncmd.gromacs.mdconfig
-      :members:
-
-   mdengines
-   ---------
-   .. automodule:: asyncmd.gromacs.mdengine
-      :member-order: bysource
-      :members:
-      :special-members:
-
-
-   Advanced users and developers
-   *****************************
-
-   The abstract base classes all mdengines and mdconfigs must subclass:
-
-   MDConfig
-   --------
-   .. automodule:: asyncmd.mdconfig
-      :members:
-      :member-order: bysource
-
-
-   MDEngines
-   ---------
-   .. automodule:: asyncmd.mdengine
-      :members:
-
