@@ -66,7 +66,7 @@ API (For developers)
 This section is relevant for developers of :py:mod:`asyncmd`, e.g. when you
 want to add the option to steer additional molecular dynamcis engines like NAMD.
 
-Molecular dynamcis configuration file parsing and writing (:py:class:`asyncmd.mdconfig.MDConfig`)
+Molecular dynamics configuration file parsing and writing (:py:class:`asyncmd.mdconfig.MDConfig`)
 *************************************************************************************************
 
 All molecular dynamics configuration file wrappers should subclass
@@ -96,7 +96,7 @@ value(s) the list in the dict must be empty, e.g. ``{key: []}``.
    :private-members:
    :inherited-members:
 
-Molecular dynamcis simulation engine wrappers (:py:class:`asyncmd.mdengine.MDEngine`)
+Molecular dynamics simulation engine wrappers (:py:class:`asyncmd.mdengine.MDEngine`)
 *************************************************************************************
 
 TODO!
