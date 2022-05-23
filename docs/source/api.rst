@@ -100,7 +100,9 @@ value(s) the list in the dict must be empty, e.g. ``{key: []}``.
 Molecular dynamics simulation engine wrappers (:py:class:`asyncmd.mdengine.MDEngine`)
 *************************************************************************************
 
-TODO!
+All molecular dynamics engines should subclass the abstract base class
+:py:class:`asyncmd.mdengine.MDEngine`, which defines the common interface
+expected from all py:module:`asyncmd` engine classes.
 
 .. autoclass:: asyncmd.mdengine.MDEngine
    :members:
