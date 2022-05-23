@@ -108,3 +108,4 @@ asyncmd is under the terms of the GNU general public license version 3 or later,
 [flake8]: https://pypi.org/project/flake8/
 [pytest]: https://docs.pytest.org/en/latest/
 [pytest-cov]: https://pypi.org/project/pytest-cov/
+[coverage]: https://pypi.org/project/coverage/
