@@ -60,6 +60,7 @@ pip install -e .
 The documentation can be build with [sphinx], use e.g. the following to build it in html format:
 
 ```bash
+cd asyncmd  # Need to be at the top folder of the repository for the next line to work
 sphinx-build -b html docs/source docs/build/html
 ```
 
