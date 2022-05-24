@@ -585,20 +585,20 @@ class GmxEngine(MDEngine):
             logger.debug(f"grompp stderr: {stderr.decode()}.")
             return_code = grompp_proc.returncode
             logger.info(f"grompp command returned {return_code}.")
+            if return_code != 0:
+                # this assumes POSIX
+                raise RuntimeError("grompp had non-zero return code "
+                                   + f"({return_code}).\n"
+                                   + "\n--------\n"
+                                   + f"stderr: \n--------\n {stderr.decode()}"
+                                   + "\n--------\n"
+                                   + f"stdout: \n--------\n {stdout.decode()}"
+                                   )
         finally:
             # release the semaphore(s)
             _SEMAPHORES["MAX_FILES_OPEN"].release()
             _SEMAPHORES["MAX_FILES_OPEN"].release()
             _SEMAPHORES["MAX_FILES_OPEN"].release()
-        if return_code != 0:
-            # this assumes POSIX
-            raise RuntimeError("grompp had non-zero return code "
-                               + f"({return_code}).\n"
-                               + "\n--------\n"
-                               + f"stderr: \n--------\n {stderr.decode()}"
-                               + "\n--------\n"
-                               + f"stdout: \n--------\n {stdout.decode()}"
-                               )
 
     async def prepare_from_files(self, workdir, deffnm):
         """
@@ -655,7 +655,7 @@ class GmxEngine(MDEngine):
         await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
         await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
 
-    async def _cleanup_gmx_mdrun(self, **kwargs):
+    async def _cleanup_gmx_mdrun(self, exit_code=0, **kwargs):
         # *always* called after any gmx_mdrun, use to release Semaphores and friends
         # read stdout and stderr from gmx mdrun
         stdout, stderr = await self._proc.communicate()
@@ -665,6 +665,14 @@ class GmxEngine(MDEngine):
         _SEMAPHORES["MAX_FILES_OPEN"].release()
         _SEMAPHORES["MAX_FILES_OPEN"].release()
         _SEMAPHORES["MAX_FILES_OPEN"].release()
+        if exit_code != 0:
+            raise EngineCrashedError(
+                    f"Non-zero (or no) exit code from mdrun (= {exit_code}).\n"
+                    + "\n--------\n"
+                    + f"stderr: \n--------\n {stderr.decode()}"
+                    + "\n--------\n"
+                    + f"stdout: \n--------\n {stdout.decode()}"
+                                     )
 
     async def run(self, nsteps=None, walltime=None, steps_per_part=False):
         """
@@ -716,19 +724,20 @@ class GmxEngine(MDEngine):
                                   # TODO: use more/any other kwargs?
                                   maxh=walltime, nsteps=nsteps)
         logger.info(f"{cmd_str}")
+        exit_code = None
         await self._acquire_resources_gmx_mdrun()
-        try:  # this try is just to make sure we always call cleanup/release
+        try:
             await self._start_gmx_mdrun(cmd_str=cmd_str, workdir=self.workdir)
-            try:
-                # self._proc is set by _start_gmx_mdrun!
-                exit_code = await self._proc.wait()
-            except asyncio.CancelledError:
-                self._proc.kill()
-                raise  # reraise the error for encompassing coroutines
-            else:
-                if exit_code != 0:
-                    raise EngineCrashedError("Non-zero exit code from mdrun."
-                                             + f" Exit code was: {exit_code}.")
+            # self._proc is set by _start_gmx_mdrun!
+            exit_code = await self._proc.wait()
+        except asyncio.CancelledError:
+            self._proc.kill()
+            raise  # reraise the error for encompassing coroutines
+        else:
+            #if exit_code != 0:
+            #    raise EngineCrashedError("Non-zero exit code from mdrun."
+            #                             + f" Exit code was: {exit_code}.")
+            if exit_code == 0:
                 self._frames_done += len(self.current_trajectory)
                 # dont care if we did a little more and only the checkpoint knows
                 # we will only find out with the next trajectory part anyways
@@ -736,7 +745,7 @@ class GmxEngine(MDEngine):
                 self._time_done = self.current_trajectory.last_time
                 return self.current_trajectory
         finally:
-            await self._cleanup_gmx_mdrun()
+            await self._cleanup_gmx_mdrun(exit_code=exit_code)
 
     async def run_steps(self, nsteps, steps_per_part=False):
         """

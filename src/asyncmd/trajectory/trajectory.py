@@ -165,7 +165,7 @@ class Trajectory:
         return self._last_time
 
     async def _apply_wrapped_func(self, func_id, wrapped_func):
-        with await self._semaphores_by_func_id[func_id]:
+        async with self._semaphores_by_func_id[func_id]:
             if self._h5py_cache is not None:
                 # first check if we are loaded and possibly get it from there
                 # trajectories are immutable once stored, so no need to check len

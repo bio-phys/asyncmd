@@ -19,7 +19,6 @@ import numpy as np
 import MDAnalysis as mda
 from scipy import constants
 
-
 from .trajectory import Trajectory
 
 

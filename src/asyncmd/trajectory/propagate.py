@@ -19,9 +19,9 @@ import functools
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
-from . import _SEMAPHORES
-from .trajectory.convert import TrajectoryConcatenator
-from .utils import get_all_traj_parts, nstout_from_mdconfig
+from .. import _SEMAPHORES
+from .convert import TrajectoryConcatenator
+from ..utils import get_all_traj_parts, nstout_from_mdconfig
 
 
 logger = logging.getLogger(__name__)
@@ -154,7 +154,7 @@ async def construct_TP_from_plus_and_minus_traj_segments(minus_trajs, minus_stat
 
 
 # TODO: DOCUMENT
-class TrajectoryPropagatorUntilAnyState:
+class ConditionalTrajectoryPropagator:
     """
     Propagate a trajectory until any of the states is reached.
 
@@ -493,3 +493,7 @@ class TrajectoryPropagatorUntilAnyState:
             #    for s, s_is_cor in zip(self.states, self._state_func_is_coroutine)
             #                      ]
             #return await asyncio.gather(*all_states_as_coro)
+
+
+# alias for people coming from the path sampling community :)
+TrajectoryPropagatorUntilAnyState = ConditionalTrajectoryPropagator

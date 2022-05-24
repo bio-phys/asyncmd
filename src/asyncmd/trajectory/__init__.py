@@ -15,3 +15,7 @@
 from .functionwrapper import (PyTrajectoryFunctionWrapper,
                               SlurmTrajectoryFunctionWrapper,
                               )
+from .propagate import (ConditionalTrajectoryPropagator,
+                        TrajectoryPropagatorUntilAnyState,
+                        construct_TP_from_plus_and_minus_traj_segments,
+                        )
