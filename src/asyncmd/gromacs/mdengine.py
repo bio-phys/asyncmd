@@ -865,14 +865,14 @@ class SlurmGmxEngine(GmxEngine):
     #             and we will probably also need the option to pass other mdrun_extra_args?!
     constraints_md_sans_slurm = False
 
-    def __init__(self, mdp, gro_file, top_file, sbatch_script, ndx_file=None,
+    def __init__(self, mdconfig, gro_file, top_file, sbatch_script, ndx_file=None,
                  **kwargs):
         """
         Initialize a :class:`SlurmGmxEngine`.
 
         Parameters
         ----------
-        mdp : MDP
+        mdconfig : MDP
             The molecular dynamics parameters.
         gro_file: str
             Absolute or relative path to a gromacs structure file.
@@ -892,8 +892,8 @@ class SlurmGmxEngine(GmxEngine):
         arguments with their name, e.g. mdrun_extra_args="-ntomp 2" to instruct
         gromacs to use 2 openMP threads.
         """
-        super().__init__(mdp=mdp, gro_file=gro_file, top_file=top_file,
-                         ndx_file=ndx_file, **kwargs)
+        super().__init__(mdconfig=mdconfig, gro_file=gro_file,
+                         top_file=top_file, ndx_file=ndx_file, **kwargs)
         # we expect sbatch_script to be a str,
         # but it could be either the path to a submit script or the content of
         # the submission script directly
