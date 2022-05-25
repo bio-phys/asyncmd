@@ -5,10 +5,39 @@ trajectory
 **********
 The :py:mod:`asyncmd.trajectory` module contains a
 :py:class:`asyncmd.Trajectory` class which is the return object for all MD
-engines. There are also a number of `TrajectoryFunctionWrapper` classes which
+engines. There are also a number of ``TrajectoryFunctionWrapper`` classes which
 can be used to wrapp (python) functions or arbitrary executables for easy
 asyncronous application on :py:class:`asyncmd.Trajectory`, either submitted
 via slurm or ran locally.
+
+It also contains a number of classes to extract frames from
+:py:class:`asyncmd.Trajectory` objects in the module
+:py:mod:`asyncmd.trajectory.convert`:
+
+  - :py:class:`asyncmd.trajectory.convert.NoModificationFrameExtractor`
+
+  - :py:class:`asyncmd.trajectory.convert.InvertedVelocitiesFrameExtractor`
+
+  - :py:class:`asyncmd.trajectory.convert.RandomVelocitiesFrameExtractor`
+
+Note that implementing your own ``FrameExtractor`` with a custom modification
+is as easy as subclassing the abstract base class
+:py:class:`asyncmd.trajectory.convert.FrameExtractor` and overwriting its
+:py:meth:`asyncmd.trajectory.convert.FrameExtractor.apply_modification`
+method.
+
+The :py:mod:`asyncmd.trajectory.convert` module furthermore contains a class to
+concatenate :py:class:`asyncmd.Trajectory` segments, the
+:py:class:`asyncmd.trajectory.convert.TrajectoryConcatenator`.
+
+Another notable part of the :py:mod:`asyncmd.trajectory` module is the
+:py:class:`asyncmd.trajectory.ConditionalTrajectoryPropagator` which
+can be used to propagate a trajectory until any of the given conditions is
+fulfilled. This is especially usefull for pathsampling and committor
+simulations (here the conditions would be the state functions), but can be used
+in general for any situation where the time integration should be stopped on
+given criteria (as opposed to after a fixed number of integratiopn steps or
+when a given walltime is reached).
 
 Trajectory
 ----------
@@ -25,6 +54,35 @@ TrajectoryFunctionWrappers
    :inherited-members:
 
 .. autoclass:: asyncmd.trajectory.SlurmTrajectoryFunctionWrapper
+   :members:
+   :special-members:
+   :inherited-members:
+
+FrameExtractors
+---------------
+
+.. autoclass:: asyncmd.trajectory.convert.FrameExtractor
+   :members:
+   :inherited-members:
+   :undoc-members:
+
+.. autoclass:: asyncmd.trajectory.convert.NoModificationFrameExtractor
+   :members:
+   :inherited-members:
+
+.. autoclass:: asyncmd.trajectory.convert.InvertedVelocitiesFrameExtractor
+   :members:
+   :inherited-members:
+
+.. autoclass:: asyncmd.trajectory.convert.RandomVelocitiesFrameExtractor
+   :members:
+   :special-members:
+   :inherited-members:
+
+Trajectory concatenation
+------------------------
+
+.. autoclass:: asyncmd.trajectory.convert.TrajectoryConcatenator
    :members:
    :special-members:
    :inherited-members:

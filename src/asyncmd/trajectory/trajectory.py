@@ -13,10 +13,11 @@
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import os
-import collections
 import copy
+import typing
 import asyncio
 import logging
+import collections
 import MDAnalysis as mda
 
 
@@ -30,18 +31,39 @@ class Trajectory:
     Keep track of the paths of the trajectory and the structure file.
     Caches values for (wrapped) functions acting on the trajectory.
     Also makes available (and caches) a number of useful attributes, e.g.
-    `first_step` and `last_step` (the first and last intergation step in the
-    trajectory), `dt`, `first_time`, `last_time`, `length` (in frames) and
-    `nstout`.
+    ``first_step`` and ``last_step`` (the first and last intergation step in
+    the trajectory), ``dt``, ``first_time``, ``last_time``,
+    ``length`` (in frames) and ``nstout``.
 
     NOTE: first_step and last_step is only useful for trajectories that come
-          directly from a MDEngine. As soon as the trajecory has been
-          concatenated using MDAnalysis (i.e. the `TrajectoryConcatenator`)
-          the step information is just the frame number in the trajectory part
-          that became first/last frame in the concatenated trajectory.
+          directly from a :class:`asyncmd.mdengine.MDEngine`.
+          As soon as the trajecory has been concatenated using MDAnalysis
+          (i.e. the `TrajectoryConcatenator`) the step information is just the
+          frame number in the trajectory part that became first/last frame in
+          the concatenated trajectory.
     """
 
-    def __init__(self, trajectory_file, structure_file, nstout=None, **kwargs):
+    def __init__(self, trajectory_file: str, structure_file: str,
+                 nstout: typing.Optional[int] = None, **kwargs):
+        """
+        Initialize a :class:`Trajectory`.
+
+        Parameters
+        ----------
+        trajectory_file : str
+            Absolute or relative path to the trajectory file (e.g. trr, xtc).
+        structure_file : str
+            Absolute or relative path to the structure file (e.g. tpr, gro).
+        nstout : int or None, optional
+            The output frequency used when creating the trajectory,
+            by default None
+
+        Raises
+        ------
+        ValueError
+            If the ``trajectory_file`` or the ``structure_file`` are not
+            accessible.
+        """
         # NOTE: we assume tra = trr and struct = tpr
         #       but we also expect that anything which works for mdanalysis as
         #       tra and struct should also work here as tra and struct
@@ -62,11 +84,13 @@ class Trajectory:
         if os.path.isfile(trajectory_file):
             self.trajectory_file = os.path.abspath(trajectory_file)
         else:
-            raise ValueError(f"trajectory_file ({trajectory_file}) must be accessible.")
+            raise ValueError(f"trajectory_file ({trajectory_file}) must be "
+                             + "accessible.")
         if os.path.isfile(structure_file):
             self.structure_file = os.path.abspath(structure_file)
         else:
-            raise ValueError(f"structure_file ({structure_file}) must be accessible.")
+            raise ValueError(f"structure_file ({structure_file}) must be "
+                             + "accessible.")
         # properties
         self.nstout = nstout  # use the setter to make basic sanity checks
         self._len = None
@@ -83,7 +107,15 @@ class Trajectory:
                                                     asyncio.BoundedSemaphore
                                                               )
 
-    def __len__(self):
+    def __len__(self) -> int:
+        """
+        Return the number of frames in the trajectory.
+
+        Returns
+        -------
+        int
+            The number of frames in the trajectory.
+        """
         if self._len is not None:
             return self._len
         # create/open a mdanalysis universe to get the number of frames
@@ -92,18 +124,18 @@ class Trajectory:
         self._len = len(u.trajectory)
         return self._len
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (f"Trajectory(trajectory_file={self.trajectory_file},"
                 + f" structure_file={self.structure_file})"
                 )
 
     @property
-    def nstout(self):
+    def nstout(self) -> typing.Union[int, None]:
         """Output frequency between subsequent frames in integration steps."""
         return self._nstout
 
     @nstout.setter
-    def nstout(self, val):
+    def nstout(self, val: typing.Union[int, None]) -> None:
         if val is not None:
             # ensure that it is an int
             val = int(val)
@@ -111,8 +143,8 @@ class Trajectory:
         self._nstout = val
 
     @property
-    def first_step(self):
-        """The integration step of the first frame."""
+    def first_step(self) -> int:
+        """Return the integration step of the first frame in the trajectory."""
         if self._first_step is None:
             u = mda.Universe(self.structure_file, self.trajectory_file,
                              tpr_resid_from_one=True)
@@ -122,8 +154,8 @@ class Trajectory:
         return self._first_step
 
     @property
-    def last_step(self):
-        """The integration step of the last frame."""
+    def last_step(self) -> int:
+        """Return the integration step of the last frame in the trajectory."""
         if self._last_step is None:
             u = mda.Universe(self.structure_file, self.trajectory_file,
                              tpr_resid_from_one=True)
@@ -134,7 +166,7 @@ class Trajectory:
         return self._last_step
 
     @property
-    def dt(self):
+    def dt(self) -> float:
         """The time intervall between subsequent *frames* (not steps) in ps."""
         if self._dt is None:
             u = mda.Universe(self.structure_file, self.trajectory_file,
@@ -145,8 +177,8 @@ class Trajectory:
         return self._dt
 
     @property
-    def first_time(self):
-        """The integration timestep of the first frame in ps."""
+    def first_time(self) -> float:
+        """Return the integration timestep of the first frame in ps."""
         if self._first_time is None:
             u = mda.Universe(self.structure_file, self.trajectory_file,
                              tpr_resid_from_one=True)
@@ -155,8 +187,8 @@ class Trajectory:
         return self._first_time
 
     @property
-    def last_time(self):
-        """The integration timestep of the last frame in ps."""
+    def last_time(self) -> float:
+        """Return the integration timestep of the last frame in ps."""
         if self._last_time is None:
             u = mda.Universe(self.structure_file, self.trajectory_file,
                              tpr_resid_from_one=True)
@@ -168,24 +200,28 @@ class Trajectory:
         async with self._semaphores_by_func_id[func_id]:
             if self._h5py_cache is not None:
                 # first check if we are loaded and possibly get it from there
-                # trajectories are immutable once stored, so no need to check len
+                # trajectories are assumed immutable once stored, so no need to
+                # check for len
                 try:
                     return copy.copy(self._h5py_cache[func_id])
                 except KeyError:
                     # not in there
-                    # send function application to seperate process and wait for it
+                    # send function application to seperate process and wait
+                    # until it finishes
                     vals = await wrapped_func.get_values_for_trajectory(self)
                     self._h5py_cache.append(func_id, vals)
                     return vals
             else:
-                # only 'local' cache, i.e. this trajectory has no file associated (yet)
+                # only 'local' cache, i.e. this trajectory has no file
+                # associated with it (yet)
                 try:
                     # see if it is in cache
                     idx = self._func_id_to_idx[func_id]
                     return copy.copy(self._func_values[idx])
                 except KeyError:
                     # if not calculate, store and return
-                    # send function application to seperate process and wait for it
+                    # send function application to seperate process and wait
+                    # until it finishes
                     vals = await wrapped_func.get_values_for_trajectory(self)
                     self._func_id_to_idx[func_id] = len(self._func_id_to_idx)
                     self._func_values.append(vals)
@@ -247,7 +283,13 @@ class Trajectory:
 
 
 class TrajectoryFunctionValueCache(collections.abc.Mapping):
-    """Interface for caching function values on a per trajectory basis."""
+    """
+    Interface for caching function values in a given hdf5/h5py group.
+
+    Drop-in replacement for the dictionary that is used in the trajectories
+    before they are saved to h5py.
+    """
+
     # NOTE: this is written with the assumption that stored trajectories are
     #       immutable (except for adding additional stored function values)
     #       but we assume that the actual underlying trajectory stays the same,
@@ -281,11 +323,13 @@ class TrajectoryFunctionValueCache(collections.abc.Mapping):
         if not isinstance(func_id, str):
             raise TypeError("Keys (func_id) must be of type str.")
         if (func_id in self) and (not ignore_existing):
-            raise ValueError(f"There are already values stored for func_id {func_id}."
-                             + " Changing the stored values is not supported.")
+            raise ValueError("There are already values stored for func_id "
+                             + f"{func_id}. Changing the stored values is not "
+                             + "supported.")
         elif (func_id in self) and ignore_existing:
-            logger.debug(f"File cached values already present for function with id {func_id}."
-                         + "Not adding the new values because ignore_existing=False.")
+            logger.debug("File cached values already present for function with"
+                         + f" id {func_id}. Not adding the new values because "
+                         + "ignore_existing=False.")
             return
         # TODO: do we also want to check vals for type?
         name = str(len(self))

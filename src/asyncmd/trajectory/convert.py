@@ -14,6 +14,7 @@
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import os
 import abc
+import typing
 import logging
 import numpy as np
 import MDAnalysis as mda
@@ -34,29 +35,63 @@ class TrajectoryConcatenator:
     Velocities are automatically inverted if the step of a slice is negative,
     this can be controlled via the invert_v_for_negative_step attribute.
 
-    NOTE: We assume that all trajs have the same structure file
-          and attach the the structure of the first traj if not told otherwise.
+    NOTE: We assume that all trajs have the same structure file and attach the
+    structure of the first traj if not told otherwise.
     """
 
-    def __init__(self, invert_v_for_negative_step=True):
+    def __init__(self, invert_v_for_negative_step: bool = True):
+        """
+        Initialize a :class:`TrajectoryConcatenator`.
+
+        Parameters
+        ----------
+        invert_v_for_negative_step : bool, optional
+            Whether to invert all momenta for segments with negative stride,
+            by default True.
+        """
         self.invert_v_for_negative_step = invert_v_for_negative_step
 
-    def concatenate(self, trajs, slices, tra_out, struct_out=None,
-                    overwrite=False, remove_double_frames=True):
+    def concatenate(self, trajs: "list[Trajectory]", slices: "list[tuple]",
+                    tra_out: str, struct_out: typing.Optional[str] = None,
+                    overwrite: bool = False,
+                    remove_double_frames: bool = True) -> Trajectory:
         """
         Create concatenated trajectory from given trajectories and frames.
 
-        trajs - list of `:class:`Trajectory
-        slices - list of (start, stop, step)
-        tra_out - output trajectory filepath, absolute or relativ to cwd
-        struct_out - None or output structure filepath, if None we will take the
-                     structure file of the first trajectory in trajs
-        overwrite - bool (default=False), if True overwrite existing tra_out,
-                    if False and the file exists raise an error
-        remove_double_frames - bool (default=True), if True try to remove double
-                               frames from the concatenated output
-                               NOTE: that we use a simple heuristic, we just
-                                     check if the integration time is the same
+        Parameters
+        ----------
+        trajs : list[Trajectory]
+            List of :class:`asyncmd.Trajectory` objects to concatenate.
+        slices : list[tuple]
+            List of tuples (start, stop, step) specifing the slices of the
+            trajectories to take. Must be of len(trajs).
+        tra_out : str
+            Output trajectory filepath, absolute or relativ to current working
+            directory.
+        struct_out : str or None, optional
+            Output structure filepath, if None we will take the structure file
+            of the first trajectory in trajs, by default None.
+        overwrite : bool, optional
+            Whether we should overwrite existing output trajectories,
+            by default False.
+        remove_double_frames : bool, optional
+            Wheter we should try to remove double frames from the concatenated
+            output trajectory.
+            Note that we use a simple heuristic to determine double frames,
+            we just check if the integration time is the same for both frames,
+            by default True
+
+        Returns
+        -------
+        Trajectory
+            The concatenated output trajectory.
+
+        Raises
+        ------
+        ValueError
+            If ``tra_out`` exists and ``overwrite=False``.
+        ValueError
+            If ``struct_out`` given but the file is not accessible.
         """
         tra_out = os.path.abspath(tra_out)
         if os.path.exists(tra_out) and not overwrite:
