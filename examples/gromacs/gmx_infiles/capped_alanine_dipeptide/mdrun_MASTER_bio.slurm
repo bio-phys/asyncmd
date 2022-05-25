@@ -12,7 +12,7 @@
 ########### USE NO GPU! ######################
 #####SBATCH --gres=gpu:1  ## use only one GPU
 ##############################################
-#SBATCH --mem=9600  ## request 4800 * n_CPU MB of RAM, this is important to leave memory for other jobs on the same node
+#SBATCH --mem=9500  ## request 4750 * n_CPU MB of RAM, this is important to leave memory for other jobs on the same node
 #
 # Number of nodes and MPI tasks per node:
 #SBATCH --nodes=1
