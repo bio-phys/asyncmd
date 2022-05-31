@@ -12,12 +12,15 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+import io
 import os
 import copy
 import typing
 import asyncio
 import logging
+import zipfile
 import collections
+import numpy as np
 import MDAnalysis as mda
 
 
@@ -44,7 +47,9 @@ class Trajectory:
     """
 
     def __init__(self, trajectory_file: str, structure_file: str,
-                 nstout: typing.Optional[int] = None, **kwargs):
+                 nstout: typing.Optional[int] = None,
+                 npz_cache_file: bool = True,
+                 **kwargs):
         """
         Initialize a :class:`Trajectory`.
 
@@ -57,6 +62,11 @@ class Trajectory:
         nstout : int or None, optional
             The output frequency used when creating the trajectory,
             by default None
+        npz_cache_file : bool
+            Wheter we should write the cached CV values to a (hidden) numpy npz
+            archive file, by default True.
+            Note: If ``False`` and no h5py cache is attached the values will be
+            cached in memory.
 
         Raises
         ------
@@ -82,12 +92,12 @@ class Trajectory:
         #                        + f" Default type is {type(cval)}."
         #                        )
         if os.path.isfile(trajectory_file):
-            self.trajectory_file = os.path.abspath(trajectory_file)
+            self._trajectory_file = os.path.abspath(trajectory_file)
         else:
             raise ValueError(f"trajectory_file ({trajectory_file}) must be "
                              + "accessible.")
         if os.path.isfile(structure_file):
-            self.structure_file = os.path.abspath(structure_file)
+            self._structure_file = os.path.abspath(structure_file)
         else:
             raise ValueError(f"structure_file ({structure_file}) must be "
                              + "accessible.")
@@ -100,8 +110,14 @@ class Trajectory:
         self._first_time = None
         self._last_time = None
         # stuff for caching of functions applied to this traj
-        self._func_id_to_idx = {}
-        self._func_values = []
+        self._func_values_by_id = {}
+        if npz_cache_file:
+            self._npz_cache = TrajectoryFunctionValueCacheNPZ(
+                                        fname_traj=self.trajectory_file,
+                                                              )
+        else:
+            self._npz_cache = None
+        # TODO: how to handle h5py cache?!
         self._h5py_cache = None
         self._semaphores_by_func_id = collections.defaultdict(
                                                     asyncio.BoundedSemaphore
@@ -128,6 +144,16 @@ class Trajectory:
         return (f"Trajectory(trajectory_file={self.trajectory_file},"
                 + f" structure_file={self.structure_file})"
                 )
+
+    @property
+    def structure_file(self) -> str:
+        """Return absolute path to the structure file."""
+        return copy.copy(self._structure_file)
+
+    @property
+    def trajectory_file(self) -> str:
+        """Return absolute path to the trajectory file."""
+        return copy.copy(self._trajectory_file)
 
     @property
     def nstout(self) -> typing.Union[int, None]:
@@ -198,34 +224,61 @@ class Trajectory:
 
     async def _apply_wrapped_func(self, func_id, wrapped_func):
         async with self._semaphores_by_func_id[func_id]:
+            # sort out which cache we use
+            # TODO: do we want to give the h5py cache preference?
+            #       or maybe change the order?
+            #       or use h5py cache only if a h5py storage is been registered
+            #        with asyncmd somewhere (e.g. in our constants/semaphores?)
             if self._h5py_cache is not None:
-                # first check if we are loaded and possibly get it from there
-                # trajectories are assumed immutable once stored, so no need to
-                # check for len
-                try:
-                    return copy.copy(self._h5py_cache[func_id])
-                except KeyError:
-                    # not in there
-                    # send function application to seperate process and wait
-                    # until it finishes
-                    vals = await wrapped_func.get_values_for_trajectory(self)
-                    self._h5py_cache.append(func_id, vals)
-                    return vals
-            else:
-                # only 'local' cache, i.e. this trajectory has no file
-                # associated with it (yet)
-                try:
-                    # see if it is in cache
-                    idx = self._func_id_to_idx[func_id]
-                    return copy.copy(self._func_values[idx])
-                except KeyError:
-                    # if not calculate, store and return
-                    # send function application to seperate process and wait
-                    # until it finishes
-                    vals = await wrapped_func.get_values_for_trajectory(self)
-                    self._func_id_to_idx[func_id] = len(self._func_id_to_idx)
-                    self._func_values.append(vals)
-                    return vals
+                return await self._apply_wrapped_func_h5py_cache(
+                                                    func_id=func_id,
+                                                    wrapped_func=wrapped_func,
+                                                                 )
+            if self._npz_cache is not None:
+                return await self._apply_wrapped_func_npz_cache(
+                                                    func_id=func_id,
+                                                    wrapped_func=wrapped_func,
+                                                                )
+            # only 'local' cache, i.e. this trajectory has no file
+            # associated with it (yet)
+            return await self._apply_wrapped_func_local_cache(
+                                                    func_id=func_id,
+                                                    wrapped_func=wrapped_func,
+                                                              )
+
+    async def _apply_wrapped_func_local_cache(self, func_id: str, wrapped_func):
+        try:
+            # see if it is in cache
+            return copy.copy(self._func_values[func_id])
+        except KeyError:
+            # if not calculate, store and return
+            # send function application to seperate process and wait
+            # until it finishes
+            vals = await wrapped_func.get_values_for_trajectory(self)
+            self._func_values_by_id[func_id] = vals
+            return vals
+
+    async def _apply_wrapped_func_npz_cache(self, func_id: str, wrapped_func):
+        try:
+            return copy.copy(self._npz_cache[func_id])
+        except KeyError:
+            # not in there
+            # send function application to seperate process and wait
+            # until it finishes
+            vals = await wrapped_func.get_values_for_trajectory(self)
+            self._npz_cache.append(func_id, vals)
+            return vals
+
+    async def _apply_wrapped_func_h5py_cache(self, func_id: str, wrapped_func):
+        try:
+            return copy.copy(self._h5py_cache[func_id])
+        except KeyError:
+            # not in there
+            # send function application to seperate process and wait
+            # until it finishes
+            vals = await wrapped_func.get_values_for_trajectory(self)
+            self._h5py_cache.append(func_id, vals)
+            return vals
 
     def __getstate__(self):
         # enable pickling of Trajecory without call to ready_for_pickle
@@ -233,9 +286,11 @@ class Trajectory:
         # and lets us calculate TrajectoryFunction values asyncronously
         # NOTE: this removes everything except the filepaths
         state = self.__dict__.copy()
+        # TODO: save stuff to _npz if only local cache present?!
         state["_h5py_cache"] = None
-        #state["_func_values"] = []
-        #state["_func_id_to_idx"] = {}
+        state["_npz_cache"] = None
+        # TODO: (same as above) only empty this dict if we saved content to npz
+        #state["_func_values_by_id"] = {}
         state["_semaphores_by_func_id"] = collections.defaultdict(
                                                     asyncio.BoundedSemaphore
                                                                   )
@@ -259,7 +314,7 @@ class Trajectory:
             state["_h5py_cache"] = None
         else:
             # set h5py group such that we use the cache from now on
-            self._h5py_cache = TrajectoryFunctionValueCache(group)
+            self._h5py_cache = TrajectoryFunctionValueCacheH5PY(group)
             for func_id, idx in self._func_id_to_idx.items():
                 self._h5py_cache.append(func_id, self._func_values[idx])
             # clear the 'local' cache and empty state, such that we initialize
@@ -278,13 +333,135 @@ class Trajectory:
         # can then add the stuff in there
         # (loading is as easy as adding the file-cache because we store
         #  everything that was in 'local' cache in the file when we save)
-        self._h5py_cache = TrajectoryFunctionValueCache(group)
+        self._h5py_cache = TrajectoryFunctionValueCacheH5PY(group)
         return self
 
 
-class TrajectoryFunctionValueCache(collections.abc.Mapping):
+# TODO: update docstrings when we know how we do it exactly!
+class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
     """
-    Interface for caching function values in a given hdf5/h5py group.
+    Interface for caching function values in a given numpy npz file.
+
+    Drop-in replacement for the dictionary that is used in the trajectories
+    before they are saved.
+    """
+
+    # NOTE: this is written with the assumption that stored trajectories are
+    #       immutable (except for adding additional stored function values)
+    #       but we assume that the actual underlying trajectory stays the same,
+    #       i.e. it is not extended after first storing it
+
+    # NOTE: npz appending inspired by: https://stackoverflow.com/a/66618141
+
+    def __init__(self, fname_traj: str) -> None:
+        """
+        Initialize a `TrajectoryFunctionValueCacheNPZ`.
+
+        Parameters
+        ----------
+        fname_traj : str
+            Absolute filename to the trajectory for which we cache CV values.
+        """
+        self.fname_npz = self._get_cache_filename(fname_traj=fname_traj)
+        self._func_ids = []
+        # NOTE/FIXME: It would be nice to use the MAX_FILES_OPEN semaphore
+        # but then we need async/await and then we need to go to the create
+        # classmethod (see below)
+        # but since we (have to) open the npz file in the other magic methods
+        # too it does not really matter?
+        # (as we also leave some room for non-semaphored file openings anyway)
+        if os.path.isfile(self.fname_npz):
+            with np.load(self.fname_npz, allow_pickle=False) as npzfile:
+                for k in npzfile.keys():
+                    self._func_ids.append(str(k))
+
+    #@classmethod
+    #async def create(cls, fname_traj: str) -> TrajectoryFunctionValueCacheNPZ:
+    #    """
+    #    Create a `TrajectoryFunctionValueCacheNPZ` setting up all awaitables.
+
+    #    Parameters
+    #    ----------
+    #    fname_traj : str
+    #        Absolute filename to the trajectory for which we cache CV values.
+
+    #    Returns
+    #    -------
+    #    TrajectoryFunctionValueCacheNPZ
+    #        The initialized `TrajectoryFunctionValueCache`.
+    #    """
+    #    self = cls(fname_traj=fname_traj)
+    #    if os.path.isfile(self.fname_npz):
+    #        async with _SEMAPHORES["MAX_FILES_OPEN"]:
+    #            with np.load(self.fname_npz, allow_pickle=False) as npzfile:
+    #                for k in npzfile.keys():
+    #                    self._func_ids.append(str(k))
+    #    return self
+
+    def _get_cache_filename(self, fname_traj: str) -> str:
+        """
+        Construct cachefilename from trajectory fname.
+
+        Parameters
+        ----------
+        fname_traj : str
+            Absolute path to the trajectory for which we cache.
+
+        Returns
+        -------
+        str
+            Absolute path to the cachefile associated with trajectory.
+        """
+        head, tail = os.path.split(fname_traj)
+        return os.path.join(head, f".{tail}_asyncmd_cv_cache.npz")
+
+    def __len__(self) -> int:
+        return len(self._func_ids)
+
+    def __iter__(self):
+        for func_id in self._func_ids:
+            yield func_id
+
+    def __getitem__(self, key: str) -> np.ndarray:
+        if not isinstance(key, str):
+            raise TypeError("Keys must be of type str.")
+        if key in self._func_ids:
+            with np.load(self.fname_npz, allow_pickle=False) as npzfile:
+                return npzfile[key]
+        else:
+            raise KeyError(f"No values for {key} cached (yet).")
+
+    def append(self, func_id: str, vals: np.ndarray) -> None:
+        if func_id in self._func_ids:
+            # first check if it already in there
+            raise ValueError("There are already values stored for func_id "
+                             + f"{func_id}. Changing the stored values is not "
+                             + "supported.")
+        if len(self) == 0:
+            # these are the first cached CV values for this traj
+            # so we just create the npz file
+            np.savez(self.fname_npz, func_id=vals)
+        else:
+            # already something cached, need to append to the npz file
+            # npz files are just zipped together collections of npy files
+            # so lets make a npy file saev into a BytesIO and then write that
+            # to the end of the npz file
+            bio = io.BytesIO()
+            np.save(bio, vals)
+            with zipfile.ZipFile(file=self.fname_npz,
+                                 mode="a",  # append!
+                                 # uncompressed (but) zip archive member
+                                 compression=zipfile.ZIP_STORED,
+                                 ) as zfile:
+                zfile.writestr(f"{func_id}.npy", data=bio.getvalue())
+
+        # add func_id to list of func_ids that we know are cached in npz
+        self._func_ids.append(func_id)
+
+
+class TrajectoryFunctionValueCacheH5PY(collections.abc.Mapping):
+    """
+    Interface for caching function values in a given h5py/hdf5 group.
 
     Drop-in replacement for the dictionary that is used in the trajectories
     before they are saved to h5py.
@@ -319,18 +496,13 @@ class TrajectoryFunctionValueCache(collections.abc.Mapping):
         # if we got until here the key is not in there
         raise KeyError("Key not found.")
 
-    def append(self, func_id, vals, ignore_existing=False):
+    def append(self, func_id, vals):
         if not isinstance(func_id, str):
             raise TypeError("Keys (func_id) must be of type str.")
-        if (func_id in self) and (not ignore_existing):
+        if func_id in self:
             raise ValueError("There are already values stored for func_id "
                              + f"{func_id}. Changing the stored values is not "
                              + "supported.")
-        elif (func_id in self) and ignore_existing:
-            logger.debug("File cached values already present for function with"
-                         + f" id {func_id}. Not adding the new values because "
-                         + "ignore_existing=False.")
-            return
         # TODO: do we also want to check vals for type?
         name = str(len(self))
         _ = self._ids_grp.create_dataset(name, data=func_id)
