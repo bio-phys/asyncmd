@@ -36,3 +36,7 @@ class Test_trajectory:
     @pytest.mark.skip("TODO")
     def test_npz_cache(self):
         pass
+
+    @pytest.mark.skip("TODO")
+    def test_pickle(self):
+        pass

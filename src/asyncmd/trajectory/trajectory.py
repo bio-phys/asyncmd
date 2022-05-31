@@ -63,8 +63,8 @@ class Trajectory:
             The output frequency used when creating the trajectory,
             by default None
         npz_cache_file : bool
-            Wheter we should write the cached CV values to a (hidden) numpy npz
-            archive file, by default True.
+            Whether we should write the cached CV values to a (hidden) numpy
+            npz archive file, by default True.
             Note: If ``False`` and no h5py cache is attached the values will be
             cached in memory.
 
@@ -280,16 +280,24 @@ class Trajectory:
             self._h5py_cache.append(func_id, vals)
             return vals
 
+    # TODO: test pickling!
     def __getstate__(self):
         # enable pickling of Trajecory
         # this should make it possible to pass it into a ProcessPoolExecutor
         # and lets us calculate TrajectoryFunction values asyncronously
         # NOTE: this removes everything except the filepaths
         state = self.__dict__.copy()
-        # TODO: save stuff to _npz if only local cache present?!
         state["_h5py_cache"] = None
         state["_npz_cache"] = None
-        # TODO: (same as above) only empty this dict if we saved content to npz
+        # TODO: handle cases where npz and or h5py caches are present?!
+        if (self._npz_cache is None) and (self._h5py_cache is None):
+            # this saves stuff to _npz if only local cache present!
+            tmp_cache = TrajectoryFunctionValueCacheNPZ(
+                                        fname_traj=self.trajectory_file,
+                                                        )
+            for func_id, vals in self._func_values_by_id.items():
+                tmp_cache.append(func_id=func_id, vals=vals)
+        # TODO: (same as above) only empty this dict if we saved content
         #state["_func_values_by_id"] = {}
         state["_semaphores_by_func_id"] = collections.defaultdict(
                                                     asyncio.BoundedSemaphore
@@ -315,12 +323,11 @@ class Trajectory:
         else:
             # set h5py group such that we use the cache from now on
             self._h5py_cache = TrajectoryFunctionValueCacheH5PY(group)
-            for func_id, idx in self._func_id_to_idx.items():
-                self._h5py_cache.append(func_id, self._func_values[idx])
+            for func_id, vals in self._func_values_by_id.items():
+                self._h5py_cache.append(func_id, vals)
             # clear the 'local' cache and empty state, such that we initialize
             # to empty, next time we will get it all from file directly
-            self._func_values = state["_func_values"] = []
-            self._func_id_to_idx = state["_func_id_to_idx"] = {}
+            self._func_values_by_id = state["_func_values_by_id"] = {}
         # make the return object
         ret_obj = self.__class__.__new__(self.__class__)
         ret_obj.__dict__.update(state)
