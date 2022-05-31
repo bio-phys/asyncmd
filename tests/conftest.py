@@ -30,8 +30,8 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
-    #config.addinivalue_line("markers", "slow: mark test as slow to run")
-    config.addinivalue_line("markers", "old: mark test for deprecated code")
+    config.addinivalue_line("markers", "slow: mark test as slow to run")
+    #config.addinivalue_line("markers", "old: mark test for deprecated code")
 
 
 def pytest_collection_modifyitems(config, items):

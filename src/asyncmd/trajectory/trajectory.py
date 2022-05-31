@@ -298,7 +298,7 @@ class Trajectory:
             for func_id, vals in self._func_values_by_id.items():
                 tmp_cache.append(func_id=func_id, vals=vals)
         # TODO: (same as above) only empty this dict if we saved content
-        #state["_func_values_by_id"] = {}
+        state["_func_values_by_id"] = {}
         state["_semaphores_by_func_id"] = collections.defaultdict(
                                                     asyncio.BoundedSemaphore
                                                                   )
