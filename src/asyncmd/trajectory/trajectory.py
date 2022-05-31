@@ -249,7 +249,7 @@ class Trajectory:
     async def _apply_wrapped_func_local_cache(self, func_id: str, wrapped_func):
         try:
             # see if it is in cache
-            return copy.copy(self._func_values[func_id])
+            return copy.copy(self._func_values_by_id[func_id])
         except KeyError:
             # if not calculate, store and return
             # send function application to seperate process and wait
@@ -281,7 +281,7 @@ class Trajectory:
             return vals
 
     def __getstate__(self):
-        # enable pickling of Trajecory without call to ready_for_pickle
+        # enable pickling of Trajecory
         # this should make it possible to pass it into a ProcessPoolExecutor
         # and lets us calculate TrajectoryFunction values asyncronously
         # NOTE: this removes everything except the filepaths
@@ -439,21 +439,21 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
                              + "supported.")
         if len(self) == 0:
             # these are the first cached CV values for this traj
-            # so we just create the npz file
-            np.savez(self.fname_npz, func_id=vals)
-        else:
-            # already something cached, need to append to the npz file
-            # npz files are just zipped together collections of npy files
-            # so lets make a npy file saev into a BytesIO and then write that
-            # to the end of the npz file
-            bio = io.BytesIO()
-            np.save(bio, vals)
-            with zipfile.ZipFile(file=self.fname_npz,
-                                 mode="a",  # append!
-                                 # uncompressed (but) zip archive member
-                                 compression=zipfile.ZIP_STORED,
-                                 ) as zfile:
-                zfile.writestr(f"{func_id}.npy", data=bio.getvalue())
+            # so we just create the (empty) npz file
+            np.savez(self.fname_npz)
+        # now we can append either way
+        # either already something cached, or freshly created empty file
+        # npz files are just zipped together collections of npy files
+        # so lets make a npy file saev into a BytesIO and then write that
+        # to the end of the npz file
+        bio = io.BytesIO()
+        np.save(bio, vals)
+        with zipfile.ZipFile(file=self.fname_npz,
+                             mode="a",  # append!
+                             # uncompressed (but) zip archive member
+                             compression=zipfile.ZIP_STORED,
+                             ) as zfile:
+            zfile.writestr(f"{func_id}.npy", data=bio.getvalue())
 
         # add func_id to list of func_ids that we know are cached in npz
         self._func_ids.append(func_id)
