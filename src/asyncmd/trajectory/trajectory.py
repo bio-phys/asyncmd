@@ -17,6 +17,7 @@ import os
 import copy
 import typing
 import asyncio
+import hashlib
 import logging
 import zipfile
 import collections
@@ -101,6 +102,21 @@ class Trajectory:
         else:
             raise ValueError(f"structure_file ({structure_file}) must be "
                              + "accessible.")
+        # calculate a hash over the first part of the traj file
+        # (we use it to make sure the cached CV values match the traj)
+        # note that we do not include the structure file on purpose because
+        # that allows for changing .gro <-> .tpr or similar
+        # (which we expect to not change the calculated CV values)
+        with open(self._trajectory_file, "rb") as traj_file:
+            # TODO: how much should we read?
+            data = traj_file.read(5120)  # read the first 5 MB of the file
+        self._traj_hash = int(hashlib.blake2b(data,
+                                              # digest size 8 bytes = 64 bit
+                                              # to make sure the hash fits into
+                                              # the npz as int64 and not object
+                                              digest_size=8).hexdigest(),
+                              base=16,
+                              )
         # properties
         self.nstout = nstout  # use the setter to make basic sanity checks
         self._len = None
@@ -114,6 +130,7 @@ class Trajectory:
         if npz_cache_file:
             self._npz_cache = TrajectoryFunctionValueCacheNPZ(
                                         fname_traj=self.trajectory_file,
+                                        hash_traj=self._traj_hash,
                                                               )
         else:
             self._npz_cache = None
@@ -352,6 +369,7 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
     Drop-in replacement for the dictionary that is used in the trajectories
     before they are saved.
     """
+    _hash_traj_npz_key = "hash_of_traj_start"  # key of hash_traj in npz file
 
     # NOTE: this is written with the assumption that stored trajectories are
     #       immutable (except for adding additional stored function values)
@@ -360,7 +378,14 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
 
     # NOTE: npz appending inspired by: https://stackoverflow.com/a/66618141
 
-    def __init__(self, fname_traj: str) -> None:
+    # NOTE/FIXME: It would be nice to use the MAX_FILES_OPEN semaphore
+    #    but then we need async/await and then we need to go to a 'create'
+    #    classmethod taht is async and required (because __init__ cant be async)
+    #    but since we (have to) open the npz file in the other magic methods
+    #    too it does not really matter (as they can not be async either)?
+    # ...and as we also leave some room for non-semaphored file openings anyway
+
+    def __init__(self, fname_traj: str, hash_traj: int) -> None:
         """
         Initialize a `TrajectoryFunctionValueCacheNPZ`.
 
@@ -368,42 +393,44 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
         ----------
         fname_traj : str
             Absolute filename to the trajectory for which we cache CV values.
+        hash_traj : int
+            Hash over the first part of the trajectory file,
+            used to make sure we cache only for the right trajectory
+            (and not any trajectories with the same filename).
         """
         self.fname_npz = self._get_cache_filename(fname_traj=fname_traj)
+        self._hash_traj = hash_traj
         self._func_ids = []
-        # NOTE/FIXME: It would be nice to use the MAX_FILES_OPEN semaphore
-        # but then we need async/await and then we need to go to the create
-        # classmethod (see below)
-        # but since we (have to) open the npz file in the other magic methods
-        # too it does not really matter?
-        # (as we also leave some room for non-semaphored file openings anyway)
-        if os.path.isfile(self.fname_npz):
-            with np.load(self.fname_npz, allow_pickle=False) as npzfile:
-                for k in npzfile.keys():
-                    self._func_ids.append(str(k))
+        # sort out if we have an associated npz file already
+        # and if it is from/for the "right" trajectory file
+        self._ensure_consistent_npz()
 
-    #@classmethod
-    #async def create(cls, fname_traj: str) -> TrajectoryFunctionValueCacheNPZ:
-    #    """
-    #    Create a `TrajectoryFunctionValueCacheNPZ` setting up all awaitables.
-
-    #    Parameters
-    #    ----------
-    #    fname_traj : str
-    #        Absolute filename to the trajectory for which we cache CV values.
-
-    #    Returns
-    #    -------
-    #    TrajectoryFunctionValueCacheNPZ
-    #        The initialized `TrajectoryFunctionValueCache`.
-    #    """
-    #    self = cls(fname_traj=fname_traj)
-    #    if os.path.isfile(self.fname_npz):
-    #        async with _SEMAPHORES["MAX_FILES_OPEN"]:
-    #            with np.load(self.fname_npz, allow_pickle=False) as npzfile:
-    #                for k in npzfile.keys():
-    #                    self._func_ids.append(str(k))
-    #    return self
+    def _ensure_consistent_npz(self):
+        # next line makes sure we only remember func_ids from the current npz
+        self._func_ids = []
+        if not os.path.isfile(self.fname_npz):
+            # no npz so nothing to do except making sure we have no func_ids
+            return
+        existing_npz_matches = False
+        with np.load(self.fname_npz, allow_pickle=False) as npzfile:
+            try:
+                saved_hash_traj = npzfile[self._hash_traj_npz_key][0]
+            except KeyError:
+                # we probably tripped over an old formatted npz
+                # so we will just rewrite it completely with hash
+                pass
+            else:
+                # old hash found, lets compare the two hashes
+                existing_npz_matches = (self._hash_traj == saved_hash_traj)
+                if existing_npz_matches:
+                    # if they do populate self with the func_ids we have
+                    # cached values for
+                    for k in npzfile.keys():
+                        self._func_ids.append(str(k))
+        # now if the old npz did not match we should remove it
+        # then we will rewrite it with the first cached CV values
+        if not existing_npz_matches:
+            os.unlink(self.fname_npz)
 
     def _get_cache_filename(self, fname_traj: str) -> str:
         """
@@ -448,22 +475,28 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
             # these are the first cached CV values for this traj
             # so we just create the (empty) npz file
             np.savez(self.fname_npz)
+            # and write the trajectory hash
+            self._append_data_to_npz(name=self._hash_traj_npz_key,
+                                     value=np.array([self._hash_traj]),
+                                     )
         # now we can append either way
         # either already something cached, or freshly created empty file
+        self._append_data_to_npz(name=func_id, value=vals)
+        # add func_id to list of func_ids that we know are cached in npz
+        self._func_ids.append(func_id)
+
+    def _append_data_to_npz(self, name: str, value: np.ndarray) -> None:
         # npz files are just zipped together collections of npy files
-        # so lets make a npy file saev into a BytesIO and then write that
+        # so we just make a npy file saved into a BytesIO and then write that
         # to the end of the npz file
         bio = io.BytesIO()
-        np.save(bio, vals)
+        np.save(bio, value)
         with zipfile.ZipFile(file=self.fname_npz,
                              mode="a",  # append!
                              # uncompressed (but) zip archive member
                              compression=zipfile.ZIP_STORED,
                              ) as zfile:
-            zfile.writestr(f"{func_id}.npy", data=bio.getvalue())
-
-        # add func_id to list of func_ids that we know are cached in npz
-        self._func_ids.append(func_id)
+            zfile.writestr(f"{name}.npy", data=bio.getvalue())
 
 
 class TrajectoryFunctionValueCacheH5PY(collections.abc.Mapping):
