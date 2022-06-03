@@ -22,7 +22,7 @@ import typing
 import logging
 
 from .tools import ensure_executable_available
-from . import _SEMAPHORES
+from .config import _SEMAPHORES
 
 
 logger = logging.getLogger(__name__)

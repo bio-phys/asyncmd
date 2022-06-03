@@ -19,6 +19,7 @@ import resource
 # TODO: is the the best place for our semaphore(s)?
 
 
+_GLOBALS = {}
 _SEMAPHORES = {}
 
 
@@ -74,3 +75,24 @@ _SEMAPHORES["SLURM_MAX_JOB"] = None
 def set_max_slurm_jobs(num):
     global _SEMAPHORES
     _SEMAPHORES["SLURM_MAX_JOB"] = asyncio.BoundedSemaphore(num)
+
+
+def register_h5py_cache(h5py_group):
+    """
+    Register a h5py file or group for CV value caching.
+
+    Parameters
+    ----------
+    h5py_group : h5py.Group or h5py.File
+        The file or group to use for caching.
+    """
+    # Note that h5py.File is just a slightly special h5py.Group
+    # so you can pass either
+    # asyncmd will use either the file or the group as root of its own
+    # stored values
+    # You will have e.g. h5py_group["asyncmd/TrajectoryFunctionValueCache"]
+    # always pointing to the cached values and if h5py_group is the top-level
+    # group (i.e. the file) you also have
+    # file["/asyncmd/TrajectoryFunctionValueCache"] == h5py_group["asyncmd/TrajectoryFunctionValueCache"]
+    global _GLOBALS
+    _GLOBALS["H5PY_CACHE"] = h5py_group

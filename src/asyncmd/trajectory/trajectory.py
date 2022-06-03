@@ -25,6 +25,9 @@ import numpy as np
 import MDAnalysis as mda
 
 
+from ..config import _GLOBALS
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -297,6 +300,32 @@ class Trajectory:
             self._h5py_cache.append(func_id, vals)
             return vals
 
+    def _cache_to_npz(self, cache: collections.abc.Mapping[str, np.ndarray]):
+        self._npz_cache = TrajectoryFunctionValueCacheNPZ(
+                                        fname_traj=self.trajectory_file,
+                                        hash_traj=self._traj_hash,
+                                        )
+        for func_id, values in cache.items():
+            if func_id in self._npz_cache:
+                continue  # dont try to add what is already in there
+            self._npz_cache.append(func_id=func_id, vals=values)
+
+    def _cache_to_h5py(self, cache: collections.abc.Mapping[str, np.ndarray]):
+        self._h5py_cache = TrajectoryFunctionValueCacheH5PY(
+                                                hash_traj=self._traj_hash,
+                                                            )
+        for func_id, values in cache.items():
+            if func_id in self._h5py_cache:
+                continue  # dont add what we already have
+            self._h5py_cache.append(func_id=func_id, vals=values)
+
+    def _cache_to_local(self, cache: collections.abc.Mapping[str, np.ndarray]):
+        # local cache always exists, so dont create it
+        for func_id, values in cache.items():
+            if func_id in self._func_values_by_id:
+                continue  # also here: dont add waht we already know about
+            self._func_values_by_id[func_id] = values
+
     # TODO: test pickling!
     def __getstate__(self):
         # enable pickling of Trajecory
@@ -306,11 +335,12 @@ class Trajectory:
         state = self.__dict__.copy()
         state["_h5py_cache"] = None
         state["_npz_cache"] = None
-        # TODO: handle cases where npz and or h5py caches are present?!
+        # TODO: handle cases where npz and/or h5py caches are present?!
         if (self._npz_cache is None) and (self._h5py_cache is None):
             # this saves stuff to _npz if only local cache present!
             tmp_cache = TrajectoryFunctionValueCacheNPZ(
                                         fname_traj=self.trajectory_file,
+                                        hash_traj=self._traj_hash,
                                                         )
             for func_id, vals in self._func_values_by_id.items():
                 tmp_cache.append(func_id=func_id, vals=vals)
@@ -320,45 +350,6 @@ class Trajectory:
                                                     asyncio.BoundedSemaphore
                                                                   )
         return state
-
-    def object_for_pickle(self, group, overwrite):
-        # TODO/NOTE: we ignore overwrite and assume the group is always empty
-        #            (or at least matches this tra and we can add values?)
-        # currently overwrite will always be false and we can just ignore it?!
-        # and then we can/do also expect group to be empty...?
-        state = self.__dict__.copy()
-        if self._h5py_cache is not None:
-            # we already have a file?
-            # lets try to link the two groups?
-            group = self._h5py_cache.root_grp
-            # or should we copy? how to make sure we update both caches?
-            # do we even want that? I (hejung) think a link is what you would
-            # expect, i.e. both stored copies of the traj will have all cached
-            # values available
-            #group.copy(self._h5py_cache.root_grp, group)
-            state["_h5py_cache"] = None
-        else:
-            # set h5py group such that we use the cache from now on
-            self._h5py_cache = TrajectoryFunctionValueCacheH5PY(group)
-            for func_id, vals in self._func_values_by_id.items():
-                self._h5py_cache.append(func_id, vals)
-            # clear the 'local' cache and empty state, such that we initialize
-            # to empty, next time we will get it all from file directly
-            self._func_values_by_id = state["_func_values_by_id"] = {}
-        # make the return object
-        ret_obj = self.__class__.__new__(self.__class__)
-        ret_obj.__dict__.update(state)
-        return ret_obj
-
-    def complete_from_h5py_group(self, group):
-        # NOTE: Trajectories are immutable once stored,
-        # EXCEPT: adding more cached function values for other funcs
-        # so we keep around a ref to the h5py group we load from and
-        # can then add the stuff in there
-        # (loading is as easy as adding the file-cache because we store
-        #  everything that was in 'local' cache in the file when we save)
-        self._h5py_cache = TrajectoryFunctionValueCacheH5PY(group)
-        return self
 
 
 # TODO: update docstrings when we know how we do it exactly!
@@ -512,13 +503,25 @@ class TrajectoryFunctionValueCacheH5PY(collections.abc.Mapping):
     #       but we assume that the actual underlying trajectory stays the same,
     #       i.e. it is not extended after first storing it
 
-    def __init__(self, root_grp):
-        self.root_grp = root_grp
+    def __init__(self, hash_traj: str):
+        self._hash_traj = hash_traj
         self._h5py_paths = {"ids": "FunctionIDs",
                             "vals": "FunctionValues"
                             }
-        self._ids_grp = self.root_grp.require_group(self._h5py_paths["ids"])
-        self._vals_grp = self.root_grp.require_group(self._h5py_paths["vals"])
+        try:
+            h5py_cache = _GLOBALS["H5PY_CACHE"]
+        except KeyError:
+            raise RuntimeError(
+                "No h5py cache file registered yet. "
+                + "Try calling ``asyncmd.config.register_h5py_cache_file()``"
+                + " with the appropriate arguments first")
+        self._root_grp = h5py_cache.require_group(
+                                            "asyncmd/"
+                                            + "TrajectoryFunctionValueCache/"
+                                            + f"{self._hash_traj}"
+                                                  )
+        self._ids_grp = self._root_grp.require_group(self._h5py_paths["ids"])
+        self._vals_grp = self._root_grp.require_group(self._h5py_paths["vals"])
 
     def __len__(self):
         return len(self._ids_grp.keys())
