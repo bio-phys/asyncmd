@@ -52,7 +52,7 @@ class Trajectory:
 
     def __init__(self, trajectory_file: str, structure_file: str,
                  nstout: typing.Optional[int] = None,
-                 npz_cache_file: bool = True,
+                 cache_type: typing.Optional[str] = None,
                  **kwargs):
         """
         Initialize a :class:`Trajectory`.
@@ -66,11 +66,12 @@ class Trajectory:
         nstout : int or None, optional
             The output frequency used when creating the trajectory,
             by default None
-        npz_cache_file : bool
-            Whether we should write the cached CV values to a (hidden) numpy
-            npz archive file, by default True.
-            Note: If ``False`` and no h5py cache is attached the values will be
-            cached in memory.
+        cache_type : str or None, optional
+            The cache type for the CV values cached for this trajectory,
+            must be one of 'h5py', 'npz' or 'memory'.
+            If None we will use 'h5py' if a h5py cache has been registered and
+            if not fallback to 'npz'.
+            See also the ``asyncmd.config.register_h5py_cache()`` function.
 
         Raises
         ------
@@ -130,18 +131,114 @@ class Trajectory:
         self._last_time = None
         # stuff for caching of functions applied to this traj
         self._func_values_by_id = {}
-        if npz_cache_file:
-            self._npz_cache = TrajectoryFunctionValueCacheNPZ(
-                                        fname_traj=self.trajectory_file,
-                                        hash_traj=self._traj_hash,
-                                                              )
-        else:
-            self._npz_cache = None
-        # TODO: how to handle h5py cache?!
+        self._npz_cache = None
         self._h5py_cache = None
+        self._cache_type = None
+        # use our property logic for checking the value
+        self.cache_type = cache_type
+        # Locking mechanism such that only one application of a specific
+        # CV func can run at any given time on this trajectory
         self._semaphores_by_func_id = collections.defaultdict(
                                                     asyncio.BoundedSemaphore
                                                               )
+
+    @property
+    def cache_type(self):
+        return copy.copy(self._cache_type)
+
+    @cache_type.setter
+    def cache_type(self, value: typing.Optional[str]):
+        """
+        Set the cache type.
+
+        Parameters
+        ----------
+        value : str or None
+            Either a string indicating the type or None to choose the preferred
+            cache type from the available ones.
+            If a string it must be one of 'h5py', 'npz' or 'memory'.
+
+        Raises
+        ------
+        ValueError
+            Raised if value is not one of the available cache types.
+        """
+        if value is None:
+            # find preferred cache type that is available
+            try:
+                _ = _GLOBALS["H5PY_CACHE"]
+            except KeyError:
+                # no h5py_cache set so we go to numpy
+                value = "npz"
+            else:
+                value = "h5py"
+        value = value.lower()
+        allowed_values = ["h5py", "npz", "memory"]
+        if value not in allowed_values:
+            raise ValueError("Given cache type must be `None` or one of "
+                             + f"{allowed_values}. (Was: {value})")
+        self._cache_type = value
+        self._setup_cache()
+
+    def _setup_cache(self) -> None:
+        # set up the cache indicated by self.cache_type and all others to None
+        # also makes sure that all previously cached values are transfered
+        # to the newly setup cache
+        # NOTE: we setup an npz cache to see if there are any saved values
+        #       that we would want to add to the newly setup cache
+        #       We do this because upon pickling we save everything to npz
+        # Note that we can just set self._npz to this cache because it is
+        # stateless (in the sense that if it existed it be exactly the same)
+        self._npz_cache = TrajectoryFunctionValueCacheNPZ(
+                                        fname_traj=self.trajectory_file,
+                                        hash_traj=self._traj_hash,
+                                                          )
+        if self._cache_type == "memory":
+            if self._h5py_cache is not None:
+                self._cache_to_local(self._h5py_cache)
+                self._h5py_cache = None
+            self._cache_to_local(self._npz_cache)
+            self._npz_cache = None
+        if self._cache_type == "h5py":
+            try:
+                h5py_cache = _GLOBALS["H5PY_CACHE"]
+            except KeyError:
+                raise ValueError(
+                    "No h5py cache file registered yet. Try calling "
+                    + "``asyncmd.config.register_h5py_cache_file()``"
+                    + " with the appropriate arguments first")
+            if self._h5py_cache is None:
+                # dont have one yet so setup the cache
+                self._h5py_cache = TrajectoryFunctionValueCacheH5PY(
+                                                h5py_cache=h5py_cache,
+                                                hash_traj=self._traj_hash,
+                                                                    )
+            else:
+                # we already have a h5py cache...
+                if self._h5py_cache.h5py_cache is h5py_cache:
+                    # and it is in the same file/group location
+                    # so we do nothing but making sure that all values from
+                    # other caches are transfered
+                    pass
+                else:
+                    # lets copy the stuff from the old to the new h5py cache
+                    old_h5py_cache = self._h5py_cache
+                    self._h5py_cache = TrajectoryFunctionValueCacheH5PY(
+                                                h5py_cache=h5py_cache,
+                                                hash_traj=self._traj_hash,
+                                                                    )
+                    self._cache_to_h5py(old_h5py_cache)
+            # transfer all values from otehr cache types and empty them
+            self._cache_to_h5py(self._func_values_by_id)
+            self._func_values_by_id = {}
+            self._cache_to_h5py(self._npz_cache)
+            self._npz_cache = None
+        if self._cache_type == "npz":
+            if self._h5py_cache is not None:
+                self._cache_to_npz(self._h5py_cache)
+                self._h5py_cache = None
+            self._cache_to_npz(self._func_values_by_id)
+            self._func_values_by_id = {}
 
     def __len__(self) -> int:
         """
@@ -300,56 +397,60 @@ class Trajectory:
             self._h5py_cache.append(func_id, vals)
             return vals
 
+    # NOTE: all these _cache_to funcs expect the cache to exist!
     def _cache_to_npz(self, cache: collections.abc.Mapping[str, np.ndarray]):
-        self._npz_cache = TrajectoryFunctionValueCacheNPZ(
-                                        fname_traj=self.trajectory_file,
-                                        hash_traj=self._traj_hash,
-                                        )
         for func_id, values in cache.items():
             if func_id in self._npz_cache:
                 continue  # dont try to add what is already in there
             self._npz_cache.append(func_id=func_id, vals=values)
 
     def _cache_to_h5py(self, cache: collections.abc.Mapping[str, np.ndarray]):
-        self._h5py_cache = TrajectoryFunctionValueCacheH5PY(
-                                                hash_traj=self._traj_hash,
-                                                            )
         for func_id, values in cache.items():
             if func_id in self._h5py_cache:
                 continue  # dont add what we already have
             self._h5py_cache.append(func_id=func_id, vals=values)
 
     def _cache_to_local(self, cache: collections.abc.Mapping[str, np.ndarray]):
-        # local cache always exists, so dont create it
         for func_id, values in cache.items():
             if func_id in self._func_values_by_id:
                 continue  # also here: dont add waht we already know about
             self._func_values_by_id[func_id] = values
 
-    # TODO: test pickling!
+    # TODO: test pickling/ unpickling!
     def __getstate__(self):
         # enable pickling of Trajecory
         # this should make it possible to pass it into a ProcessPoolExecutor
         # and lets us calculate TrajectoryFunction values asyncronously
-        # NOTE: this removes everything except the filepaths
         state = self.__dict__.copy()
-        state["_h5py_cache"] = None
-        state["_npz_cache"] = None
-        # TODO: handle cases where npz and/or h5py caches are present?!
-        if (self._npz_cache is None) and (self._h5py_cache is None):
-            # this saves stuff to _npz if only local cache present!
-            tmp_cache = TrajectoryFunctionValueCacheNPZ(
+        # NOTE: we always save to npz here and then we check for npz always
+        #       when iniatizalizing a `new` trajectory and add all valuse to
+        #       the then preferred cache
+        if self._npz_cache is None:
+            self._npz_cache = TrajectoryFunctionValueCacheNPZ(
                                         fname_traj=self.trajectory_file,
                                         hash_traj=self._traj_hash,
-                                                        )
-            for func_id, vals in self._func_values_by_id.items():
-                tmp_cache.append(func_id=func_id, vals=vals)
-        # TODO: (same as above) only empty this dict if we saved content
+                                                             )
+            self._cache_to_npz(self._func_values_by_id)
+            if self._h5py_cache is not None:
+                self._cache_to_npz(self._h5py_cache)
+        state["_h5py_cache"] = None
+        state["_npz_cache"] = None
         state["_func_values_by_id"] = {}
         state["_semaphores_by_func_id"] = collections.defaultdict(
                                                     asyncio.BoundedSemaphore
                                                                   )
         return state
+
+    def __setstate__(self, d: dict):
+        self.__dict__ = d
+        if self._cache_type == "h5py":
+            # make sure h5py cache is set before trying to unpickle with it
+            try:
+                _ = _GLOBALS["H5PY_CACHE"]
+            except KeyError:
+                self._cache_type = "npz"
+        # setup the cache
+        self._setup_cache()
 
 
 # TODO: update docstrings when we know how we do it exactly!
@@ -371,7 +472,8 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
 
     # NOTE/FIXME: It would be nice to use the MAX_FILES_OPEN semaphore
     #    but then we need async/await and then we need to go to a 'create'
-    #    classmethod taht is async and required (because __init__ cant be async)
+    #    classmethod that is async and required for initialization
+    #    (because __init__ cant be async)
     #    but since we (have to) open the npz file in the other magic methods
     #    too it does not really matter (as they can not be async either)?
     # ...and as we also leave some room for non-semaphored file openings anyway
@@ -503,18 +605,12 @@ class TrajectoryFunctionValueCacheH5PY(collections.abc.Mapping):
     #       but we assume that the actual underlying trajectory stays the same,
     #       i.e. it is not extended after first storing it
 
-    def __init__(self, hash_traj: str):
+    def __init__(self, h5py_cache, hash_traj: str):
+        self.h5py_cache = h5py_cache
         self._hash_traj = hash_traj
         self._h5py_paths = {"ids": "FunctionIDs",
                             "vals": "FunctionValues"
                             }
-        try:
-            h5py_cache = _GLOBALS["H5PY_CACHE"]
-        except KeyError:
-            raise RuntimeError(
-                "No h5py cache file registered yet. "
-                + "Try calling ``asyncmd.config.register_h5py_cache_file()``"
-                + " with the appropriate arguments first")
         self._root_grp = h5py_cache.require_group(
                                             "asyncmd/"
                                             + "TrajectoryFunctionValueCache/"
