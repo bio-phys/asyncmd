@@ -28,10 +28,20 @@ def set_max_process(num=None, max_num=None):
     """
     Set the maximum number of concurrent python processes.
 
-    If num is None, default to os.cpu_count().
+    If num is None, default to os.cpu_count() / 4.
+
+    Parameters
+    ----------
+    num : int, optional
+        Number of processes, if None will default to 1/4 of the CPU count.
+    max_num : int, optional
+        If given the number of processes can not exceed this number independent
+        of the value of CPU count. Useful mostly for code that runs on multiple
+        different machines (with different CPU counts) but still wants to avoid
+        spawning hundreds of processes.
     """
-    # TODO: I think we should use less as default, maybe 0.25*cpu_count()?
-    # and limit to 30-40?, i.e never higher even if we have 1111 cores?
+    # NOTE: I think we should use a conservative default, e.g. 0.25*cpu_count()
+    # TODO: limit to 30-40?, i.e never higher even if we have 1111 cores?
     global _SEMAPHORES
     if num is None:
         logical_cpu_count = os.cpu_count()
@@ -72,7 +82,16 @@ _SEMAPHORES["SLURM_CLUSTER_MEDIATOR"] = asyncio.BoundedSemaphore(1)
 _SEMAPHORES["SLURM_MAX_JOB"] = None
 
 
-def set_max_slurm_jobs(num):
+def set_max_slurm_jobs(num: int):
+    """
+    Set the maximum number of simultaneously submitted SLURM jobs.
+
+    Parameters
+    ----------
+    num : int
+        The maximum number of simulteneous SLURM jobs for this invocation of
+        python/asyncmd.
+    """
     global _SEMAPHORES
     _SEMAPHORES["SLURM_MAX_JOB"] = asyncio.BoundedSemaphore(num)
 

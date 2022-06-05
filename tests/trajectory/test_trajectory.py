@@ -81,7 +81,7 @@ class Test_trajectory:
     @pytest.mark.parametrize(["traj_file", "struct_file", "truth"],
                              [("tests/test_data/trajectory/ala_traj.trr",
                                "tests/test_data/trajectory/ala.tpr",
-                               {"__len__" : 18,
+                               {"__len__": 18,
                                 }
                                ),
                               ("tests/test_data/trajectory/ala_traj.xtc",
