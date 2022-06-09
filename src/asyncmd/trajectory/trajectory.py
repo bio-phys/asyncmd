@@ -113,6 +113,7 @@ class Trajectory:
         # (which we expect to not change the calculated CV values)
         with open(self._trajectory_file, "rb") as traj_file:
             # TODO: how much should we read?
+            #       (I [hejung] think the first 5 MB are enough for sure)
             data = traj_file.read(5120)  # read the first 5 MB of the file
         self._traj_hash = int(hashlib.blake2b(data,
                                               # digest size 8 bytes = 64 bit
@@ -134,6 +135,9 @@ class Trajectory:
         self._npz_cache = None
         self._h5py_cache = None
         self._cache_type = None
+        # remember if we use the global default value,
+        # if yes we use the (possibly changed) global default when unpickling
+        self._using_default_cache_type = True
         # use our property logic for checking the value
         self.cache_type = cache_type
         # Locking mechanism such that only one application of a specific
@@ -164,6 +168,7 @@ class Trajectory:
             Raised if value is not one of the available cache types.
         """
         if value is None:
+            use_default_cache_type = True
             # find preferred cache type that is available
             try:
                 value = _GLOBALS["TRAJECTORY_FUNCTION_CACHE_TYPE"]
@@ -171,12 +176,15 @@ class Trajectory:
                 # no default cache type set
                 # default to numpy npz
                 value = "npz"
+        else:
+            use_default_cache_type = False
         value = value.lower()
         allowed_values = ["h5py", "npz", "memory"]
         if value not in allowed_values:
             raise ValueError("Given cache type must be `None` or one of "
                              + f"{allowed_values}. Was: {value}.")
         self._cache_type = value
+        self._using_default_cache_type = use_default_cache_type
         self._setup_cache()
 
     def _setup_cache(self) -> None:
@@ -260,6 +268,37 @@ class Trajectory:
         return (f"Trajectory(trajectory_file={self.trajectory_file},"
                 + f" structure_file={self.structure_file})"
                 )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Trajectory):
+            # if its not a trajectory it cant be equal
+            return False
+        if self._traj_hash != other._traj_hash:
+            # if it has a different hash it cant be equal
+            return False
+        if len(self) != len(other):
+            # since we only hash the beginning of the file they might
+            # be the same start but different number of frames/end
+            # so we check if they have the same length
+            return False
+        if self.trajectory_file != other.trajectory_file:
+            # they might be the same file but at different locations in the FS
+            # then they are not equal (at least for out purposes)
+            return False
+        # NOTE: we allow the structure file to change
+        #       this way we consider e.g. the same traj with a gro and with a
+        #       tpr (or whatever) as structure files as equal
+        #       The rationale is that MDAnalysis will ocmplain if the struct
+        #       and the traj dont match and we e.g. reuse cached values without
+        #       checking the structure file anyway
+        #if self.structure_file != other.structure_file:
+        #    return False
+
+        # if we got until here the two trajs are equal
+        return True
+
+    def __ne__(self, other: object) -> bool:
+        return not self.__eq__(other=other)
 
     @property
     def structure_file(self) -> str:
@@ -426,7 +465,7 @@ class Trajectory:
         # and lets us calculate TrajectoryFunction values asyncronously
         state = self.__dict__.copy()
         # NOTE: we always save to npz here and then we check for npz always
-        #       when iniatizalizing a `new` trajectory and add all valuse to
+        #       when initializing a `new` trajectory and add all values to
         #       the then preferred cache
         if self._npz_cache is None:
             self._npz_cache = TrajectoryFunctionValueCacheNPZ(
@@ -446,13 +485,25 @@ class Trajectory:
 
     def __setstate__(self, d: dict):
         self.__dict__ = d
+        # sort out which cache we were using (and which we will use now)
+        if self._using_default_cache_type:
+            # if we were using the global default when pickling use it now too
+            self._cache_type = None
         if self._cache_type == "h5py":
             # make sure h5py cache is set before trying to unpickle with it
             try:
                 _ = _GLOBALS["H5PY_CACHE"]
             except KeyError:
-                self._cache_type = "npz"
-        # setup the cache
+                # this will (probably) fallback to npz but I (hejung) think it
+                # is nice if we use the possibly set global default?
+                logger.warning(f"Trying to unpickle {self} with cache_type "
+                               + "'h5py' not possible without a registered "
+                               + "cache. Falling back to global default type."
+                               + "See 'asyncmd.config.register_h5py_cache' and"
+                               + " 'asyncmd.config.set_default_cache_type'."
+                               )
+                self._cache_type = None
+        # and setup the cache
         self._setup_cache()
 
 

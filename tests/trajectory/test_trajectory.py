@@ -101,7 +101,7 @@ class Test_trajectory:
                                ),
                               ]
                              )
-    def test_magic_methods(self, traj_file, struct_file, truth):
+    def test_unary_magic_methods(self, traj_file, struct_file, truth):
         traj = Trajectory(trajectory_file=traj_file,
                           structure_file=struct_file,
                           )
@@ -109,10 +109,68 @@ class Test_trajectory:
             mm = getattr(traj, mm_name)
             assert mm() == truth_value
 
+    @pytest.mark.parametrize(["traj_files", "struct_files", "truth"],
+                             [# two times the same traj with the same struct file
+                              (("tests/test_data/trajectory/ala_traj.trr",
+                                "tests/test_data/trajectory/ala_traj.trr",
+                                ),
+                               ("tests/test_data/trajectory/ala.tpr",
+                                "tests/test_data/trajectory/ala.tpr",
+                                ),
+                               {"__eq__": True,
+                                "__ne__": False,
+                                }
+                               ),
+                              # two times the same traj with the different struct files
+                              (("tests/test_data/trajectory/ala_traj.trr",
+                                "tests/test_data/trajectory/ala_traj.trr",
+                                ),
+                               ("tests/test_data/trajectory/ala.tpr",
+                                "tests/test_data/trajectory/ala.gro",
+                                ),
+                               {"__eq__": True,
+                                "__ne__": False,
+                                }
+                               ),
+                              # different trajs with the same struct file ;)
+                              (("tests/test_data/trajectory/ala_traj.trr",
+                                "tests/test_data/trajectory/ala_traj.xtc",
+                                ),
+                               ("tests/test_data/trajectory/ala.tpr",
+                                "tests/test_data/trajectory/ala.tpr",
+                                ),
+                               {"__eq__": False,
+                                "__ne__": True,
+                                }
+                               ),
+                              # different trajs with different struct files
+                              (("tests/test_data/trajectory/ala_traj.trr",
+                                "tests/test_data/trajectory/ala_traj.xtc",
+                                ),
+                               ("tests/test_data/trajectory/ala.tpr",
+                                "tests/test_data/trajectory/ala.gro",
+                                ),
+                               {"__eq__": False,
+                                "__ne__": True,
+                                }
+                               ),
+                              ]
+                             )
+    def test_binary_magic_methods(self, traj_files, struct_files, truth):
+        traj1 = Trajectory(trajectory_file=traj_files[0],
+                           structure_file=struct_files[0],
+                           )
+        traj2 = Trajectory(trajectory_file=traj_files[1],
+                           structure_file=struct_files[1],
+                           )
+        for mm_name, truth_value in truth.items():
+            mm = getattr(traj1, mm_name)
+            assert mm(traj2) == truth_value
+
     @pytest.mark.skip("TODO")
     def test_npz_cache(self):
         pass
 
     @pytest.mark.skip("TODO")
-    def test_pickle(self):
+    def test_pickle(self, tmp_path):
         pass
