@@ -166,17 +166,16 @@ class Trajectory:
         if value is None:
             # find preferred cache type that is available
             try:
-                _ = _GLOBALS["H5PY_CACHE"]
+                value = _GLOBALS["TRAJECTORY_FUNCTION_CACHE_TYPE"]
             except KeyError:
-                # no h5py_cache set so we go to numpy
+                # no default cache type set
+                # default to numpy npz
                 value = "npz"
-            else:
-                value = "h5py"
         value = value.lower()
         allowed_values = ["h5py", "npz", "memory"]
         if value not in allowed_values:
             raise ValueError("Given cache type must be `None` or one of "
-                             + f"{allowed_values}. (Was: {value})")
+                             + f"{allowed_values}. Was: {value}.")
         self._cache_type = value
         self._setup_cache()
 
@@ -342,10 +341,14 @@ class Trajectory:
     async def _apply_wrapped_func(self, func_id, wrapped_func):
         async with self._semaphores_by_func_id[func_id]:
             # sort out which cache we use
-            # TODO: do we want to give the h5py cache preference?
-            #       or maybe change the order?
-            #       or use h5py cache only if a h5py storage is been registered
-            #        with asyncmd somewhere (e.g. in our constants/semaphores?)
+            # NOTE: only one cache should ever be not None, so order should not
+            #       matter here
+            #       anyway I (hejung) think this order is even what we want:
+            #       1.) use h5py cache if registered
+            #       2.) use npz cache (the default since h5py is not registered
+            #                          if not set by the user)
+            #       3.) use memory/local cache (only if set on traj creation
+            #                                   or if set as default cache)
             if self._h5py_cache is not None:
                 return await self._apply_wrapped_func_h5py_cache(
                                                     func_id=func_id,

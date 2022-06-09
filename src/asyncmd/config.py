@@ -96,22 +96,53 @@ def set_max_slurm_jobs(num: int):
     _SEMAPHORES["SLURM_MAX_JOB"] = asyncio.BoundedSemaphore(num)
 
 
+def set_default_trajectory_cache_type(cache_type: str):
+    """
+    Set the default cache type for TrajectoryFunctionValues.
+
+    Note that this can be overwritten on a per trajectory basis by passing
+    ``cache_type`` to ``Trajectory.__init__``.
+
+    Parameters
+    ----------
+    cache_type : str
+        One of "h5py", "npz", "memory".
+
+    Raises
+    ------
+    ValueError
+        Raised if ``cache_type`` is not one of the allowed values.
+    """
+    global _GLOBALS
+    allowed_values = ["h5py", "npz", "memory"]
+    cache_type = cache_type.lower()
+    if cache_type not in allowed_values:
+        raise ValueError(f"Given cache type must be one of {allowed_values}."
+                         + f" Was: {cache_type}.")
+    _GLOBALS["TRAJECTORY_FUNCTION_CACHE_TYPE"] = cache_type
+
+
 def register_h5py_cache(h5py_group):
     """
     Register a h5py file or group for CV value caching.
+
+    Note that this also sets the default cache type to "h5py", i.e. it calls
+    :function:`set_default_trajectory_cache_type` with ``cache_type="h5py"``.
+
+    Note that a ``h5py.File`` is just a slightly special ``h5py.Group``, so you
+    can pass either. :py:module:`asyncmd` will use euther the file or the group
+    as the root of its own stored values.
+    E.g. you will have ``h5py_group["asyncmd/TrajectoryFunctionValueCache"]``
+    always pointing to the cached trajectory values and if ``h5py_group`` is
+    the top-level group (i.e. the file) you also have
+    ``(file["/asyncmd/TrajectoryFunctionValueCache"] ==
+        h5py_group["asyncmd/TrajectoryFunctionValueCache"])``.
 
     Parameters
     ----------
     h5py_group : h5py.Group or h5py.File
         The file or group to use for caching.
     """
-    # Note that h5py.File is just a slightly special h5py.Group
-    # so you can pass either
-    # asyncmd will use either the file or the group as root of its own
-    # stored values
-    # You will have e.g. h5py_group["asyncmd/TrajectoryFunctionValueCache"]
-    # always pointing to the cached values and if h5py_group is the top-level
-    # group (i.e. the file) you also have
-    # file["/asyncmd/TrajectoryFunctionValueCache"] == h5py_group["asyncmd/TrajectoryFunctionValueCache"]
     global _GLOBALS
+    set_default_trajectory_cache_type(cache_type="h5py")
     _GLOBALS["H5PY_CACHE"] = h5py_group
