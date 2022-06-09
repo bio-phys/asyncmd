@@ -79,14 +79,14 @@ pip install -e .\[test\]
 And then run the tests (against the installed version) as
 
 ```bash
-pytest -v asyncmd
+pytest -v
 ```
 
 or if you want a nice html coverage report and have [pytest-cov] installed (see
  e.g. the dev install) you can run the tests as
 
 ```bash
-pytest --cov=asyncmd --cov-report=html -v
+pytest --cov-report=html -v
 ```
 
 ## Developers
