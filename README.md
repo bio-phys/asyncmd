@@ -82,6 +82,13 @@ And then run the tests (against the installed version) as
 pytest -v asyncmd
 ```
 
+or if you want a nice html coverage report and have [pytest-cov] installed (see
+ e.g. the dev install) you can run the tests as
+
+```bash
+pytest --cov=asyncmd --cov-report=html -v
+```
+
 ## Developers
 
 For the developer install I recommend:
