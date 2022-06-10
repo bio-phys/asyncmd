@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import pytest
+import pickle
 import numpy as np
 
 
@@ -171,6 +172,23 @@ class Test_trajectory:
     def test_npz_cache(self):
         pass
 
-    @pytest.mark.skip("TODO")
-    def test_pickle(self, tmp_path):
-        pass
+    @pytest.mark.parametrize(["traj_file", "struct_file"],
+                             [("tests/test_data/trajectory/ala_traj.trr",
+                               "tests/test_data/trajectory/ala.tpr",
+                               ),
+                              ]
+                             )
+    def test_pickle(self, tmp_path, traj_file, struct_file):
+        traj = Trajectory(trajectory_file=traj_file,
+                          structure_file=struct_file,
+                          )
+        fname = tmp_path / "pickle_test.pckl"
+        with open(file=fname, mode="wb") as pfile:
+            pickle.dump(traj, pfile)
+        # now open the file and loadit again
+        with open(file=fname, mode="rb") as pfile:
+            loaded_traj = pickle.load(pfile)
+        # now compare the two
+        # equality should at least be True
+        assert traj == loaded_traj
+        # TODO: check that the cached CV values are the same?

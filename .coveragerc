@@ -8,7 +8,6 @@ branch = True
 #plugins = Cython.Coverage
 source =
     asyncmd
-    tests
 
 [report]
 exclude_lines =

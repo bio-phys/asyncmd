@@ -293,6 +293,8 @@ class Trajectory:
         #       checking the structure file anyway
         #if self.structure_file != other.structure_file:
         #    return False
+        # TODO: check for cached CV values? I (hejung) think it does not really
+        #       make sense...
 
         # if we got until here the two trajs are equal
         return True
