@@ -509,13 +509,11 @@ class Trajectory:
         self._setup_cache()
 
 
-# TODO: update docstrings when we know how we do it exactly!
 class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
     """
-    Interface for caching function values in a given numpy npz file.
+    Interface for caching trajectory function values in a numpy npz file.
 
-    Drop-in replacement for the dictionary that is used in the trajectories
-    before they are saved.
+    Drop-in replacement for the dictionary that is used for in-memory caching.
     """
     _hash_traj_npz_key = "hash_of_traj_start"  # key of hash_traj in npz file
 
@@ -575,7 +573,8 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
                     # if they do populate self with the func_ids we have
                     # cached values for
                     for k in npzfile.keys():
-                        self._func_ids.append(str(k))
+                        if k != self._hash_traj_npz_key:
+                            self._func_ids.append(str(k))
         # now if the old npz did not match we should remove it
         # then we will rewrite it with the first cached CV values
         if not existing_npz_matches:
@@ -650,10 +649,9 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
 
 class TrajectoryFunctionValueCacheH5PY(collections.abc.Mapping):
     """
-    Interface for caching function values in a given h5py/hdf5 group.
+    Interface for caching trajectory function values in a given h5py group.
 
-    Drop-in replacement for the dictionary that is used in the trajectories
-    before they are saved to h5py.
+    Drop-in replacement for the dictionary that is used for in-memory caching.
     """
 
     # NOTE: this is written with the assumption that stored trajectories are
