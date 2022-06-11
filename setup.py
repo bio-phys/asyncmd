@@ -47,7 +47,7 @@ SETUP_REQUIRES = []
 INSTALL_REQUIRES = ["mdanalysis", "numpy"]
 EXTRAS_REQUIRE = {
     "docs": ["sphinx"],
-    "tests": ["pytest"],
+    "tests": ["pytest", "pytest-asyncio"],
 }
 EXTRAS_REQUIRE["dev"] = (EXTRAS_REQUIRE["docs"] + EXTRAS_REQUIRE["tests"]
                          + ["pytest-cov", "coverage",

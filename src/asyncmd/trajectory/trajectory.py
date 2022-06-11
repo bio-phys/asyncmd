@@ -462,7 +462,7 @@ class Trajectory:
 
     # TODO: test pickling/ unpickling!
     def __getstate__(self):
-        # enable pickling of Trajecory
+        # enable pickling of Trajectory
         # this should make it possible to pass it into a ProcessPoolExecutor
         # and lets us calculate TrajectoryFunction values asyncronously
         state = self.__dict__.copy()
@@ -580,7 +580,8 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
         if not existing_npz_matches:
             os.unlink(self.fname_npz)
 
-    def _get_cache_filename(self, fname_traj: str) -> str:
+    @classmethod
+    def _get_cache_filename(cls, fname_traj: str) -> str:
         """
         Construct cachefilename from trajectory fname.
 
@@ -614,6 +615,8 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
             raise KeyError(f"No values for {key} cached (yet).")
 
     def append(self, func_id: str, vals: np.ndarray) -> None:
+        if not isinstance(func_id, str):
+            raise TypeError("func_id must be of type str.")
         if func_id in self._func_ids:
             # first check if it already in there
             raise ValueError("There are already values stored for func_id "

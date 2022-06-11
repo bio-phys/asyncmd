@@ -73,7 +73,7 @@ Tests use [pytest]. To run them just install asycmd with the test requirements
 ```bash
 git clone https://gitea.kotspeicher.de/AIMMD/asyncmd.git
 cd asyncmd
-pip install -e .\[test\]
+pip install -e .\[tests\]
 ```
 
 And then run the tests (against the installed version) as
