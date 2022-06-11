@@ -460,7 +460,6 @@ class Trajectory:
                 continue  # also here: dont add waht we already know about
             self._func_values_by_id[func_id] = values
 
-    # TODO: test pickling/ unpickling!
     def __getstate__(self):
         # enable pickling of Trajectory
         # this should make it possible to pass it into a ProcessPoolExecutor

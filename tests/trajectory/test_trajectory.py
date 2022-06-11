@@ -59,6 +59,7 @@ class TBase:
 
         self.make_func_values = make_func_values
 
+
 class Test_Trajectory(TBase):
     def setup(self):
         super().setup()
@@ -223,6 +224,37 @@ class Test_Trajectory(TBase):
         for mm_name, truth_value in truth.items():
             mm = getattr(traj1, mm_name)
             assert mm(traj2) == truth_value
+
+    def test_eq_neq(self):
+        # we use two equal trajs and then modfify one of them selectively
+        # i.e. at single points (possibly with mocks) to make them uneqal
+        def make_traj():
+            return Trajectory(
+                    trajectory_file="tests/test_data/trajectory/ala_traj.trr",
+                    structure_file="tests/test_data/trajectory/ala.tpr",
+                              )
+
+        def assert_neq(traj1, traj2):
+            # check both eq and neq at once
+            assert not traj1 == traj2
+            assert traj1 != traj2
+        traj1 = make_traj()
+        traj2 = make_traj()
+        assert traj1 == traj2  # make sure they are equal to begin with
+        assert not traj1 != traj2  # and check that neq also works
+        # modify trajectory file
+        traj2._trajectory_file += "test123"
+        assert_neq(traj1, traj2)
+        traj2 = make_traj()  # get a new traj2
+        # modify length of the traj
+        traj2._len = 0
+        assert_neq(traj1, traj2)
+        # modify hash
+        traj2 = make_traj()  # get a new traj2
+        traj2._traj_hash += 1
+        assert_neq(traj1, traj2)
+        # test for non trajectory objects
+        assert_neq(traj1, object())
 
     @pytest.mark.parametrize(["traj_file", "struct_file"],
                              [("tests/test_data/trajectory/ala_traj.trr",
