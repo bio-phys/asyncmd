@@ -127,16 +127,14 @@ def register_h5py_cache(h5py_group):
     Register a h5py file or group for CV value caching.
 
     Note that this also sets the default cache type to "h5py", i.e. it calls
-    :function:`set_default_trajectory_cache_type` with ``cache_type="h5py"``.
+    :func:`set_default_trajectory_cache_type` with ``cache_type="h5py"``.
 
     Note that a ``h5py.File`` is just a slightly special ``h5py.Group``, so you
-    can pass either. :py:module:`asyncmd` will use euther the file or the group
-    as the root of its own stored values.
+    can pass either. :mod:`asyncmd` will use euther the file or the group as
+    the root of its own stored values.
     E.g. you will have ``h5py_group["asyncmd/TrajectoryFunctionValueCache"]``
     always pointing to the cached trajectory values and if ``h5py_group`` is
-    the top-level group (i.e. the file) you also have
-    ``(file["/asyncmd/TrajectoryFunctionValueCache"] ==
-        h5py_group["asyncmd/TrajectoryFunctionValueCache"])``.
+    the top-level group (i.e. the file) you also have ``(file["/asyncmd/TrajectoryFunctionValueCache"] == h5py_group["asyncmd/TrajectoryFunctionValueCache"])``.
 
     Parameters
     ----------
