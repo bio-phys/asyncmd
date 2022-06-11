@@ -82,13 +82,6 @@ And then run the tests (against the installed version) as
 pytest -v
 ```
 
-or if you want a nice html coverage report and have [pytest-cov] installed (see
- e.g. the dev install) you can run the tests as
-
-```bash
-pytest --cov=asyncmd --cov-report=html -v
-```
-
 ## Developers
 
 For the developer install I recommend:
@@ -99,7 +92,12 @@ cd asyncmd
 pip install -e .\[dev\]
 ```
 
-This will in addition to the requirements to run the tests and to build the documentation install [flake8] and some of its plugins, such that you get yelled at to write nicely foramted code. It will also install [coverage] and its [pytest-cov] plugin such that you have an idea of the test coverage for your newly added code.
+This will in addition to the requirements to run the tests and to build the documentation install [flake8] and some of its plugins, such that you get yelled at to write nicely formated code.
+It will also install [coverage] and its [pytest-cov] plugin such that you have an idea of the test coverage for your newly added code. To get a nice html coverage report you can run the tests as
+
+```bash
+pytest --cov=asyncmd --cov-report=html -v
+```
 
 ## Contributors
 
