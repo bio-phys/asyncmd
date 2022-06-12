@@ -12,7 +12,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
-from ._semaphores import _SEMAPHORES
+from . import config
 
 from .__about__ import (__author__, __author_email__, __copyright__,
                         __description__, __license__, __url__, __version__,

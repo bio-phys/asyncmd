@@ -23,7 +23,7 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
 
-from .. import _SEMAPHORES
+from ..config import _SEMAPHORES
 from ..slurm import SlurmProcess
 from ..tools import ensure_executable_available
 from .trajectory import Trajectory

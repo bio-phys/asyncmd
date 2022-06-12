@@ -9,6 +9,18 @@ engines. There are also a number of ``TrajectoryFunctionWrapper`` classes which
 can be used to wrapp (python) functions or arbitrary executables for easy
 asyncronous application on :py:class:`asyncmd.Trajectory`, either submitted
 via slurm or ran locally.
+The benefit of these wrapped functions is that the calculated CV values will be
+cached automatically. The caching is even persistent over multiple reloads and
+invocations of the python interpreter. To this end the default caching
+mechanism creates hidden numpy npz files for every
+:py:class:`asyncmd.Trajectory` (named after the trajectory) in which the values
+are stored. Other caching mechanism are an in-memory cache and the option to
+store all cached values in a :py:class:`h5py.File` or :py:class:`h5py.Group`.
+You can set the default caching mechanism for all
+:py:class:`asyncmd.Trajectory` centrally via
+:py:func:`asyncmd.config.set_default_trajectory_cache_type` or overwrite it for
+each :py:class:`asyncmd.Trajectory` at init by passing ``cache_type``. See also
+:py:func:`asyncmd.config.register_h5py_cache` to register the h5py cache.
 
 It also contains a number of classes to extract frames from
 :py:class:`asyncmd.Trajectory` objects in the module
@@ -118,11 +130,62 @@ Engine classes
    :special-members:
    :inherited-members:
 
+config
+******
+
+Various functions for configuring :py:mod:`asyncmd` behaviour during runtime.
+Most notably are probably the functions to limit resource use (i.e. number of
+SLURM jobs, number of open files, number of processes, etc.) and the function
+to register a ``h5py`` file (or group) for CV value caching.
+
+General resource usage
+----------------------
+
+.. autofunction:: asyncmd.config.set_max_process
+
+.. TODO! code this function ;)
+   .. autofunction:: asyncmd.config.set_max_files_open
+
+SLURM resource usage
+--------------------
+
+.. autofunction:: asyncmd.config.set_max_slurm_jobs
+
+CV value caching
+----------------
+
+.. autofunction:: asyncmd.config.set_default_trajectory_cache_type
+
+.. autofunction:: asyncmd.config.register_h5py_cache
+
 API (For developers)
 ====================
 
 This section is relevant for developers of :py:mod:`asyncmd`, e.g. when you
-want to add the option to steer additional molecular dynamcis engines like NAMD.
+want to add the option to steer additional molecular dynamcis engines like NAMD
+or add additional ways to wrapp functions actiong on Trajectories.
+
+Wrapper classes for functions acting on trajectories
+****************************************************
+
+All wrapper classes for functions acting on :py:class:`asyncmd.Trajectory`
+should subclass
+:py:class:`asyncmd.trajectory.functionwrapper.TrajectoryFunctionWrapper` to
+make full and easy use of the caching mechanism already implemented. You then
+only need to implement
+:py:meth:`asyncmd.trajectory.functionwrapper.TrajectoryFunctionWrapper._get_id_str`
+and
+:py:meth:`asyncmd.trajectory.functionwrapper.TrajectoryFunctionWrapper.get_values_for_trajectory`
+to get a fully functional TrajectoryFunctionWrapper class. See also the
+implementation of the other wrapper classes for more.
+
+.. autoclass:: asyncmd.trajectory.functionwrapper.TrajectoryFunctionWrapper
+   :member-order: bysource
+   :members: __call__, _get_id_str, get_values_for_trajectory
+   :special-members:
+   :private-members:
+   :inherited-members:
+   :undoc-members:
 
 Molecular dynamics configuration file parsing and writing (:py:class:`asyncmd.mdconfig.MDConfig`)
 *************************************************************************************************
