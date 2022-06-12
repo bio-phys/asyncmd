@@ -23,7 +23,8 @@ from unittest.mock import AsyncMock
 
 import asyncmd
 from asyncmd import Trajectory
-from asyncmd.trajectory.trajectory import (TrajectoryFunctionValueCacheNPZ,
+from asyncmd.trajectory.trajectory import (TrajectoryFunctionValueCacheMEMORY,
+                                           TrajectoryFunctionValueCacheNPZ,
                                            TrajectoryFunctionValueCacheH5PY,
                                            )
 from asyncmd.trajectory.functionwrapper import TrajectoryFunctionWrapper
@@ -256,19 +257,12 @@ class Test_Trajectory(TBase):
         # test for non trajectory objects
         assert_neq(traj1, object())
 
-    @pytest.mark.parametrize(["traj_file", "struct_file"],
-                             [("tests/test_data/trajectory/ala_traj.trr",
-                               "tests/test_data/trajectory/ala.tpr",
-                               ),
-                              ]
-                             )
     @pytest.mark.parametrize("default_cache_type",
                              [None, "npz", "h5py", "memory"])
     @pytest.mark.parametrize("cache_type",
                              [None, "npz", "h5py", "memory"])
     @pytest.mark.asyncio
     async def test_pickle_and_wrapped_func_application(self, tmp_path,
-                                                       traj_file, struct_file,
                                                        default_cache_type,
                                                        cache_type):
         if default_cache_type is not None:
@@ -281,9 +275,10 @@ class Test_Trajectory(TBase):
                                        )
             h5file = h5py.File(tmp_path / "h5py_file.h5", mode="w")
             asyncmd.config.register_h5py_cache(h5py_group=h5file)
-        traj = Trajectory(trajectory_file=traj_file,
-                          structure_file=struct_file,
-                          cache_type=cache_type,
+        traj = Trajectory(
+                    trajectory_file="tests/test_data/trajectory/ala_traj.trr",
+                    structure_file="tests/test_data/trajectory/ala.tpr",
+                    cache_type=cache_type,
                           )
         # create some dummy CV data and attach it to traj
         n_cached_cvs = 4
@@ -347,9 +342,11 @@ class Test_TrajectoryFunctionValueCache(TBase):
     @pytest.mark.parametrize("cache_class",
                              [TrajectoryFunctionValueCacheNPZ,
                               TrajectoryFunctionValueCacheH5PY,
+                              TrajectoryFunctionValueCacheMEMORY,
                               ]
                              )
-    def test___getitem__errs(self, tmp_path, cache_class):
+    def test_append_iter_len___getitem___errs(self, tmp_path, cache_class):
+        first_arg = None
         if cache_class is TrajectoryFunctionValueCacheNPZ:
             first_arg = tmp_path / "traj_name.traj"
         elif cache_class is TrajectoryFunctionValueCacheH5PY:
@@ -388,13 +385,28 @@ class Test_TrajectoryFunctionValueCache(TBase):
                 cache.append(func_id=func_id,
                              vals=np.zeros(shape=(traj_len, 2)),
                              )
+        # and finally test that everything is there as expected
+        for func_id in cache:
+            idx_in_test_data = test_data_func_ids.index(func_id)
+            assert np.all(np.equal(cache[func_id],
+                                   test_data_func_values[idx_in_test_data]
+                                   )
+                          )
+        assert len(cache) == n_cached_cvs
+        ran_idx = self.ran_gen.integers(n_cached_cvs)
+        assert np.all(np.equal(cache[test_data_func_ids[ran_idx]],
+                               test_data_func_values[ran_idx]
+                               )
+                      )
 
+    # Note these test dont work for the memory cache as it is not stateful,
+    # i.e. recreating it will empty it (as there is no file to back it)
     @pytest.mark.parametrize("cache_class",
                              [TrajectoryFunctionValueCacheNPZ,
                               TrajectoryFunctionValueCacheH5PY,
                               ]
                              )
-    def test_append_iter_len(self, tmp_path, cache_class):
+    def test_stateful_append_iter_len(self, tmp_path, cache_class):
         if cache_class is TrajectoryFunctionValueCacheNPZ:
             first_arg = tmp_path / "traj_name.traj"
         elif cache_class is TrajectoryFunctionValueCacheH5PY:

@@ -131,7 +131,7 @@ class Trajectory:
         self._first_time = None
         self._last_time = None
         # stuff for caching of functions applied to this traj
-        self._func_values_by_id = {}
+        self._memory_cache = None
         self._npz_cache = None
         self._h5py_cache = None
         self._cache_type = None
@@ -201,10 +201,21 @@ class Trajectory:
                                         hash_traj=self._traj_hash,
                                                           )
         if self._cache_type == "memory":
+            if self._memory_cache is None:
+                self._memory_cache = TrajectoryFunctionValueCacheMEMORY()
+            else:
+                # we already have a mem cache so just try to use it
+                pass
             if self._h5py_cache is not None:
-                self._cache_to_local(self._h5py_cache)
+                self._cache_content_to_new_cache(
+                                        old_cache=self._h5py_cache,
+                                        new_cache=self._memory_cache,
+                                                 )
                 self._h5py_cache = None
-            self._cache_to_local(self._npz_cache)
+            self._cache_content_to_new_cache(
+                                        old_cache=self._npz_cache,
+                                        new_cache=self._memory_cache,
+                                             )
             self._npz_cache = None
         elif self._cache_type == "h5py":
             try:
@@ -234,22 +245,39 @@ class Trajectory:
                                                 h5py_cache=h5py_cache,
                                                 hash_traj=self._traj_hash,
                                                                     )
-                    self._cache_to_h5py(old_h5py_cache)
-            # transfer all values from otehr cache types and empty them
-            self._cache_to_h5py(self._func_values_by_id)
-            self._func_values_by_id = {}
-            self._cache_to_h5py(self._npz_cache)
+                    self._cache_content_to_new_cache(
+                                        old_cache=old_h5py_cache,
+                                        new_cache=self._h5py_cache,
+                                                     )
+            # transfer all values from other cache types and empty them
+            if self._memory_cache is not None:
+                self._cache_content_to_new_cache(
+                                        old_cache=self._memory_cache,
+                                        new_cache=self._h5py_cache,
+                                                 )
+                self._memory_cache = None
+            self._cache_content_to_new_cache(
+                                        old_cache=self._npz_cache,
+                                        new_cache=self._h5py_cache,
+                                             )
             self._npz_cache = None
         elif self._cache_type == "npz":
             if self._h5py_cache is not None:
-                self._cache_to_npz(self._h5py_cache)
+                self._cache_content_to_new_cache(
+                                        old_cache=self._h5py_cache,
+                                        new_cache=self._npz_cache,
+                                                 )
                 self._h5py_cache = None
-            self._cache_to_npz(self._func_values_by_id)
-            self._func_values_by_id = {}
+            if self._memory_cache is not None:
+                self._cache_content_to_new_cache(
+                                        old_cache=self._memory_cache,
+                                        new_cache=self._npz_cache,
+                                                 )
+                self._memory_cache = None
         else:
             raise RuntimeError("This should never happen. self._cache_type "
                                + "must be one of 'memory', 'h5py', 'npz' when "
-                               + f"self._setup_cache is called. "
+                               + "self._setup_cache is called. "
                                + f"Was {self._cache_type}.")
 
     def __len__(self) -> int:
@@ -396,74 +424,54 @@ class Trajectory:
             #       3.) use memory/local cache (only if set on traj creation
             #                                   or if set as default cache)
             if self._h5py_cache is not None:
-                return await self._apply_wrapped_func_h5py_cache(
+                return await self._apply_wrapped_func_cached(
                                                     func_id=func_id,
                                                     wrapped_func=wrapped_func,
-                                                                 )
+                                                    cache=self._h5py_cache,
+                                                             )
             if self._npz_cache is not None:
-                return await self._apply_wrapped_func_npz_cache(
+                return await self._apply_wrapped_func_cached(
                                                     func_id=func_id,
                                                     wrapped_func=wrapped_func,
-                                                                )
-            # only 'local' cache, i.e. this trajectory has no file
-            # associated with it (yet)
-            return await self._apply_wrapped_func_local_cache(
+                                                    cache=self._npz_cache
+                                                             )
+            if self._memory_cache is not None:
+                return await self._apply_wrapped_func_cached(
                                                     func_id=func_id,
                                                     wrapped_func=wrapped_func,
-                                                              )
+                                                    cache=self._memory_cache,
+                                                             )
+            # if we get until here we have no cache!
+            logger.warning(f"No cache associated with {self}. Returning "
+                           + "calculated function values anyway but no caching"
+                           + "can/will be performed!"
+                           )
+            return await wrapped_func.get_values_for_trajectory(self)
 
-    async def _apply_wrapped_func_local_cache(self, func_id: str, wrapped_func):
+    async def _apply_wrapped_func_cached(
+                            self, func_id: str, wrapped_func,
+                            cache: collections.abc.Mapping[str, np.ndarray],
+                                         ):
         try:
             # see if it is in cache
-            return copy.copy(self._func_values_by_id[func_id])
+            return copy.copy(cache[func_id])
         except KeyError:
             # if not calculate, store and return
             # send function application to seperate process and wait
             # until it finishes
             vals = await wrapped_func.get_values_for_trajectory(self)
-            self._func_values_by_id[func_id] = vals
+            cache.append(func_id=func_id, vals=vals)
             return vals
 
-    async def _apply_wrapped_func_npz_cache(self, func_id: str, wrapped_func):
-        try:
-            return copy.copy(self._npz_cache[func_id])
-        except KeyError:
-            # not in there
-            # send function application to seperate process and wait
-            # until it finishes
-            vals = await wrapped_func.get_values_for_trajectory(self)
-            self._npz_cache.append(func_id, vals)
-            return vals
-
-    async def _apply_wrapped_func_h5py_cache(self, func_id: str, wrapped_func):
-        try:
-            return copy.copy(self._h5py_cache[func_id])
-        except KeyError:
-            # not in there
-            # send function application to seperate process and wait
-            # until it finishes
-            vals = await wrapped_func.get_values_for_trajectory(self)
-            self._h5py_cache.append(func_id, vals)
-            return vals
-
-    # NOTE: all these _cache_to funcs expect the cache to exist!
-    def _cache_to_npz(self, cache: collections.abc.Mapping[str, np.ndarray]):
-        for func_id, values in cache.items():
-            if func_id in self._npz_cache:
+    def _cache_content_to_new_cache(
+                        self,
+                        old_cache: collections.abc.Mapping[str, np.ndarray],
+                        new_cache: collections.abc.Mapping[str, np.ndarray],
+                                    ):
+        for func_id, values in old_cache.items():
+            if func_id in new_cache:
                 continue  # dont try to add what is already in there
-            self._npz_cache.append(func_id=func_id, vals=values)
-
-    def _cache_to_h5py(self, cache: collections.abc.Mapping[str, np.ndarray]):
-        for func_id, values in cache.items():
-            if func_id in self._h5py_cache:
-                continue  # dont add what we already have
-            self._h5py_cache.append(func_id=func_id, vals=values)
-
-    def _cache_to_local(self, cache: collections.abc.Mapping[str, np.ndarray]):
-        for func_id, values in cache.items():
-            if func_id in self._func_values_by_id:
-                continue  # also here: dont add waht we already know about
-            self._func_values_by_id[func_id] = values
+            new_cache.append(func_id=func_id, vals=values)
 
     def __getstate__(self):
         # enable pickling of Trajectory
@@ -478,12 +486,17 @@ class Trajectory:
                                         fname_traj=self.trajectory_file,
                                         hash_traj=self._traj_hash,
                                                              )
-            self._cache_to_npz(self._func_values_by_id)
+            if self._memory_cache is not None:
+                self._cache_content_to_new_cache(old_cache=self._memory_cache,
+                                                 new_cache=self._npz_cache,
+                                                 )
             if self._h5py_cache is not None:
-                self._cache_to_npz(self._h5py_cache)
+                self._cache_content_to_new_cache(old_cache=self._h5py_cache,
+                                                 new_cache=self._npz_cache,
+                                                 )
         state["_h5py_cache"] = None
         state["_npz_cache"] = None
-        state["_func_values_by_id"] = {}
+        state["_memory_cache"] = None
         state["_semaphores_by_func_id"] = collections.defaultdict(
                                                     asyncio.BoundedSemaphore
                                                                   )
@@ -518,6 +531,37 @@ class Trajectory:
                 self.cache_type = None
         # and setup the cache
         self._setup_cache()
+
+
+class TrajectoryFunctionValueCacheMEMORY(collections.abc.Mapping):
+    """
+    Interface for caching trajectory function values in memory in a dict.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        """Initialize a `TrajectoryFunctionValueCacheMEMORY`."""
+        self._func_values_by_id = {}
+
+    def __len__(self) -> int:
+        return len(self._func_values_by_id)
+
+    def __iter__(self):
+        return self._func_values_by_id.__iter__()
+
+    def __getitem__(self, key: str) -> np.ndarray:
+        if not isinstance(key, str):
+            raise TypeError("Keys must be of type str.")
+        return self._func_values_by_id[key]
+
+    def append(self, func_id: str, vals: np.ndarray) -> None:
+        if not isinstance(func_id, str):
+            raise TypeError("func_id must be of type str.")
+        if func_id in self._func_values_by_id:
+            # first check if it already in there
+            raise ValueError("There are already values stored for func_id "
+                             + f"{func_id}. Changing the stored values is not "
+                             + "supported.")
+        self._func_values_by_id[func_id] = vals
 
 
 class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
