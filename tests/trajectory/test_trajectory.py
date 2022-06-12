@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock
 
 import asyncmd
 from asyncmd import Trajectory
+from asyncmd.config import _GLOBALS
 from asyncmd.trajectory.trajectory import (TrajectoryFunctionValueCacheMEMORY,
                                            TrajectoryFunctionValueCacheNPZ,
                                            TrajectoryFunctionValueCacheH5PY,
@@ -261,20 +262,131 @@ class Test_Trajectory(TBase):
                              [None, "npz", "h5py", "memory"])
     @pytest.mark.parametrize("cache_type",
                              [None, "npz", "h5py", "memory"])
+    @pytest.mark.parametrize("initial_cache_type",
+                             [None, "npz", "h5py", "memory"])
     @pytest.mark.asyncio
-    async def test_pickle_and_wrapped_func_application(self, tmp_path,
-                                                       default_cache_type,
-                                                       cache_type):
+    async def test__setup_cache(self, tmp_path, default_cache_type, cache_type,
+                                initial_cache_type):
+        # we create a trajectory with given cache_type
+        # (after setting default_cache_type), append some values and then
+        # (re)set its cache_type and check that everything is there and in the
+        # correct cache
+        global _GLOBALS
+        if (default_cache_type == "h5py"
+                or cache_type == "h5py"
+                or initial_cache_type == "h5py"):
+            h5py = pytest.importorskip("h5py", minversion=None,
+                                       reason="Requires 'h5py' to run.",
+                                       )
+            h5file = h5py.File(tmp_path / "h5py_file.h5", mode="w")
+            asyncmd.config.register_h5py_cache(h5py_group=h5file)
+        else:
+            # ensure it is not set
+            try:
+                del _GLOBALS["H5PY_CACHE"]
+            except KeyError:
+                pass
+        # Note that we need this bit below after calling register_h5py_file
+        # because that calls set_default_trajectory_cache_type("h5py")
         if default_cache_type is not None:
             asyncmd.config.set_default_trajectory_cache_type(
                                             cache_type=default_cache_type,
                                                              )
+        else:
+            # ensure it is unset
+            try:
+                del _GLOBALS["TRAJECTORY_FUNCTION_CACHE_TYPE"]
+            except KeyError:
+                pass
+        traj = Trajectory(
+                    trajectory_file="tests/test_data/trajectory/ala_traj.trr",
+                    structure_file="tests/test_data/trajectory/ala.tpr",
+                    cache_type=initial_cache_type,
+                          )
+        # create some dummy CV data and attach it to traj
+        n_cached_cvs = 4
+        cv_dims = [self.ran_gen.integers(300) for _ in range(n_cached_cvs)]
+        func_values = [self.make_func_values(traj_len=200, cv_dim=cv_dim)
+                       for cv_dim in cv_dims
+                       ]
+        func_ids = [self.make_func_id() for _ in range(n_cached_cvs)]
+        # use a mock wrapped CV to attach the values
+        wrapped_func = AsyncMock(TrajectoryFunctionWrapper)
+        wrapped_func.get_values_for_trajectory.side_effect = func_values
+        for func_id in func_ids:
+            await traj._apply_wrapped_func(func_id=func_id,
+                                           wrapped_func=wrapped_func,
+                                           )
+        # now reset cache_type
+        traj.cache_type = cache_type
+        # and check that everything went well
+        for func_id, func_vals in zip(func_ids, func_values):
+            retrieved_func_vals = await traj._apply_wrapped_func(
+                                                    func_id=func_id,
+                                                    wrapped_func=None,
+                                                                     )
+            assert np.all(np.equal(retrieved_func_vals, func_vals))
+        # and that the correct cache is used
+        print(traj.__dict__)
+        if cache_type is not None:
+            assert traj.cache_type == cache_type
+        else:
+            # we should take the global default if set
+            if default_cache_type is not None:
+                assert traj.cache_type == default_cache_type
+            else:
+                # no global default set and no value set
+                # currently that defaults to npz
+                assert traj.cache_type == "npz"
+        # cleanup
+        # remove the npz cache file (if it can be there)!
+        fname_npz_cache = TrajectoryFunctionValueCacheNPZ._get_cache_filename(
+                                            fname_traj=traj.trajectory_file,
+                                                                              )
+        if ("npz" in [cache_type, initial_cache_type]  # npz cache explicitly used
+            # npz cache explicitly set as default (or implicitly since default=None)
+            or ((cache_type is None or initial_cache_type is None)
+                and (default_cache_type == "npz" or default_cache_type is None)
+                )
+            ):
+            os.unlink(fname_npz_cache)
+        else:
+            # there should be no file created if npz cache is not involved!
+            assert not os.path.isfile(fname_npz_cache)
+
+    @pytest.mark.parametrize("default_cache_type",
+                             [None, "npz", "h5py", "memory"])
+    @pytest.mark.parametrize("cache_type",
+                             [None, "npz", "h5py", "memory"])
+    @pytest.mark.asyncio
+    async def test_pickle_and_wrapped_func_application(self, tmp_path,
+                                                       default_cache_type,
+                                                       cache_type):
+        global _GLOBALS
         if default_cache_type == "h5py" or cache_type == "h5py":
             h5py = pytest.importorskip("h5py", minversion=None,
                                        reason="Requires 'h5py' to run.",
                                        )
             h5file = h5py.File(tmp_path / "h5py_file.h5", mode="w")
             asyncmd.config.register_h5py_cache(h5py_group=h5file)
+        else:
+            # ensure it is not set
+            try:
+                del _GLOBALS["H5PY_CACHE"]
+            except KeyError:
+                pass
+        # Note that we need this bit below after calling register_h5py_file
+        # because that calls set_default_trajectory_cache_type("h5py")
+        if default_cache_type is not None:
+            asyncmd.config.set_default_trajectory_cache_type(
+                                            cache_type=default_cache_type,
+                                                             )
+        else:
+            # ensure it is unset
+            try:
+                del _GLOBALS["TRAJECTORY_FUNCTION_CACHE_TYPE"]
+            except KeyError:
+                pass
         traj = Trajectory(
                     trajectory_file="tests/test_data/trajectory/ala_traj.trr",
                     structure_file="tests/test_data/trajectory/ala.tpr",
@@ -385,6 +497,11 @@ class Test_TrajectoryFunctionValueCache(TBase):
                 cache.append(func_id=func_id,
                              vals=np.zeros(shape=(traj_len, 2)),
                              )
+        # check that appending again raises an error
+        for func_id, func_values in zip(test_data_func_ids,
+                                        test_data_func_values):
+            with pytest.raises(ValueError):
+                cache.append(func_id=func_id, vals=func_values)
         # and finally test that everything is there as expected
         for func_id in cache:
             idx_in_test_data = test_data_func_ids.index(func_id)
