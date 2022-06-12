@@ -122,7 +122,7 @@ def set_default_trajectory_cache_type(cache_type: str):
     _GLOBALS["TRAJECTORY_FUNCTION_CACHE_TYPE"] = cache_type
 
 
-def register_h5py_cache(h5py_group):
+def register_h5py_cache(h5py_group, make_default: bool = False):
     """
     Register a h5py file or group for CV value caching.
 
@@ -140,7 +140,11 @@ def register_h5py_cache(h5py_group):
     ----------
     h5py_group : h5py.Group or h5py.File
         The file or group to use for caching.
+    make_default: bool,
+        Whether we should also make `h5p` the default trajectory function cache
+        type. By default False.
     """
     global _GLOBALS
-    set_default_trajectory_cache_type(cache_type="h5py")
+    if make_default:
+        set_default_trajectory_cache_type(cache_type="h5py")
     _GLOBALS["H5PY_CACHE"] = h5py_group
