@@ -206,7 +206,7 @@ class Trajectory:
                 self._h5py_cache = None
             self._cache_to_local(self._npz_cache)
             self._npz_cache = None
-        if self._cache_type == "h5py":
+        elif self._cache_type == "h5py":
             try:
                 h5py_cache = _GLOBALS["H5PY_CACHE"]
             except KeyError:
@@ -240,12 +240,17 @@ class Trajectory:
             self._func_values_by_id = {}
             self._cache_to_h5py(self._npz_cache)
             self._npz_cache = None
-        if self._cache_type == "npz":
+        elif self._cache_type == "npz":
             if self._h5py_cache is not None:
                 self._cache_to_npz(self._h5py_cache)
                 self._h5py_cache = None
             self._cache_to_npz(self._func_values_by_id)
             self._func_values_by_id = {}
+        else:
+            raise RuntimeError("This should never happen. self._cache_type "
+                               + "must be one of 'memory', 'h5py', 'npz' when "
+                               + f"self._setup_cache is called. "
+                               + f"Was {self._cache_type}.")
 
     def __len__(self) -> int:
         """
@@ -489,21 +494,28 @@ class Trajectory:
         # sort out which cache we were using (and which we will use now)
         if self._using_default_cache_type:
             # if we were using the global default when pickling use it now too
-            self._cache_type = None
-        if self._cache_type == "h5py":
+            # Note that this will raise the ValueError from _setup_cache if
+            # no h5py cache has been registered but it is set as default
+            # (which is intended because it is the same behavior as when
+            #  initializing a new trajectory in the same situation)
+            self.cache_type = None
+        if self.cache_type == "h5py":
             # make sure h5py cache is set before trying to unpickle with it
             try:
                 _ = _GLOBALS["H5PY_CACHE"]
             except KeyError:
                 # this will (probably) fallback to npz but I (hejung) think it
                 # is nice if we use the possibly set global default?
+                # Note that this will not err but just emit the warning to log
+                # when we change the cache but it will err when the gloabal
+                # default cache is set to h5py (as above)
                 logger.warning(f"Trying to unpickle {self} with cache_type "
                                + "'h5py' not possible without a registered "
                                + "cache. Falling back to global default type."
                                + "See 'asyncmd.config.register_h5py_cache' and"
                                + " 'asyncmd.config.set_default_cache_type'."
                                )
-                self._cache_type = None
+                self.cache_type = None
         # and setup the cache
         self._setup_cache()
 
@@ -514,6 +526,7 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
 
     Drop-in replacement for the dictionary that is used for in-memory caching.
     """
+
     _hash_traj_npz_key = "hash_of_traj_start"  # key of hash_traj in npz file
 
     # NOTE: this is written with the assumption that stored trajectories are

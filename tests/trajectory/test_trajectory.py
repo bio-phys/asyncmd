@@ -317,6 +317,22 @@ class Test_Trajectory(TBase):
                                                     wrapped_func=None,
                                                                      )
             assert np.all(np.equal(loaded_func_vals, func_vals))
+        # check that we unpickled with the correct cache
+        if cache_type is not None:
+            # we should have cache_type in both trajs independant of the
+            # default cache type
+            assert traj.cache_type == cache_type
+            assert loaded_traj.cache_type == cache_type
+        else:
+            # we should use the default cache type (if set)
+            if default_cache_type is None:
+                # this currently defaults to npz cache
+                assert traj.cache_type == "npz"
+                assert loaded_traj.cache_type == "npz"
+            else:
+                assert traj.cache_type == default_cache_type
+                assert loaded_traj.cache_type == default_cache_type
+        # cleanup
         # remove the npz cache file!
         fname_npz_cache = TrajectoryFunctionValueCacheNPZ._get_cache_filename(
                                             fname_traj=traj.trajectory_file,
