@@ -16,7 +16,7 @@ import os
 import shutil
 
 
-def ensure_executable_available(executable):
+def ensure_executable_available(executable: str) -> str:
     """
     Ensure the given executable is available and executable.
 

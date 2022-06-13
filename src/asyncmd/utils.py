@@ -22,7 +22,7 @@ from .gromacs import mdconfig as gmx_config
 
 def get_all_traj_parts(folder: str, deffnm: str, engine: MDEngine) -> "list[Trajectory]":
     """
-    List all trajectories in folder by given engine with given deffnm.
+    List all trajectories in folder by given engine class with given deffnm.
 
     Parameters
     ----------
