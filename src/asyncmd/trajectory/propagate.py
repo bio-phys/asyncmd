@@ -19,7 +19,7 @@ import functools
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
-from ..config import _SEMAPHORES
+from .._config import _SEMAPHORES
 from .convert import TrajectoryConcatenator
 from ..utils import get_all_traj_parts, nstout_from_mdconfig
 

@@ -21,7 +21,7 @@ import shutil
 import asyncio
 import logging
 
-from ..config import _SEMAPHORES
+from .._config import _SEMAPHORES
 from ..mdengine import MDEngine, EngineError, EngineCrashedError
 from ..trajectory.trajectory import Trajectory
 from ..slurm import SlurmProcess

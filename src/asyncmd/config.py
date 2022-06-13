@@ -19,12 +19,12 @@ import resource
 import typing
 
 
+from ._config import _GLOBALS, _SEMAPHORES
+from .slurm import set_slurm_settings
+# TODO: Do we want to set the _GLOBALS defaults here? E.g. CACHE_TYPE="npz"?
+
+
 logger = logging.getLogger(__name__)
-
-
-# TODO: is the the best place for our semaphore(s)?
-_GLOBALS = {}
-_SEMAPHORES = {}
 
 
 # can be called by the user to (re) set maximum number of processes used
@@ -64,7 +64,7 @@ def set_max_process(num=None, max_num=None):
 set_max_process()
 
 
-def set_max_files_open(num: typing.Optional[int] = None, margin: int =30):
+def set_max_files_open(num: typing.Optional[int] = None, margin: int = 30):
     """
     Set the maximum number of concurrently opened files.
 
@@ -91,7 +91,7 @@ def set_max_files_open(num: typing.Optional[int] = None, margin: int =30):
     # and subprocess.check_call [which also need files/pipes to work])
     # also maybe we need other open files like a storage :)
     global _SEMAPHORES
-    rlim_soft = resource.RLIMIT_NOFILE[0]
+    rlim_soft = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
     if num is None:
         num = rlim_soft
     elif num > rlim_soft:
@@ -107,6 +107,9 @@ def set_max_files_open(num: typing.Optional[int] = None, margin: int =30):
     _SEMAPHORES["MAX_FILES_OPEN"] = asyncio.BoundedSemaphore(num - margin)
 
 
+set_max_files_open()
+
+
 # SLURM semaphore stuff:
 # TODO: move this to slurm.py? and initialize only if slurm is available?
 # semaphore to make sure we modify clusterinfo only from one thread at a time
@@ -118,7 +121,7 @@ _SEMAPHORES["SLURM_CLUSTER_MEDIATOR"] = asyncio.BoundedSemaphore(1)
 _SEMAPHORES["SLURM_MAX_JOB"] = None
 
 
-def set_max_slurm_jobs(num: int):
+def set_slurm_max_jobs(num: int):
     """
     Set the maximum number of simultaneously submitted SLURM jobs.
 

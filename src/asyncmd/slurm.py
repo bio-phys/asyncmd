@@ -22,7 +22,7 @@ import typing
 import logging
 
 from .tools import ensure_executable_available
-from .config import _SEMAPHORES
+from ._config import _SEMAPHORES
 
 
 logger = logging.getLogger(__name__)
@@ -691,18 +691,18 @@ class SlurmProcess:
             raise RuntimeError("Can not cancel a job with unknown jobid.")
 
     def kill(self) -> None:
-        """Alias for `self.terminate`."""
+        """Alias for :meth:`terminate`."""
         self.terminate()
 
 
-def reinitialize_slurm_settings(sinfo_executable: str = "sinfo",
-                                sacct_executable: str = "sacct",
-                                sbatch_executable: str = "sbatch",
-                                scancel_executable: str = "scancel",
-                                min_time_between_sacct_calls: int = 10,
-                                num_fails_for_broken_node: int = 3,
-                                success_to_fail_ratio: int = 50
-                                ) -> None:
+def set_slurm_settings(sinfo_executable: str = "sinfo",
+                       sacct_executable: str = "sacct",
+                       sbatch_executable: str = "sbatch",
+                       scancel_executable: str = "scancel",
+                       min_time_between_sacct_calls: int = 10,
+                       num_fails_for_broken_node: int = 3,
+                       success_to_fail_ratio: int = 50
+                       ) -> None:
     """
     (Re) initialize all settings relevant for SLURM job control.
 
@@ -733,11 +733,11 @@ def reinitialize_slurm_settings(sinfo_executable: str = "sinfo",
     """
     global SlurmProcess
     SlurmProcess._slurm_cluster_mediator = SlurmClusterMediator(
-                                            sinfo_executable=sinfo_executable,
-                                            sacct_executable=sacct_executable,
-                                            min_time_between_sacct_calls=min_time_between_sacct_calls,
-                                            num_fails_for_broken_node=num_fails_for_broken_node,
-                                            success_to_fail_ratio=success_to_fail_ratio
+                    sinfo_executable=sinfo_executable,
+                    sacct_executable=sacct_executable,
+                    min_time_between_sacct_calls=min_time_between_sacct_calls,
+                    num_fails_for_broken_node=num_fails_for_broken_node,
+                    success_to_fail_ratio=success_to_fail_ratio
                                                                 )
     SlurmProcess.sbatch_executable = sbatch_executable
     SlurmProcess.scancel_executable = scancel_executable

@@ -25,7 +25,7 @@ import numpy as np
 import MDAnalysis as mda
 
 
-from ..config import _GLOBALS
+from .._config import _GLOBALS
 
 
 logger = logging.getLogger(__name__)

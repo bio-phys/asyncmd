@@ -147,10 +147,12 @@ General resource usage
 
 .. autofunction:: asyncmd.config.set_max_files_open
 
-SLURM resource usage
---------------------
+SLURM settings and resource usage
+---------------------------------
 
-.. autofunction:: asyncmd.config.set_max_slurm_jobs
+.. autofunction:: asyncmd.config.set_slurm_max_jobs
+
+.. autofunction:: asyncmd.config.set_slurm_settings
 
 CV value caching
 ----------------
@@ -163,22 +165,55 @@ API (For developers)
 ====================
 
 This section is relevant for developers of :py:mod:`asyncmd`, e.g. when you
-want to add the option to steer additional molecular dynamcis engines like NAMD
-or add additional ways to wrapp functions actiong on Trajectories.
+want to add the option to steer an additional molecular dynamcis engines (like
+NAMD or LAMMPS) or add additional ways to wrapp functions acting on
+:py:class:`asyncmd.Trajectory`.
+
+.. py:currentmodule:: asyncmd.slurm
+
+This section also contains the interface of the classes, which are used under
+the hood by various user facing-classes in :py:mod:`asyncmd` to interact with
+the SLURM queueing system.
+Namely there is the :py:class:`SlurmProcess`, which emulates the interface of
+:py:class:`asyncio.subprocess.Process` and which is used to submit and wait for
+single SLURM jobs. Additionally (one level deeper under the hood) there is the
+:py:class:`SlurmClusterMediator`, which is a singleton class acting as the
+central communication point between the single :py:class:`SlurmProcess` and the
+SLURM commands ("sacct", "sbatch", etc.).
+
+SLURM interface classes
+***********************
+
+.. autoclass:: asyncmd.slurm.SlurmProcess
+   :member-order: bysource
+   :members:
+   :private-members:
+   :special-members:
+   :inherited-members:
+
+.. autoclass:: asyncmd.slurm.SlurmClusterMediator
+   :member-order: bysource
+   :members:
+   :private-members:
+   :special-members:
+   :inherited-members:
+
+..   :undoc-members:
 
 Wrapper classes for functions acting on trajectories
 ****************************************************
 
+.. :py:currentmodule:: asyncmd.trajectory.functionwrapper
+
 All wrapper classes for functions acting on :py:class:`asyncmd.Trajectory`
-should subclass
-:py:class:`asyncmd.trajectory.functionwrapper.TrajectoryFunctionWrapper` to
-make full and easy use of the caching mechanism already implemented. You then
-only need to implement
-:py:meth:`asyncmd.trajectory.functionwrapper.TrajectoryFunctionWrapper._get_id_str`
-and
-:py:meth:`asyncmd.trajectory.functionwrapper.TrajectoryFunctionWrapper.get_values_for_trajectory`
-to get a fully functional TrajectoryFunctionWrapper class. See also the
-implementation of the other wrapper classes for more.
+should subclass :py:class:`TrajectoryFunctionWrapper` to make full and easy use
+of the caching mechanism already implemented. You then only need to implement
+:py:meth:`TrajectoryFunctionWrapper._get_id_str` and
+:py:meth:`TrajectoryFunctionWrapper.get_values_for_trajectory` to get a fully
+functional TrajectoryFunctionWrapper class. See also the (reference)
+implementation of the other wrapper classes,
+:py:class:`PyTrajectoryFunctionWrapper` and
+:py:class:`SlurmTrajectoryFunctionWrapper`.
 
 .. autoclass:: asyncmd.trajectory.functionwrapper.TrajectoryFunctionWrapper
    :member-order: bysource
@@ -186,7 +221,8 @@ implementation of the other wrapper classes for more.
    :special-members:
    :private-members:
    :inherited-members:
-   :undoc-members:
+
+..   :undoc-members:
 
 Molecular dynamics configuration file parsing and writing (:py:class:`asyncmd.mdconfig.MDConfig`)
 *************************************************************************************************
