@@ -58,6 +58,7 @@ Trajectory
 .. autoclass:: asyncmd.Trajectory
    :members:
    :special-members:
+   :inherited-members:
 
 TrajectoryFunctionWrappers
 --------------------------
