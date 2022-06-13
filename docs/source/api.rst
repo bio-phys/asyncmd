@@ -135,16 +135,17 @@ config
 
 Various functions for configuring :py:mod:`asyncmd` behaviour during runtime.
 Most notably are probably the functions to limit resource use (i.e. number of
-SLURM jobs, number of open files, number of processes, etc.) and the function
-to register a ``h5py`` file (or group) for CV value caching.
+concurrent SLURM jobs, number of open files, number of processes, etc.) and
+functions to influence the :py:class:`asyncmd.Trajectory` CV value caching
+like setting the default cache type for all :py:class:`asyncmd.Trajectory` or
+registering a ``h5py`` file (or group) for caching.
 
 General resource usage
 ----------------------
 
 .. autofunction:: asyncmd.config.set_max_process
 
-.. TODO! code this function ;)
-   .. autofunction:: asyncmd.config.set_max_files_open
+.. autofunction:: asyncmd.config.set_max_files_open
 
 SLURM resource usage
 --------------------

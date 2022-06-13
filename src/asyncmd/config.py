@@ -12,13 +12,17 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
-
 import os
 import asyncio
+import logging
 import resource
+import typing
+
+
+logger = logging.getLogger(__name__)
+
+
 # TODO: is the the best place for our semaphore(s)?
-
-
 _GLOBALS = {}
 _SEMAPHORES = {}
 
@@ -60,15 +64,47 @@ def set_max_process(num=None, max_num=None):
 set_max_process()
 
 
-# ensure that we do not open too many files
-# resource.getrlimit returns a tuple (soft, hard); we take the soft-limit
-# and to be sure 30 less (the reason beeing that we can not use the semaphore
-# from non-async code, but sometimes use the sync subprocess.run and
-# subprocess.check_call [which also need files/pipes to work])
-# also maybe we need other open files like a storage :)
-_SEMAPHORES["MAX_FILES_OPEN"] = asyncio.BoundedSemaphore(
-                        resource.getrlimit(resource.RLIMIT_NOFILE)[0] - 30
-                                                         )
+def set_max_files_open(num: typing.Optional[int] = None, margin: int =30):
+    """
+    Set the maximum number of concurrently opened files.
+
+    By default use the systems soft resource limit.
+
+    Parameters
+    ----------
+    num : int, optional
+        Maximum number of open files, if None use systems (soft) resourcelimit,
+        by default None
+    margin : int, optional
+        Safe margin to keep, i.e. we will only ever open `num - margin` files,
+        by default 30
+
+    Raises
+    ------
+    ValueError
+        If num <= margin.
+    """
+    # ensure that we do not open too many files
+    # resource.getrlimit returns a tuple (soft, hard); we take the soft-limit
+    # and to be sure 30 less (the reason beeing that we can not use the
+    # semaphores from non-async code, but sometimes use the sync subprocess.run
+    # and subprocess.check_call [which also need files/pipes to work])
+    # also maybe we need other open files like a storage :)
+    global _SEMAPHORES
+    rlim_soft = resource.RLIMIT_NOFILE[0]
+    if num is None:
+        num = rlim_soft
+    elif num > rlim_soft:
+        logger.warning("Passed a wanted number of open files that is larger "
+                       + f"than the system resource limit ({num} > {rlim_soft}"
+                       + f"). Will be using {rlim_soft} instead."
+                       )
+        num = rlim_soft
+    if num - margin <= 0:
+        raise ValueError("num must be larger than margin."
+                         + f"Was num={num}, margin={margin}."
+                         )
+    _SEMAPHORES["MAX_FILES_OPEN"] = asyncio.BoundedSemaphore(num - margin)
 
 
 # SLURM semaphore stuff:
