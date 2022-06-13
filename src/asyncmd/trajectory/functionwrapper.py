@@ -32,10 +32,9 @@ from .trajectory import Trajectory
 logger = logging.getLogger(__name__)
 
 
-# TODO: DOCUMENT!
 # TODO: DaskTrajectoryFunctionWrapper?!
-class TrajectoryFunctionWrapper:
-    """ABC to define the API and some common methods."""
+class TrajectoryFunctionWrapper(abc.ABC):
+    """Abstract base class to define the API and some common methods."""
     def __init__(self, **kwargs) -> None:
         # NOTE: in principal we should set these after the stuff set via kwargs
         #       (otherwise users could overwrite them by passing _id="blub" to
@@ -80,7 +79,11 @@ class TrajectoryFunctionWrapper:
         self._id = self._get_id_str()  # get/set ID
 
     @abc.abstractmethod
-    def _get_id_str(self):
+    def _get_id_str(self) -> str:
+        # this is expected to return an unique idetifying string
+        # this should be unique and portable, i.e. it should enable us to make
+        # ensure that the cached values will only be used for the same function
+        # called with the same arguments
         pass
 
     @abc.abstractmethod
@@ -112,11 +115,32 @@ class TrajectoryFunctionWrapper:
 
 
 class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
-    """Wrap python functions for use on :class:`asyncmd.Trajectory`."""
-    # wrap functions for use on asyncmd.Trajectory
-    # makes sure that we check for cached values if we apply the wrapped func
-    # to an asyncmd.Trajectory
+    """
+    Wrap python syncronous functions for use on :class:`asyncmd.Trajectory`.
+
+    Turns every python callable into an asyncronous (awaitable) and cached
+    function for application on :class:`asyncmd.Trajectory`.
+
+    Attributes
+    ----------
+    function : callable
+        The wrapped callable.
+    call_kwargs : dict
+        Keyword arguments for wrapped function.
+    """
     def __init__(self, function, call_kwargs={}, **kwargs):
+        """
+        Initialize a :class:`PyTrajectoryFunctionWrapper`.
+
+        Parameters
+        ----------
+        function : callable
+            The (synchronous) callable to wrap.
+        call_kwargs : dict, optional
+            Keyword arguments for `function`,
+            the keys will be used as keyword with the corresponding values,
+            by default {}
+        """
         super().__init__(**kwargs)
         self._func = None
         self._func_src = None
@@ -235,20 +259,25 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
 #       -> write numpy npy files! (or pass custom load func!)
 class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
     """
-    Wrap executables to use on `aimmd.distributed.Trajectory` via SLURM.
+    Wrap executables to use on :class:`asyncmd.Trajectory` via SLURM.
 
     The execution of the job is submited to the queueing system with the
     given sbatch script (template).
     The executable will be called with the following positional arguments:
+
         - full filepath of the structure file associated with the trajectory
+
         - full filepath of the trajectory to calculate values for
+
         - full filepath of the file the results should be written to without
-          fileending, Note that if no custom loading function is supplied we
+          fileending. Note that if no custom loading function is supplied we
           expect that the written file has 'npy' format and the added ending
           '.npy', i.e. we expect the executable to add the ending '.npy' to
-          the passed filepath (as e.g. `np.save($FILEPATH, data)` would do)
+          the passed filepath (as e.g. ``np.save($FILEPATH, data)`` would do)
+
         - any additional arguments from call_kwargs are added as
-          `" {key} {value}" for key, value in call_kwargs.items()`
+          ``" {key} {value}" for key, value in call_kwargs.items()``
+
     See also the examples for a reference (python) implementation of multiple
     different functions/executables for use with this class.
 
@@ -258,6 +287,10 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         Used as name for the job in slurm and also as part of the filename for
         the submission script that will be written (and deleted if everything
         goes well) for every trajectory.
+    executable : str
+        Name of or path to the wrapped executable.
+    call_kwargs : dict
+        Keyword arguments for wrapped function.
     """
 
     def __init__(self, executable, sbatch_script, call_kwargs={},
@@ -277,8 +310,11 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             Path to a sbatch submission script file or string with the content
             of a submission script. Note that the submission script must
             contain the following placeholders (also see the examples folder):
-                {cmd_str} - Replaced by the command to call the executable on a given trajectory.
-                {jobname} - Replaced by the name of the job containing the hash of the function.
+
+             - {cmd_str} : Replaced by the command to call the executable on a given trajectory.
+
+             - {jobname} : Replaced by the name of the job (usually containing the hash of the function).
+
         call_kwargs : dict
             Dictionary of additional arguments to pass to the executable, they
             will be added to the call as pair ' {key} {val}', note that in case
