@@ -30,13 +30,18 @@ class TrajectoryConcatenator:
     """
     Create concatenated trajectory from given trajectories and frames.
 
-    The concatenate method takes a list of trajectories and a list of slices,
-    returns one trajectory containing only the selected frames in that order.
+    The concatenate method takes a list of trajectories plus a list of slices
+    and returns one trajectory containing only the selected frames in the order
+    specified by the slices.
     Velocities are automatically inverted if the step of a slice is negative,
     this can be controlled via the invert_v_for_negative_step attribute.
-
-    NOTE: We assume that all trajs have the same structure file and attach the
+    We assume that all trajs have the same structure file and attach the
     structure of the first traj if not told otherwise.
+
+    Attributes
+    ----------
+    invert_v_for_negative_step : bool
+        Whether to invert all momenta for segments with negative stride.
     """
 
     def __init__(self, invert_v_for_negative_step: bool = True):
@@ -101,7 +106,9 @@ class TrajectoryConcatenator:
         if not os.path.isfile(struct_out):
             # although we would expect that it exists if it comes from an
             # existing traj, we still check to catch other unrelated issues :)
-            raise ValueError(f"Output structure file must exist ({struct_out}).")
+            raise ValueError(
+                        f"Output structure file must exist ({struct_out})."
+                             )
 
         # special treatment for traj0 because we need n_atoms for the writer
         u0 = mda.Universe(trajs[0].structure_file, trajs[0].trajectory_file,
@@ -138,46 +145,91 @@ class TrajectoryConcatenator:
 
 
 class FrameExtractor(abc.ABC):
+    """
+    Abstract base class for FrameExtractors.
+
+    Implements the `extract` method which is common in all FrameExtractors.
+    Subclasses only need to implement `apply_modification` which is called by
+    `extract` to modify the frame just before writing it out.
+    """
+
     # extract a single frame with given idx from a trajectory and write it out
     # simplest case is without modification, but useful modifications are e.g.
     # with inverted velocities, with random Maxwell-Boltzmann velocities, etc.
 
     @abc.abstractmethod
     def apply_modification(self, universe, ts):
-        # this func will is called when the current timestep is at the choosen
-        # frame and applies the subclass specific frame modifications to the
-        # mdanalysis universe, after this function finishes the frames is
-        # written out, i.e. with potential modifications applied
-        # no return value is expected or considered,
-        # the modifications in the universe are nonlocal anyway
+        """
+        Apply modification to selected frame (timestep/universe).
+
+        This function will be called when the current timestep is at the
+        chosen frame index and is expected to apply the subclass specific
+        modifications to the frame via modifying the mdanalysis timestep and
+        universe objects **inplace**.
+        After this function finishes the frame is written out, i.e. with any
+        potential modifications applied.
+        No return value is expected or considered from this method, the
+        modifications of the timestep/universe are nonlocal anyway.
+
+        Parameters
+        ----------
+        universe : MDAnalysis.core.universe.Universe
+            The mdanalysis universe associated with the trajectory.
+        ts : MDAnalysis.coordinates.base.Timestep
+            The mdanalysis timestep of the frame to extract.
+        """
         raise NotImplementedError
 
-    def extract(self, outfile, traj_in, idx, struct_out=None, overwrite=False):
+    def extract(self, outfile, traj_in: Trajectory, idx: int,
+                struct_out=None, overwrite: bool = False) -> Trajectory:
+        """
+        Extract a single frame from given trajectory and write it out.
+
+        Parameters
+        ----------
+        outfile : str
+            Absolute or relative path to the output trajectory. Expected to be
+            with file ending, e.g. "traj.trr".
+        traj_in : Trajectory
+            Input trajectory from which we will extract the frame at `idx`.
+        idx : int
+            Index of the frame to extract in `traj_in`.
+        struct_out : str, optional
+            None, or absolute or relative path to a structure file,
+            by default None. If not None we will use the given file as
+            structure file for the returned trajectory object, else we use the
+            structure file of `traj_in`.
+        overwrite : bool, optional
+            Whether to overwrite `outfile` if it exists, by default False.
+
+        Returns
+        -------
+        Trajectory
+            Trajectory object holding a trajectory with the extracted frame.
+
+        Raises
+        ------
+        ValueError
+            If `outfile` exists and `overwrite=False`.
+        ValueError
+            If `struct_out` is given but does not exist.
+        """
         # TODO: should we check that idx is an idx, i.e. an int?
         # TODO: make it possible to select a subset of atoms to write out
         #       and also for modification?
         # TODO: should we make it possible to extract multiple frames, i.e.
         #       enable the use of slices (and iterables of indices?)
-        """
-        Extract a single frame from trajectory and write it out.
-
-        outfile - path to output file (relative or absolute)
-        traj_in - `:class:Trajectory` from which the original frame is taken
-        idx - index of the frame in the input trajectory
-        struct_out - None or output structure filepath, if None we will take the
-                     structure file of the input trajectory
-        overwrite - bool (default=False), if True overwrite existing tra_out,
-                    if False and the file exists raise an error
-        """
         outfile = os.path.abspath(outfile)
         if os.path.exists(outfile) and not overwrite:
-            raise ValueError(f"overwrite=False and outfile exists: {outfile}")
+            raise ValueError(f"overwrite=False but outfile={outfile} exists.")
         struct_out = (traj_in.structure_file if struct_out is None
                       else os.path.abspath(struct_out))
         if not os.path.isfile(struct_out):
             # although we would expect that it exists if it comes from an
             # existing traj, we still check to catch other unrelated issues :)
-            raise ValueError(f"Output structure file must exist ({struct_out}).")
+            raise ValueError("Output structure file must exist."
+                             + f"(given struct_out is {struct_out})."
+                             )
         u = mda.Universe(traj_in.structure_file, traj_in.trajectory_file,
                          tpr_resid_from_one=True)
         with mda.Writer(outfile, n_atoms=u.trajectory.n_atoms) as W:
@@ -191,31 +243,79 @@ class NoModificationFrameExtractor(FrameExtractor):
     """Extract a frame from a trajectory, write it out without modification."""
 
     def apply_modification(self, universe, ts):
+        """
+        Apply no modification to the extracted frame.
+
+        Parameters
+        ----------
+        universe : MDAnalysis.core.universe.Universe
+            The mdanalysis universe associated with the trajectory.
+        ts : MDAnalysis.coordinates.base.Timestep
+            The mdanalysis timestep of the frame to extract.
+        """
         pass
 
 
 class InvertedVelocitiesFrameExtractor(FrameExtractor):
-    """Extract a frame from a trajectory, write it out with inverted velocities."""
+    """
+    Extract a frame from a trajectory, write it out with inverted velocities.
+    """
 
     def apply_modification(self, universe, ts):
+        """
+        Invert all momenta of the extracted frame.
+
+        Parameters
+        ----------
+        universe : MDAnalysis.core.universe.Universe
+            The mdanalysis universe associated with the trajectory.
+        ts : MDAnalysis.coordinates.base.Timestep
+            The mdanalysis timestep of the frame to extract.
+        """
         ts.velocities *= -1.
 
 
 class RandomVelocitiesFrameExtractor(FrameExtractor):
-    """Extract a frame from a trajectory, write it out with randomized velocities."""
+    """
+    Extract a frame from a trajectory, write it out with randomized velocities.
 
-    def __init__(self, T):
-        """Temperature T must be given in degree Kelvin."""
+    Attributes
+    ----------
+    T : float
+        Temperature of the Maxwell-Boltzmann distribution for velocity
+        generation, in Kelvin.
+    """
+
+    def __init__(self, T: float):
+        """
+        Initialize a :class:`RandomVelocitiesFrameExtractor`.
+
+        Parameters
+        ----------
+        T : float
+            Temperature of the Maxwell-Boltzmann distribution, in Kelvin.
+        """
         self.T = T  # in K
         self._rng = np.random.default_rng()
 
     def apply_modification(self, universe, ts):
+        """
+        Draw random Maxwell-Boltzmann velocities for extracted frame.
+
+        Parameters
+        ----------
+        universe : MDAnalysis.core.universe.Universe
+            The mdanalysis universe associated with the trajectory.
+        ts : MDAnalysis.coordinates.base.Timestep
+            The mdanalysis timestep of the frame to extract.
+        """
         # m is in units of g / mol
         # v should be in units of \AA / ps = 100 m / s
         # which means m [10**-3 kg / mol] v**2 [10000 (m/s)**2]
         # is in units of [ 10 kg m**s / (mol * s**2) ]
         # so we use R = N_A * k_B [J / (mol * K) = kg m**2 / (s**2 * mol * K)]
-        # and add in a factor 10 to get 1/σ**2 = m / (k_B * T) in the right units
+        # and add in a factor 10 to get 1/σ**2 = m / (k_B * T)
+        # in the correct units
         scale = np.empty((ts.n_atoms, 3), dtype=np.float64)
         s1d = np.sqrt((self.T * constants.R * 0.1)
                       / universe.atoms.masses

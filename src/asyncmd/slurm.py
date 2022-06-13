@@ -362,7 +362,7 @@ class SlurmProcess:
         # we raise a ValueError if sacct/sinfo are not available
         logger.warning("Could not initialize SLURM cluster handling. "
                        + "If you are sure SLURM (sinfo/sacct/etc) is available"
-                       + " try calling `asyncmd.slurm.reinitialize_slurm_settings()`"
+                       + " try calling `asyncmd.config.set_slurm_settings()`"
                        + " with the appropriate arguments.")
     # we can not simply wait for the subprocess, since slurm exits directly
     # so we will sleep for this long between checks if slurm-job completed

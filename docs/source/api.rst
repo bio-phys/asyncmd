@@ -1,5 +1,5 @@
-API (Overview by submodules)
-============================
+Overview for users
+==================
 
 trajectory
 **********
@@ -22,25 +22,27 @@ You can set the default caching mechanism for all
 each :py:class:`asyncmd.Trajectory` at init by passing ``cache_type``. See also
 :py:func:`asyncmd.config.register_h5py_cache` to register the h5py cache.
 
+.. py:currentmodule:: asyncmd.trajectory.convert
+
 It also contains a number of classes to extract frames from
 :py:class:`asyncmd.Trajectory` objects in the module
 :py:mod:`asyncmd.trajectory.convert`:
 
-  - :py:class:`asyncmd.trajectory.convert.NoModificationFrameExtractor`
+  - :py:class:`NoModificationFrameExtractor`
 
-  - :py:class:`asyncmd.trajectory.convert.InvertedVelocitiesFrameExtractor`
+  - :py:class:`InvertedVelocitiesFrameExtractor`
 
-  - :py:class:`asyncmd.trajectory.convert.RandomVelocitiesFrameExtractor`
+  - :py:class:`RandomVelocitiesFrameExtractor`
 
 Note that implementing your own ``FrameExtractor`` with a custom modification
-is as easy as subclassing the abstract base class
-:py:class:`asyncmd.trajectory.convert.FrameExtractor` and overwriting its
-:py:meth:`asyncmd.trajectory.convert.FrameExtractor.apply_modification`
-method.
+is as easy as subclassing the abstract base class :py:class:`FrameExtractor`
+and overwriting its :py:meth:`FrameExtractor.apply_modification` method.
 
 The :py:mod:`asyncmd.trajectory.convert` module furthermore contains a class to
 concatenate :py:class:`asyncmd.Trajectory` segments, the
-:py:class:`asyncmd.trajectory.convert.TrajectoryConcatenator`.
+:py:class:`TrajectoryConcatenator`.
+
+.. py:currentmodule:: asyncmd
 
 Another notable part of the :py:mod:`asyncmd.trajectory` module is the
 :py:class:`asyncmd.trajectory.ConditionalTrajectoryPropagator` which
@@ -76,7 +78,6 @@ FrameExtractors
 .. autoclass:: asyncmd.trajectory.convert.FrameExtractor
    :members:
    :inherited-members:
-   :undoc-members:
 
 .. autoclass:: asyncmd.trajectory.convert.NoModificationFrameExtractor
    :members:
@@ -161,8 +162,8 @@ CV value caching
 
 .. autofunction:: asyncmd.config.register_h5py_cache
 
-API (For developers)
-====================
+Overview for developers
+=======================
 
 This section is relevant for developers of :py:mod:`asyncmd`, e.g. when you
 want to add the option to steer an additional molecular dynamcis engines (like
@@ -224,8 +225,8 @@ implementation of the other wrapper classes,
 
 ..   :undoc-members:
 
-Molecular dynamics configuration file parsing and writing (:py:class:`asyncmd.mdconfig.MDConfig`)
-*************************************************************************************************
+Molecular dynamics configuration file parsing and writing
+*********************************************************
 
 All molecular dynamics configuration file wrappers should subclass
 :py:class:`asyncmd.mdconfig.MDConfig`. This class defines the two abstract
@@ -255,8 +256,8 @@ value(s) the list in the dict must be empty, e.g. ``{key: []}``.
    :private-members:
    :inherited-members:
 
-Molecular dynamics simulation engine wrappers (:py:class:`asyncmd.mdengine.MDEngine`)
-*************************************************************************************
+Molecular dynamics simulation engine wrappers
+*********************************************
 
 All molecular dynamics engines should subclass the abstract base class
 :py:class:`asyncmd.mdengine.MDEngine`, which defines the common interface
