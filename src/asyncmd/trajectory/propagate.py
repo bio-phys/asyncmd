@@ -16,10 +16,13 @@ import asyncio
 import inspect
 import logging
 import functools
+import typing
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
 from .._config import _SEMAPHORES
+from .trajectory import Trajectory
+from .functionwrapper import TrajectoryFunctionWrapper
 from .convert import TrajectoryConcatenator
 from ..utils import get_all_traj_parts, nstout_from_mdconfig
 
@@ -36,30 +39,48 @@ class MaxStepsReachedError(Exception):
 
 
 # TODO: move to trajectory.convert?
-async def construct_TP_from_plus_and_minus_traj_segments(minus_trajs, minus_state,
-                                                         plus_trajs, plus_state,
-                                                         state_funcs, tra_out,
-                                                         struct_out=None,
-                                                         overwrite=False):
+# TODO: add to sphinx docs!
+async def construct_TP_from_plus_and_minus_traj_segments(
+                                minus_trajs: "list[Trajectory]",
+                                minus_state: int,
+                                plus_trajs: "list[Trajectory]",
+                                plus_state: int,
+                                state_funcs: "list[TrajectoryFunctionWrapper]",
+                                tra_out: str,
+                                struct_out: typing.Optional[str] = None,
+                                overwrite: bool = False
+                                                         ) -> Trajectory:
     """
     Construct a continous TP from plus and minus segments until states.
 
     This is used e.g. in TwoWay TPS or if you try to get TPs out of a committor
     simulation. Note, that this inverts all velocities on the minus segments.
 
-    Arguments:
+    Parameters
     ----------
-    minus_trajs - list of arcd.Trajectories, backward in time,
-                  these are going to be inverted
-    minus_state - int, idx to the first state reached on the minus trajs
-    plus_trajs - list of arcd.Trajectories, forward in time
-    plus_state - int, idx to the first state reached on the plus trajs
-    state_funcs - list of state functions, the indices to the states must match
-                  the minus and plus state indices!
-    tra_out - path to the output trajectory file
-    struct_out - None or path to a structure file, the structure to associate with
-                 the concatenated TP, taken from input trajs if None (the default)
-    overwrite - bool (default False), wheter to overwrite an existing output
+    minus_trajs : list[Trajectory]
+        Trajectories that go "backward in time", these are going to be inverted
+    minus_state : int
+        Index (in ``state_funcs``) of the first state reached on minus trajs.
+    plus_trajs : list[Trajectory]
+        Trajectories that go "forward in time", these are taken as is.
+    plus_state : int
+        Index (in ``state_funcs``) of the first state reached on plus trajs.
+    state_funcs : list[TrajectoryFunctionWrapper]
+        List of wrapped state functions, the indices to the states must match
+        the minus and plus state indices!
+    tra_out : str
+        Absolute or relative path to the output trajectory file.
+    struct_out : str, optional
+        Absolute or relative path to the output structure file, if None we will
+        use the structure file of the first minus_traj, by default None.
+    overwrite : bool, optional
+        Whether we should overwrite tra_out if it exists, by default False.
+
+    Returns
+    -------
+    Trajectory
+        The constructed transition.
     """
     # first find the slices to concatenate
     # minus state first
@@ -154,65 +175,91 @@ async def construct_TP_from_plus_and_minus_traj_segments(minus_trajs, minus_stat
 
 
 # TODO: DOCUMENT
+# TODO: we renamed self_states -> self._conditions; self.states -> self.conditions
+#       make this consistent in the whole class (we got until the start of `propagate`)!
 class ConditionalTrajectoryPropagator:
     """
-    Propagate a trajectory until any of the states is reached.
+    Propagate a trajectory until any of the given conditions is fullfilled.
 
     This class propagates the trajectory using a given MD engine (class) in
     small chunks (chunksize is determined by walltime_per_part) and checks
-    after every chunk is done if any state has been reached.
-    It then returns either a list of trajectory parts and the state first
-    reached and can also concatenate the parts into one trajectory, which then
-    starts with the starting configuration and ends with one frame in the state.
+    after every chunk is done if any condition has been fullfilled.
+    It then returns a list of trajectory parts and the index of the condition
+    first fullfilled. It can also concatenate the parts into one trajectory,
+    which then starts with the starting configuration and ends with the frame
+    fullfilling the condition.
 
-    Notable methods:
-    ----------------
-    propagate - propagate the trajectory until any state is reached,
-                return a list of trajecory segments and the state reached
-    cut_and_concatenate - take a list of trajectory segments and form one
-                          continous trajectory until the first frame in state
-    propagate_and_concatenate - propagate and cut_and_concatenate in sequence
+    Attributes
+    ----------
+    conditions : list[callable]
+        List of condition functions.
+
+    Notes
+    -----
+    We assume that every condition function returns a list/ a 1d array with
+    True or False for each frame, i.e. if we fullfill condition at any given
+    frame.
+    We assume non-overlapping conditions, i.e. a configuration can not fullfill
+    two conditions at the same time, **it is the users responsibility to ensure
+    that their conditions are sane**.
+
+    Methods
+    -------
+    propagate(starting_configuration, workdir, deffnm, continuation=False)
+        Propagate the trajectory until any condition is fullfilled, return a
+        list of trajecory segments and the first condition fullfilled.
+    cut_and_concatenate(trajs, tra_out, overwrite=False)
+        Take a list of trajectory segments and form one continous trajectory
+        until the first frame that fullfills any condition.
+    propagate_and_concatenate(starting_configuration, workdir, deffnm, tra_out, overwrite=False, continuation=False)
+        :meth:`propagate` and :meth:`cut_and_concatenate` in sequence.
     """
-    # NOTE: we assume that every state function returns a list/ a 1d array with
-    #       True/False for each frame, i.e. if we are in state at a given frame
-    # NOTE: we assume non-overlapping states, i.e. a configuration can not
-    #       be inside of two states at the same time, it is the users
-    #       responsibility to ensure that their states are sane
+    # NOTE: we assume that every condition function returns a list/ a 1d array
+    #       with True/False for each frame, i.e. if we fullfill condition at
+    #       any given frame
+    # NOTE: we assume non-overlapping conditions, i.e. a configuration can not
+    #       fullfill two conditions at the same time, it is the users
+    #       responsibility to ensure that their conditions are sane
 
-    def __init__(self, states, engine_cls, engine_kwargs, walltime_per_part,
-                 max_steps=None, max_frames=None):
+    def __init__(self, conditions, engine_cls,
+                 engine_kwargs: dict,
+                 walltime_per_part: float,
+                 max_steps: typing.Optional[int] = None,
+                 max_frames: typing.Optional[int] = None,
+                 ):
         """
-        Initialize a TrajectoryPropagatorUntilAnyState.
+        Initialize a `ConditionalTrajectoryPropagator`.
 
-        Parameters:
-        -----------
-        states - list of state functions, e.g. `aimmd.TrajectoryFunctionWrapper`
-                 but can be any callable that takes a trajecory and returns an
-                 array of True and False values (one value per frame)
-        engine_cls - class of the MD engine to use (uninitialized!)
-        engine_kwargs - dictionary of key word arguments needed to initialize
-                        the MD engine
-        walltime_per_part - float, walltime per trajectory segment in hours
-        max_steps - None or int, maximum number of integration steps to try
-                    before stopping the simulation because it did not commit
-        max_frames - None or int, maximum number of frames to produce before
-                     stopping the simulation because it did not commit
-        NOTE: max_steps and max_frames are redundant since:
-                   max_steps = max_frames * output_frequency
-              if both are given max_steps takes precedence
+        Parameters
+        ----------
+        conditions : list[callable], usually list[TrajectoryFunctionWrapper]
+            List of condition functions, usually wrapped function for
+            asyncronous application, but can be any callable that takes a
+            :class:`Trajecory` and returns an array of True and False values
+            (one value per frame).
+        engine_cls : type(asyncmd.mdengine.MDEngine)
+            Class of the MD engine to use, **uninitialized!**
+        engine_kwargs : dict
+            Dictionary of key word arguments to initialize the MD engine.
+        walltime_per_part : float
+            Walltime per trajectory segment, in hours.
+        max_steps : int, optional
+            Maximum number of integration steps to do before stopping the
+            simulation because it did not commit to any condition,
+            by default None. Takes precendence over max_frames if both given.
+        max_frames : int, optional
+            Maximum number of frames to produce before stopping the simulation
+            because it did not commit to any condition, by default None.
+
+        Notes
+        -----
+        ``max_steps`` and ``max_frames`` are redundant since
+        ``max_steps = max_frames * output_frequency``, if both are given
+        max_steps takes precedence.
         """
-        # states - list of wrapped trajectory funcs
-        # engine_cls - mdengine class
-        # engine_kwargs - dict of kwargs for instantiation of the engine
-        # walltime_per_part - walltime (in h) per mdrun, i.e. traj part/segment
-        # NOTE: max_steps takes precedence over max_frames if both are given
-        # TODO: do we want max_frames as argument to propagate too? I.e. giving it there to overwrite?
-        # max_frames - maximum number of *frames* in all segments combined
-        #              note that frames = steps / nstxout
-        # max_steps - maximum number of integration steps, i.e. nsteps = frames * nstxout
-        self._states = None
-        self._state_func_is_coroutine = None
-        self.states = states
+        self._conditions = None
+        self._condition_func_is_coroutine = None
+        self.conditions = conditions
         self.engine_cls = engine_cls
         self.engine_kwargs = engine_kwargs
         self.walltime_per_part = walltime_per_part
@@ -224,7 +271,7 @@ class ConditionalTrajectoryPropagator:
             traj_type = engine_cls.output_traj_type
         nstout = nstout_from_mdconfig(mdconfig=engine_kwargs["mdconfig"],
                                       output_traj_type=traj_type)
-        # sort out if we use max-frames or max-steps
+        # sort out if we use max_frames or max_steps
         if max_frames is not None and max_steps is not None:
             logger.warning("Both max_steps and max_frames given. Note that "
                            + "max_steps will take precedence.")
@@ -238,30 +285,32 @@ class ConditionalTrajectoryPropagator:
             # this is a float but can be compared to ints
             self.max_steps = np.inf
 
-    #TODO/FIXME: self._states is a list...that means users can change
+    #TODO/FIXME: self._conditions is a list...that means users can change
     #            single elements without using the setter!
     #            we could use a list subclass as for the MDconfig?!
     @property
-    def states(self):
-        return self._states
+    def conditions(self):
+        return self._conditions
 
-    @states.setter
-    def states(self, states):
-        # I think it is save to assume each state has a .__call__() method? :)
+    @conditions.setter
+    def conditions(self, conditions):
+        # I think it is save to assume each condition has a .__call__() method?
         # so we just check if it is awaitable
-        self._state_func_is_coroutine = [inspect.iscoroutinefunction(s.__call__)
-                                         for s in states]
-        if not all(self._state_func_is_coroutine):
+        self._condition_func_is_coroutine = [
+                                        inspect.iscoroutinefunction(c.__call__)
+                                        for c in conditions
+                                             ]
+        if not all(self._condition_func_is_coroutine):
             # and warn if it is not
             logger.warning(
                     "It is recommended to use coroutinefunctions for all "
-                    + "states. This can easily be achieved by wrapping any"
+                    + "conditions. This can easily be achieved by wrapping any"
                     + " function in a TrajectoryFunctionWrapper. All "
-                    + "non-coroutine state functions will be blocking when"
-                    + " applied! ([s is coroutine for s in states] = "
-                    + f"{self._state_func_is_coroutine})"
+                    + "non-coroutine condition functions will be blocking when"
+                    + " applied! ([c is coroutine for c in conditions] = "
+                    + f"{self._condition_func_is_coroutine})"
                            )
-        self._states = states
+        self._conditions = conditions
 
     async def propagate_and_concatenate(self, starting_configuration, workdir,
                                         deffnm, tra_out, overwrite=False,
@@ -277,33 +326,34 @@ class ConditionalTrajectoryPropagator:
         tra_out - the filename of the output trajectory
         overwrite - whether to overwrite any existing output trajectories
         continuation - bool, whether to (try to) continue a previous run
-                       with given workdir and deffnm but possibly changed states
+                       with given workdir and deffnm but possibly changed
+                       conditions
 
-        Returns (traj_to_state, idx_of_state_reached)
+        Returns (traj_to_condition, idx_of_condition_fullfilled)
         """
         # this just chains propagate and cut_and_concatenate
         # usefull for committor simulations, for e.g. TPS one should try to
         # directly concatenate both directions to a full TP if possible
-        trajs, first_state_reached = await self.propagate(
+        trajs, first_condition_fullfilled = await self.propagate(
                                 starting_configuration=starting_configuration,
                                 workdir=workdir,
                                 deffnm=deffnm,
                                 continuation=continuation
-                                                          )
+                                                              )
         # NOTE: it should not matter too much speedwise that we recalculate
-        #       the state functions, they are expected to be wrapped traj-funcs
+        #       the condition functions, they are expected to be wrapped traj-funcs
         #       i.e. the second time we should just get the values from cache
-        full_traj, first_state_reached = await self.cut_and_concatenate(
+        full_traj, first_condition_fullfilled = await self.cut_and_concatenate(
                                                         trajs=trajs,
                                                         tra_out=tra_out,
                                                         overwrite=overwrite,
-                                                                        )
-        return full_traj, first_state_reached
+                                                                            )
+        return full_traj, first_condition_fullfilled
 
     async def propagate(self, starting_configuration, workdir, deffnm,
                         continuation=False):
         """
-        Propagate trajectory in parts until any of the states is reached.
+        Propagate in traj parts until any of the conditions is fullfilled.
 
         Parameters:
         -----------
@@ -311,19 +361,22 @@ class ConditionalTrajectoryPropagator:
         workdir - absolute or relative path to an existing directory
         deffnm - the name to use for all MD engine output files
         continuation - bool, whether to (try to) continue a previous run
-                       with given workdir and deffnm but possibly changed states
+                       with given workdir and deffnm but possibly changed
+                       conditions
 
-        Returns (list_of_traj_parts, idx_of_first_state_reached)
+        Returns (list_of_traj_parts, idx_of_first_condition_fullfilled)
         """
-        # NOTE: curently this just returns a list of trajs + the state reached
+        # TODO: replace state -> condition in here!
+        # NOTE: curently this just returns a list of trajs + the condition
+        #       fullfilled
         #       this feels a bit uncomfortable but avoids that we concatenate
         #       everything a quadrillion times when we use the results
         # starting_configuration - Trajectory with starting configuration (or None)
         # workdir - workdir for engine
         # deffnm - trajectory name(s) for engine (+ all other output file names)
         # continuation - bool, if True we will try to continue a previous MD run
-        #                from files but possibly with new/differetn states
-        # check first if the starting configuration is in any state
+        #                from files but possibly with new/differetn conditions
+        # check first if the start configuration is fullfilling any condition
         state_vals = await self._state_vals_for_traj(starting_configuration)
         if np.any(state_vals):
             states_reached, frame_nums = np.where(state_vals)

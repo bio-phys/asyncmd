@@ -93,6 +93,14 @@ FrameExtractors
    :special-members:
    :inherited-members:
 
+Conditional trajectory propagation
+----------------------------------
+
+.. autoclass:: asyncmd.trajectory.ConditionalTrajectoryPropagator
+   :members:
+   :special-members:
+   :inherited-members:
+
 Trajectory concatenation
 ------------------------
 
