@@ -175,8 +175,6 @@ async def construct_TP_from_plus_and_minus_traj_segments(
 
 
 # TODO: DOCUMENT
-# TODO: we renamed self_states -> self._conditions; self.states -> self.conditions
-#       make this consistent in the whole class (we got until the start of `propagate`)!
 class ConditionalTrajectoryPropagator:
     """
     Propagate a trajectory until any of the given conditions is fullfilled.
@@ -285,7 +283,7 @@ class ConditionalTrajectoryPropagator:
             # this is a float but can be compared to ints
             self.max_steps = np.inf
 
-    #TODO/FIXME: self._conditions is a list...that means users can change
+    # TODO/FIXME: self._conditions is a list...that means users can change
     #            single elements without using the setter!
     #            we could use a list subclass as for the MDconfig?!
     @property
@@ -366,7 +364,6 @@ class ConditionalTrajectoryPropagator:
 
         Returns (list_of_traj_parts, idx_of_first_condition_fullfilled)
         """
-        # TODO: replace state -> condition in here!
         # NOTE: curently this just returns a list of trajs + the condition
         #       fullfilled
         #       this feels a bit uncomfortable but avoids that we concatenate
@@ -377,79 +374,83 @@ class ConditionalTrajectoryPropagator:
         # continuation - bool, if True we will try to continue a previous MD run
         #                from files but possibly with new/differetn conditions
         # check first if the start configuration is fullfilling any condition
-        state_vals = await self._state_vals_for_traj(starting_configuration)
-        if np.any(state_vals):
-            states_reached, frame_nums = np.where(state_vals)
-            # gets the frame with the lowest idx where any state is True
+        cond_vals = await self._condition_vals_for_traj(starting_configuration)
+        if np.any(cond_vals):
+            conds_fullfilled, frame_nums = np.where(cond_vals)
+            # gets the frame with the lowest idx where any condition is True
             min_idx = np.argmin(frame_nums)
-            first_state_reached = states_reached[min_idx]
+            first_condition_fullfilled = conds_fullfilled[min_idx]
             logger.error(f"Starting configuration ({starting_configuration}) "
-                         + f"is already inside the state with idx {first_state_reached}.")
+                         + "is already fullfilling the condition with idx"
+                         + f" {first_condition_fullfilled}.")
             # we just return the starting configuration/trajectory
-            # state reached is calculated below (is the same for both branches)
             trajs = [starting_configuration]
-        else:
-            engine = self.engine_cls(**self.engine_kwargs)
-            if not continuation:
-                await engine.prepare(
-                            starting_configuration=starting_configuration,
-                            workdir=workdir,
-                            deffnm=deffnm,
-                                    )
-                any_state_reached = False
-                trajs = []
-                step_counter = 0
-            else:
-                # NOTE: we assume that the state function could be different
-                # so get all traj parts and calculate the state functions on them
-                trajs = get_all_traj_parts(folder=workdir, deffnm=deffnm,
-                                           engine=engine)
-                states_vals = await asyncio.gather(
-                                *(self._state_vals_for_traj(t) for t in trajs)
-                                                   )
-                states_vals = np.concatenate([np.asarray(s) for s in states_vals],
-                                             axis=1)
-                # see if we already reached a state on the existing traj parts
-                any_state_reached = np.any(states_vals)
-                if any_state_reached:
-                    states_reached, frame_nums = np.where(states_vals)
-                    # gets the frame with the lowest idx where any state is True
-                    min_idx = np.argmin(frame_nums)
-                    first_state_reached = states_reached[min_idx]
-                    # already reached a state, get out of here!
-                    return trajs, first_state_reached
-                # Did not reach a state yet, so prepare the engine to continue
-                # the simulation until we reach any of the (new) states
-                await engine.prepare_from_files(workdir=workdir, deffnm=deffnm)
-                step_counter = engine.steps_done
+            return trajs, first_condition_fullfilled
 
-            while ((not any_state_reached)
-                   and (step_counter <= self.max_steps)):
-                traj = await engine.run_walltime(self.walltime_per_part)
-                state_vals = await self._state_vals_for_traj(traj)
-                any_state_reached = np.any(state_vals)
-                step_counter = engine.steps_done
-                trajs.append(traj)
-            if not any_state_reached:
-                # left while loop because of max_frames reached
-                raise MaxStepsReachedError(
-                        f"Engine produced {step_counter} "
-                        + f"steps (>= {self.max_steps})."
-                                           )
-        # state_vals are the ones for the last traj
-        # here we get which states are True and at which frame
-        states_reached, frame_nums = np.where(state_vals)
-        # gets the frame with the lowest idx where any state is True
+        # starting configuration does not fullfill any condition, lets do MD
+        engine = self.engine_cls(**self.engine_kwargs)
+        if not continuation:
+            # no continuation, just prepare the engine from scratch
+            await engine.prepare(
+                        starting_configuration=starting_configuration,
+                        workdir=workdir,
+                        deffnm=deffnm,
+                                )
+            any_cond_fullfilled = False
+            trajs = []
+            step_counter = 0
+        else:
+            # continuation: get all traj parts already done and continue from
+            # there, i.e. append to the last traj part found
+            # NOTE: we assume that the condition functions could be different
+            # so get all traj parts and calculate the condition funcs on them
+            trajs = get_all_traj_parts(folder=workdir, deffnm=deffnm,
+                                       engine=engine)
+            cond_vals = await asyncio.gather(
+                            *(self._condition_vals_for_traj(t) for t in trajs)
+                                             )
+            cond_vals = np.concatenate([np.asarray(s) for s in cond_vals],
+                                       axis=1)
+            # see if we already fullfill a condition on the existing traj parts
+            any_cond_fullfilled = np.any(cond_vals)
+            if any_cond_fullfilled:
+                conds_fullfilled, frame_nums = np.where(cond_vals)
+                # gets the frame with the lowest idx where any cond is True
+                min_idx = np.argmin(frame_nums)
+                first_condition_fullfilled = conds_fullfilled[min_idx]
+                # already fullfill a condition, get out of here!
+                return trajs, first_condition_fullfilled
+                # Did not fullfill any condition yet, so prepare the engine to
+                # continue the simulation until we reach any of the (new) conds
+            await engine.prepare_from_files(workdir=workdir, deffnm=deffnm)
+            step_counter = engine.steps_done
+
+        while ((not any_cond_fullfilled)
+                and (step_counter <= self.max_steps)):
+            traj = await engine.run_walltime(self.walltime_per_part)
+            cond_vals = await self._condition_vals_for_traj(traj)
+            any_cond_fullfilled = np.any(cond_vals)
+            step_counter = engine.steps_done
+            trajs.append(traj)
+        if not any_cond_fullfilled:
+            # left while loop because of max_frames reached
+            raise MaxStepsReachedError(
+                f"Engine produced {step_counter} steps (>= {self.max_steps})."
+                                       )
+        # cond_vals are the ones for the last traj
+        # here we get which conditions are True and at which frame
+        conds_fullfilled, frame_nums = np.where(cond_vals)
+        # gets the frame with the lowest idx where any condition is True
         min_idx = np.argmin(frame_nums)
-        # and now the idx to self.states of the state that was first reached
-        # NOTE: if two states are reached simultaneously at min_idx,
-        #       this will find the state with the lower idx only
-        first_state_reached = states_reached[min_idx]
-        return trajs, first_state_reached
+        # and now the idx to self.conditions for cond that was first fullfilled
+        # NOTE/FIXME: if two conditions are reached simultaneously at min_idx,
+        #       this will find the condition with the lower idx only
+        first_condition_fullfilled = conds_fullfilled[min_idx]
+        return trajs, first_condition_fullfilled
 
     async def cut_and_concatenate(self, trajs, tra_out, overwrite=False):
         """
-        Cut out and concatenate the trajectory until the first state is reached.
+        Cut out and concatenate the trajectory until the first condition is True.
 
         The expected input is a list of trajectories, e.g. the output of the
         `propagate` method.
@@ -461,44 +462,44 @@ class ConditionalTrajectoryPropagator:
         tra_out - the filename of the output trajectory
         overwrite - whether to overwrite any existing output trajectories
 
-        Returns (traj_to_state, idx_of_first_state_reached)
+        Returns (traj_to_cond, idx_of_first_condition_fullfilled)
         """
         # trajs is a list of trajectoryes, e.g. the return of propagate
         # tra_out and overwrite are passed directly to the Concatenator
-        # NOTE: we assume that frame0 of traj0 is outside of any state
-        #       and return only the subtrajectory from frame0 until any state
-        #       is first reached (the rest is ignored)
+        # NOTE: we assume that frame0 of traj0 does not fullfill any condition
+        #       and return only the subtrajectory from frame0 until any
+        #       condition is first True (the rest is ignored)
         # get all func values and put them into one big array
-        states_vals = await asyncio.gather(
-                                *(self._state_vals_for_traj(t) for t in trajs)
-                                              )
-        # states_vals is a list (trajs) of lists (states)
-        # take state 0 (always present) to get the traj part lengths
-        part_lens = [len(s[0]) for s in states_vals]  # s[0] is 1d (np)array
-        states_vals = np.concatenate([np.asarray(s) for s in states_vals],
-                                     axis=1)
-        states_reached, frame_nums = np.where(states_vals)
-        # gets the frame with the lowest idx where any state is True
+        cond_vals = await asyncio.gather(
+                            *(self._condition_vals_for_traj(t) for t in trajs)
+                                         )
+        # cond_vals is a list (trajs) of lists (conditions)
+        # take condition 0 (always present) to get the traj part lengths
+        part_lens = [len(c[0]) for c in cond_vals]  # c[0] is 1d (np)array
+        cond_vals = np.concatenate([np.asarray(c) for c in cond_vals],
+                                   axis=1)
+        conds_fullfilled, frame_nums = np.where(cond_vals)
+        # gets the frame with the lowest idx where any condition is True
         min_idx = np.argmin(frame_nums)
-        first_state_reached = states_reached[min_idx]
-        first_frame_in_state = frame_nums[min_idx]
+        first_condition_fullfilled = conds_fullfilled[min_idx]
+        first_frame_in_cond = frame_nums[min_idx]
         # find out in which part it is
         last_part_idx = 0
         frame_sum = part_lens[last_part_idx]
-        while first_frame_in_state >= frame_sum:
+        while first_frame_in_cond >= frame_sum:
             last_part_idx += 1
             frame_sum += part_lens[last_part_idx]
-        # find the first frame in state (counting from start of last part)
-        _first_frame_in_state = (first_frame_in_state
-                                 - sum(part_lens[:last_part_idx]))  # >= 0
+        # find the first frame in cond (counting from start of last part)
+        _first_frame_in_cond = (first_frame_in_cond
+                                - sum(part_lens[:last_part_idx]))  # >= 0
         if last_part_idx > 0:
             # trajectory parts which we take fully
             slices = [(0, None, 1) for _ in range(last_part_idx)]
         else:
             # only the first/last part
             slices = []
-        # and the last part until including first_frame_in_state
-        slices += [(0, _first_frame_in_state + 1, 1)]
+        # and the last part until including first_frame_in_cond
+        slices += [(0, _first_frame_in_cond + 1, 1)]
         # we fill in all args as kwargs because there are so many
         concat = functools.partial(TrajectoryConcatenator().concatenate,
                                    trajs=trajs[:last_part_idx + 1],
@@ -513,39 +514,40 @@ class ConditionalTrajectoryPropagator:
                                     thread_name_prefix="concat_thread",
                                     ) as pool:
                 full_traj = await loop.run_in_executor(pool, concat)
-        return full_traj, first_state_reached
+        return full_traj, first_condition_fullfilled
 
-    async def _state_vals_for_traj(self, traj):
-        # return a list of state_func results, one for each state func in states
-        if all(self._state_func_is_coroutine):
+    async def _condition_vals_for_traj(self, traj):
+        # return a list of condition_func results,
+        # one for each condition func in conditions
+        if all(self._condition_func_is_coroutine):
             # easy, all coroutines
-            return await asyncio.gather(*(s(traj) for s in self.states))
-        elif not any(self._state_func_is_coroutine):
+            return await asyncio.gather(*(c(traj) for c in self.conditions))
+        elif not any(self._condition_func_is_coroutine):
             # also easy (but blocking), none is coroutine
-            return [s(traj) for s in self.states]
+            return [c(traj) for c in self.conditions]
         else:
             # need to piece it together
             # first the coroutines concurrently
-            coros = [s(traj) for s, s_is_coro
-                     in zip(self.states, self._state_func_is_coroutine)
-                     if s_is_coro
+            coros = [c(traj) for c, c_is_coro
+                     in zip(self.conditions, self._condition_func_is_coroutine)
+                     if c_is_coro
                      ]
             coro_res = await asyncio.gather(*coros)
             # now either take the result from coro execution or calculate it
             all_results = []
-            for s, s_is_coro in zip(self.states, self._state_func_is_coroutine):
-                if s_is_coro:
+            for c, c_is_coro in zip(self.conditions, self._condition_func_is_coroutine):
+                if c_is_coro:
                     all_results.append(coro_res.pop(0))
                 else:
-                    all_results.append(s(traj))
+                    all_results.append(c(traj))
             return all_results
             # NOTE: this would be elegant, but to_thread() is py v>=3.9
             # we wrap the non-coroutines into tasks to schedule all together
-            #all_states_as_coro = [
-            #    s(traj) if s_is_cor else asyncio.to_thread(s, traj)
-            #    for s, s_is_cor in zip(self.states, self._state_func_is_coroutine)
+            #all_conditions_as_coro = [
+            #    c(traj) if c_is_cor else asyncio.to_thread(c, traj)
+            #    for c, c_is_cor in zip(self.conditions, self._condition_func_is_coroutine)
             #                      ]
-            #return await asyncio.gather(*all_states_as_coro)
+            #return await asyncio.gather(*all_conditions_as_coro)
 
 
 # alias for people coming from the path sampling community :)
