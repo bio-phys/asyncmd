@@ -310,24 +310,46 @@ class ConditionalTrajectoryPropagator:
                            )
         self._conditions = conditions
 
-    async def propagate_and_concatenate(self, starting_configuration, workdir,
-                                        deffnm, tra_out, overwrite=False,
-                                        continuation=False):
+    async def propagate_and_concatenate(self,
+                                        starting_configuration: Trajectory,
+                                        workdir: str,
+                                        deffnm: str,
+                                        tra_out: str,
+                                        overwrite: bool = False,
+                                        continuation: bool = False
+                                        ) -> tuple[Trajectory,int]:
         """
-        Chain `propagate` and `concatenate` methods.
+        Chain :meth:`propagate` and :meth:`concatenate` methods.
 
-        Parameters:
-        -----------
-        starting_configuration - `aimmd.distributed.Trajectory`
-        workdir - absolute or relative path to an existing directory
-        deffnm - the name to use for all MD engine output files
-        tra_out - the filename of the output trajectory
-        overwrite - whether to overwrite any existing output trajectories
-        continuation - bool, whether to (try to) continue a previous run
-                       with given workdir and deffnm but possibly changed
-                       conditions
+        Parameters
+        ----------
+        starting_configuration : Trajectory
+            The configuration (including momenta) to start MD from.
+        workdir : str
+            Absolute or relative path to the working directory.
+        deffnm : str
+            MD engine deffnm for trajectory parts and other files.
+        tra_out : str
+            Absolute or relative path for the concatenated output trajectory.
+        overwrite : bool, optional
+            Whether the output trajectory should be overwritten if it exists,
+            by default False
+        continuation : bool, optional
+            Whether we are continuing a previous MD run (with the same deffnm
+            and working directory), by default False
 
-        Returns (traj_to_condition, idx_of_condition_fullfilled)
+        Returns
+        -------
+        (traj_out, idx_of_condition_fullfilled) : (Trajectory, int)
+            The concatenated output trajectory from starting configuration
+            until the first condition is True and the index to the condition
+            function in `conditions`.
+
+        Raises
+        ------
+        MaxStepsReachedError
+            When the defined maximum number of integration steps/trajectory
+            frames has been reached in :meth:`propagate`.
         """
         # this just chains propagate and cut_and_concatenate
         # usefull for committor simulations, for e.g. TPS one should try to
