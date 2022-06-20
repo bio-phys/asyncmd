@@ -28,7 +28,7 @@ class EngineCrashedError(EngineError):
 
 class MDEngine(abc.ABC):
     """
-    Abstract bas class to define the common interface of all :class:`MDEngine`.
+    Abstract base class to define a common interface for all :class:`MDEngine`.
     """
     @abc.abstractmethod
     async def apply_constraints(self, conf_in: Trajectory,

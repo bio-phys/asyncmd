@@ -25,7 +25,7 @@ import numpy as np
 import MDAnalysis as mda
 
 
-from ..config import _GLOBALS
+from .._config import _GLOBALS
 
 
 logger = logging.getLogger(__name__)
@@ -37,17 +37,22 @@ class Trajectory:
 
     Keep track of the paths of the trajectory and the structure file.
     Caches values for (wrapped) functions acting on the trajectory.
+    Supports pickling and unpickling with the cached values restored, the
+    values will be written to a hidden numpy npz file next to the trajectory.
+    Supports equality checks with other :class:`Trajectory`.
     Also makes available (and caches) a number of useful attributes, e.g.
     ``first_step`` and ``last_step`` (the first and last intergation step in
     the trajectory), ``dt``, ``first_time``, ``last_time``,
     ``length`` (in frames) and ``nstout``.
 
-    NOTE: first_step and last_step is only useful for trajectories that come
-          directly from a :class:`asyncmd.mdengine.MDEngine`.
-          As soon as the trajecory has been concatenated using MDAnalysis
-          (i.e. the `TrajectoryConcatenator`) the step information is just the
-          frame number in the trajectory part that became first/last frame in
-          the concatenated trajectory.
+    Notes
+    -----
+    ``first_step`` and ``last_step`` is only useful for trajectories that come
+    directly from a :class:`asyncmd.mdengine.MDEngine`.
+    As soon as the trajecory has been concatenated using MDAnalysis (e.g. with
+    the ``TrajectoryConcatenator``) the step information is just the frame
+    number in the trajectory part that became first/last frame in the
+    concatenated trajectory.
     """
 
     def __init__(self, trajectory_file: str, structure_file: str,
@@ -148,6 +153,9 @@ class Trajectory:
 
     @property
     def cache_type(self):
+        """
+        String indicating the currently used cache type. Can also be (re)set.
+        """
         return copy.copy(self._cache_type)
 
     @cache_type.setter
@@ -671,6 +679,23 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
             raise KeyError(f"No values for {key} cached (yet).")
 
     def append(self, func_id: str, vals: np.ndarray) -> None:
+        """
+        Append values for given func_id.
+
+        Parameters
+        ----------
+        func_id : str
+            Function identifier.
+        vals : np.ndarray
+            Values of application of function with given func_id.
+
+        Raises
+        ------
+        TypeError
+            If ``func_id`` is not a string.
+        ValueError
+            If there are already values stored for ``func_id`` in self.
+        """
         if not isinstance(func_id, str):
             raise TypeError("func_id must be of type str.")
         if func_id in self._func_ids:

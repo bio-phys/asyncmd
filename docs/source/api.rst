@@ -1,5 +1,5 @@
-API (Overview by submodules)
-============================
+Overview for users
+==================
 
 trajectory
 **********
@@ -22,25 +22,35 @@ You can set the default caching mechanism for all
 each :py:class:`asyncmd.Trajectory` at init by passing ``cache_type``. See also
 :py:func:`asyncmd.config.register_h5py_cache` to register the h5py cache.
 
+.. py:currentmodule:: asyncmd.trajectory.convert
+
 It also contains a number of classes to extract frames from
 :py:class:`asyncmd.Trajectory` objects in the module
 :py:mod:`asyncmd.trajectory.convert`:
 
-  - :py:class:`asyncmd.trajectory.convert.NoModificationFrameExtractor`
+  - :py:class:`NoModificationFrameExtractor`
 
-  - :py:class:`asyncmd.trajectory.convert.InvertedVelocitiesFrameExtractor`
+  - :py:class:`InvertedVelocitiesFrameExtractor`
 
-  - :py:class:`asyncmd.trajectory.convert.RandomVelocitiesFrameExtractor`
+  - :py:class:`RandomVelocitiesFrameExtractor`
 
 Note that implementing your own ``FrameExtractor`` with a custom modification
-is as easy as subclassing the abstract base class
-:py:class:`asyncmd.trajectory.convert.FrameExtractor` and overwriting its
-:py:meth:`asyncmd.trajectory.convert.FrameExtractor.apply_modification`
-method.
+is as easy as subclassing the abstract base class :py:class:`FrameExtractor`
+and overwriting its :py:meth:`FrameExtractor.apply_modification` method.
 
 The :py:mod:`asyncmd.trajectory.convert` module furthermore contains a class to
 concatenate :py:class:`asyncmd.Trajectory` segments, the
-:py:class:`asyncmd.trajectory.convert.TrajectoryConcatenator`.
+:py:class:`TrajectoryConcatenator`. It can be used to concatenate lists of
+trajectory segments in any order (and possibly with inverted momenta) by
+passing a list of trajectory segments and a list of tuples (slices) that
+specify the frames to use in the concatenated output trajectory. Note that this
+class gives you all customizability at the cost of complexity, if you just want
+to construct a transition from trajectry segments the
+:py:func:`asyncmd.trajectory.construct_TP_from_plus_and_minus_traj_segments` is
+most probably easier to use and waht you want (it uses the
+:py:class:`TrajectoryConcatenator` under the hood anyway).
+
+.. py:currentmodule:: asyncmd
 
 Another notable part of the :py:mod:`asyncmd.trajectory` module is the
 :py:class:`asyncmd.trajectory.ConditionalTrajectoryPropagator` which
@@ -50,12 +60,19 @@ simulations (here the conditions would be the state functions), but can be used
 in general for any situation where the time integration should be stopped on
 given criteria (as opposed to after a fixed number of integratiopn steps or
 when a given walltime is reached).
+There is also a handy function to create a transition, i.e. a trajectory that
+connects to (different) conditions from two conditional propagation runs ending
+in different conditions, the
+:py:func:`asyncmd.trajectory.construct_TP_from_plus_and_minus_traj_segments`
+function. It is most likely usefull for users implementing some form of
+pathsampling.
 
 Trajectory
 ----------
 .. autoclass:: asyncmd.Trajectory
    :members:
    :special-members:
+   :inherited-members:
 
 TrajectoryFunctionWrappers
 --------------------------
@@ -76,7 +93,6 @@ FrameExtractors
 .. autoclass:: asyncmd.trajectory.convert.FrameExtractor
    :members:
    :inherited-members:
-   :undoc-members:
 
 .. autoclass:: asyncmd.trajectory.convert.NoModificationFrameExtractor
    :members:
@@ -91,8 +107,18 @@ FrameExtractors
    :special-members:
    :inherited-members:
 
+Conditional trajectory propagation
+----------------------------------
+
+.. autoclass:: asyncmd.trajectory.ConditionalTrajectoryPropagator
+   :members:
+   :special-members:
+   :inherited-members:
+
 Trajectory concatenation
 ------------------------
+
+.. autofunction:: asyncmd.trajectory.construct_TP_from_plus_and_minus_traj_segments
 
 .. autoclass:: asyncmd.trajectory.convert.TrajectoryConcatenator
    :members:
@@ -135,21 +161,24 @@ config
 
 Various functions for configuring :py:mod:`asyncmd` behaviour during runtime.
 Most notably are probably the functions to limit resource use (i.e. number of
-SLURM jobs, number of open files, number of processes, etc.) and the function
-to register a ``h5py`` file (or group) for CV value caching.
+concurrent SLURM jobs, number of open files, number of processes, etc.) and
+functions to influence the :py:class:`asyncmd.Trajectory` CV value caching
+like setting the default cache type for all :py:class:`asyncmd.Trajectory` or
+registering a ``h5py`` file (or group) for caching.
 
 General resource usage
 ----------------------
 
 .. autofunction:: asyncmd.config.set_max_process
 
-.. TODO! code this function ;)
-   .. autofunction:: asyncmd.config.set_max_files_open
+.. autofunction:: asyncmd.config.set_max_files_open
 
-SLURM resource usage
---------------------
+SLURM settings and resource usage
+---------------------------------
 
-.. autofunction:: asyncmd.config.set_max_slurm_jobs
+.. autofunction:: asyncmd.config.set_slurm_max_jobs
+
+.. autofunction:: asyncmd.config.set_slurm_settings
 
 CV value caching
 ----------------
@@ -158,26 +187,59 @@ CV value caching
 
 .. autofunction:: asyncmd.config.register_h5py_cache
 
-API (For developers)
-====================
+Overview for developers
+=======================
 
 This section is relevant for developers of :py:mod:`asyncmd`, e.g. when you
-want to add the option to steer additional molecular dynamcis engines like NAMD
-or add additional ways to wrapp functions actiong on Trajectories.
+want to add the option to steer an additional molecular dynamcis engines (like
+NAMD or LAMMPS) or add additional ways to wrapp functions acting on
+:py:class:`asyncmd.Trajectory`.
+
+.. py:currentmodule:: asyncmd.slurm
+
+This section also contains the interface of the classes, which are used under
+the hood by various user facing-classes in :py:mod:`asyncmd` to interact with
+the SLURM queueing system.
+Namely there is the :py:class:`SlurmProcess`, which emulates the interface of
+:py:class:`asyncio.subprocess.Process` and which is used to submit and wait for
+single SLURM jobs. Additionally (one level deeper under the hood) there is the
+:py:class:`SlurmClusterMediator`, which is a singleton class acting as the
+central communication point between the single :py:class:`SlurmProcess` and the
+SLURM commands ("sacct", "sbatch", etc.).
+
+SLURM interface classes
+***********************
+
+.. autoclass:: asyncmd.slurm.SlurmProcess
+   :member-order: bysource
+   :members:
+   :private-members:
+   :special-members:
+   :inherited-members:
+
+.. autoclass:: asyncmd.slurm.SlurmClusterMediator
+   :member-order: bysource
+   :members:
+   :private-members:
+   :special-members:
+   :inherited-members:
+
+..   :undoc-members:
 
 Wrapper classes for functions acting on trajectories
 ****************************************************
 
+.. :py:currentmodule:: asyncmd.trajectory.functionwrapper
+
 All wrapper classes for functions acting on :py:class:`asyncmd.Trajectory`
-should subclass
-:py:class:`asyncmd.trajectory.functionwrapper.TrajectoryFunctionWrapper` to
-make full and easy use of the caching mechanism already implemented. You then
-only need to implement
-:py:meth:`asyncmd.trajectory.functionwrapper.TrajectoryFunctionWrapper._get_id_str`
-and
-:py:meth:`asyncmd.trajectory.functionwrapper.TrajectoryFunctionWrapper.get_values_for_trajectory`
-to get a fully functional TrajectoryFunctionWrapper class. See also the
-implementation of the other wrapper classes for more.
+should subclass :py:class:`TrajectoryFunctionWrapper` to make full and easy use
+of the caching mechanism already implemented. You then only need to implement
+:py:meth:`TrajectoryFunctionWrapper._get_id_str` and
+:py:meth:`TrajectoryFunctionWrapper.get_values_for_trajectory` to get a fully
+functional TrajectoryFunctionWrapper class. See also the (reference)
+implementation of the other wrapper classes,
+:py:class:`PyTrajectoryFunctionWrapper` and
+:py:class:`SlurmTrajectoryFunctionWrapper`.
 
 .. autoclass:: asyncmd.trajectory.functionwrapper.TrajectoryFunctionWrapper
    :member-order: bysource
@@ -185,10 +247,11 @@ implementation of the other wrapper classes for more.
    :special-members:
    :private-members:
    :inherited-members:
-   :undoc-members:
 
-Molecular dynamics configuration file parsing and writing (:py:class:`asyncmd.mdconfig.MDConfig`)
-*************************************************************************************************
+..   :undoc-members:
+
+Molecular dynamics configuration file parsing and writing
+*********************************************************
 
 All molecular dynamics configuration file wrappers should subclass
 :py:class:`asyncmd.mdconfig.MDConfig`. This class defines the two abstract
@@ -218,8 +281,8 @@ value(s) the list in the dict must be empty, e.g. ``{key: []}``.
    :private-members:
    :inherited-members:
 
-Molecular dynamics simulation engine wrappers (:py:class:`asyncmd.mdengine.MDEngine`)
-*************************************************************************************
+Molecular dynamics simulation engine wrappers
+*********************************************
 
 All molecular dynamics engines should subclass the abstract base class
 :py:class:`asyncmd.mdengine.MDEngine`, which defines the common interface

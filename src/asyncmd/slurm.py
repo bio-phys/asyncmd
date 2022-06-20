@@ -22,20 +22,44 @@ import typing
 import logging
 
 from .tools import ensure_executable_available
-from .config import _SEMAPHORES
+from ._config import _SEMAPHORES
 
 
 logger = logging.getLogger(__name__)
 
 
-class SlurmSubmissionError(RuntimeError):
+class SlurmError(RuntimeError):
+    """Generic error superclass for all SLURM errors."""
+
+
+class SlurmCancelationError(SlurmError):
+    """Error raised when something goes wrong canceling a SLURM job."""
+
+
+class SlurmSubmissionError(SlurmError):
     """Error raised when something goes wrong submitting a SLURM job."""
 
 
 # TODO: better classname?!
 class SlurmClusterMediator:
     """
-    Singleton class to be used by all SlurmProcesses for sacct/sinfo calls.
+    Singleton class to be used by all SlurmProcess for sacct/sinfo calls.
+
+    Attributes
+    ----------
+    sinfo_executable : str
+        Name or path to the sinfo executable, by default "sinfo".
+    sacct_executable : str
+        Name or path to the sacct executable, by default "sacct".
+    min_time_between_sacct_calls : int
+        Minimum time (in seconds) between subsequent sacct calls.
+    num_fails_for_broken_node : int
+        Number of failed jobs we need to observe per node before declaring it
+        to be broken (and not submitting any more jobs to it).
+    success_to_fail_ratio : int
+        Number of successful jobs we need to observe per node to decrease the
+        failed job counter by one.
+
     """
 
     sinfo_executable = "sinfo"
@@ -49,7 +73,7 @@ class SlurmClusterMediator:
     num_fails_for_broken_node = 3
     # minimum number of successfuly completed jobs we need to see on a node to
     # decrease the 'suspected fail' counter by one
-    success_to_fail_ratio = 100
+    success_to_fail_ratio = 50
     # TODO/FIXME: currently we have some tolerance until a node is declared
     #             broken but as soon as it is broken it will stay that forever?!
     #             (here forever means until we reinitialize SlurmClusterMediator)
@@ -174,6 +198,7 @@ class SlurmClusterMediator:
         return self._jobinfo[jobid].copy()
 
     async def _update_cached_jobinfo(self) -> None:
+        """Call sacct and update cached info for all jobids we know about."""
         sacct_cmd = f"{self.sacct_executable} --noheader"
         # query only for the specific job we are running
         sacct_cmd += f" -j {','.join(self._jobids)}"
@@ -222,9 +247,27 @@ class SlurmClusterMediator:
                              + f"nodelist {nodelist}.")
 
     def _process_nodelist(self, nodelist: str) -> "list[str]":
+        """
+        Expand shorthand nodelist from SLURM to a list of nodes/hostnames.
+
+        I.e. turn the str of nodes in shorthand notation ('phys[04-07]') into
+        a list of node hostnames (['phys04', 'phys05', 'phys06']).
+
+        Parameters
+        ----------
+        nodelist : str
+            Node specification in shorthand form used by SLURM.
+
+        Returns
+        -------
+        list[str]
+            List of node hostnames.
+        """
         # takes a NodeList as returned by SLURMs sacct
         # returns a list of single node hostnames
-        # NOTE: we expect nodelist to be either a string of the form
+        # NOTE: This could also be done via "scontrol show hostname $nodelist"
+        #       but then we would need to call scontrol here
+        # NOTE: We expect nodelist to be either a string of the form
         # $hostnameprefix$num or $hostnameprefix[$num1,$num2,...,$numN]
         # or 'None assigned'
         if "[" not in nodelist:
@@ -295,7 +338,20 @@ class SlurmProcess:
     """
     Generic wrapper around SLURM submissions.
 
-    Imitates the interface of `asyncio.subprocess.Process`
+    Imitates the interface of `asyncio.subprocess.Process`.
+
+    Attributes
+    ----------
+    sbatch_executable : str
+        Name or path to the sbatch executable, by default "sbatch".
+    scancel_executable: str
+        Name or path to the scancel executable, by default "scancel".
+    sleep_time : int
+        Time (in seconds) between checks if the underlying job has finished
+        when using `self.wait`.
+    slurm_state_to_exit_code : dict
+        Dictionary mapping slurm states (string keys) to exit codes (integers),
+        **only touch it if you know what you are doing**...
     """
 
     # use same instance of class for all SlurmProcess instances
@@ -306,7 +362,7 @@ class SlurmProcess:
         # we raise a ValueError if sacct/sinfo are not available
         logger.warning("Could not initialize SLURM cluster handling. "
                        + "If you are sure SLURM (sinfo/sacct/etc) is available"
-                       + " try calling `asyncmd.slurm.reinitialize_slurm_settings()`"
+                       + " try calling `asyncmd.config.set_slurm_settings()`"
                        + " with the appropriate arguments.")
     # we can not simply wait for the subprocess, since slurm exits directly
     # so we will sleep for this long between checks if slurm-job completed
@@ -354,7 +410,26 @@ class SlurmProcess:
         "TIMEOUT": 1,  # TODO: can this happen for jobs that finish properly?
     }
 
-    def __init__(self, sbatch_script, workdir, **kwargs) -> None:
+    def __init__(self, sbatch_script: str, workdir: str, **kwargs) -> None:
+        """
+        Initialize a `SlurmProcess`.
+
+        Note that you can set all attributes by passing matching init kwargs
+        with the wanted values.
+
+        Parameters
+        ----------
+        sbatch_script : str
+            Absolute or relative path to a SLURM submission script.
+        workdir : str
+            Absolute or relative path to use as working directory.
+
+        Raises
+        ------
+        TypeError
+            If the value set via init kwarg for a attribute does not match the
+            default/original type for that attribute.
+        """
         # we expect sbatch_script to be a path to a file
         # make it possible to set any attribute via kwargs
         # check the type for attributes with default values
@@ -584,11 +659,29 @@ class SlurmProcess:
         raise NotImplementedError
 
     def terminate(self) -> None:
+        """
+        Terminate (cancel) the underlying SLURM job.
+
+        Raises
+        ------
+        SlurmCancelationError
+            If scancel has non-zero returncode.
+        RuntimeError
+            If no jobid is known, e.g. becasue the job was never submitted.
+        """
         if self._jobid is not None:
             scancel_cmd = f"{self.scancel_executable} {self._jobid}"
             # TODO: parse/check output to make sure scancel went as expected?!
-            scancel_out = subprocess.check_output(shlex.split(scancel_cmd),
-                                                  text=True)
+            try:
+                scancel_out = subprocess.check_output(shlex.split(scancel_cmd),
+                                                      text=True)
+            except subprocess.CalledProcessError as e:
+                raise SlurmCancelationError(
+                        "Something went wrong canceling the slurm job "
+                        + f"{self._jobid}. scancel had exitcode {e.returncode}"
+                        + f" and output {e.output}."
+                        )
+            # if we got until here the job is successfuly canceled....
             logger.debug(f"Canceled SLURM job with jobid {self.slurm_jobid}."
                          + f"scancel returned {scancel_out}.")
             # remove the job from the monitoring
@@ -598,24 +691,53 @@ class SlurmProcess:
             raise RuntimeError("Can not cancel a job with unknown jobid.")
 
     def kill(self) -> None:
+        """Alias for :meth:`terminate`."""
         self.terminate()
 
 
-def reinitialize_slurm_settings(sinfo_executable: str = "sinfo",
-                                sacct_executable: str = "sacct",
-                                sbatch_executable: str = "sbatch",
-                                scancel_executable: str = "scancel",
-                                min_time_between_sacct_calls: int = 10,
-                                num_fails_for_broken_node: int = 3,
-                                success_to_fail_ratio: int = 100
-                                ) -> None:
+def set_slurm_settings(sinfo_executable: str = "sinfo",
+                       sacct_executable: str = "sacct",
+                       sbatch_executable: str = "sbatch",
+                       scancel_executable: str = "scancel",
+                       min_time_between_sacct_calls: int = 10,
+                       num_fails_for_broken_node: int = 3,
+                       success_to_fail_ratio: int = 50
+                       ) -> None:
+    """
+    (Re) initialize all settings relevant for SLURM job control.
+
+    Call this function if you want to change e.g. the path/name of SLURM
+    executables. Note that this is a conviencence function to set all SLURM
+    settings in one central place, you could also set each setting seperately
+    in the `SlurmProcess` and `SlurmClusterMediator` classes.
+
+    Parameters
+    ----------
+    sinfo_executable : str, optional
+        Name of path to the sinfo executable, by default "sinfo".
+    sacct_executable : str, optional
+        Name or path to the sacct executable, by default "sacct".
+    sbatch_executable : str, optional
+        Name or path to the sbatch executable, by default "sbatch".
+    scancel_executable : str, optional
+        Name or path to the scancel executable, by default "scancel".
+    min_time_between_sacct_calls : int, optional
+        Minimum time (in seconds) between subsequent sacct calls,
+        by default 10.
+    num_fails_for_broken_node : int, optional
+        Number of failed jobs we need to observe per node before declaring it
+        to be broken (and not submitting any more jobs to it), by default 3.
+    success_to_fail_ratio : int, optional
+        Number of successful jobs we need to observe per node to decrease the
+        failed job counter by one, by default 50.
+    """
     global SlurmProcess
     SlurmProcess._slurm_cluster_mediator = SlurmClusterMediator(
-                                            sinfo_executable=sinfo_executable,
-                                            sacct_executable=sacct_executable,
-                                            min_time_between_sacct_calls=min_time_between_sacct_calls,
-                                            num_fails_for_broken_node=num_fails_for_broken_node,
-                                            success_to_fail_ratio=success_to_fail_ratio
+                    sinfo_executable=sinfo_executable,
+                    sacct_executable=sacct_executable,
+                    min_time_between_sacct_calls=min_time_between_sacct_calls,
+                    num_fails_for_broken_node=num_fails_for_broken_node,
+                    success_to_fail_ratio=success_to_fail_ratio
                                                                 )
     SlurmProcess.sbatch_executable = sbatch_executable
     SlurmProcess.scancel_executable = scancel_executable
