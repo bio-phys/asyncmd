@@ -39,7 +39,6 @@ class MaxStepsReachedError(Exception):
 
 
 # TODO: move to trajectory.convert?
-# TODO: add to sphinx docs!
 async def construct_TP_from_plus_and_minus_traj_segments(
                                 minus_trajs: "list[Trajectory]",
                                 minus_state: int,
@@ -90,8 +89,8 @@ async def construct_TP_from_plus_and_minus_traj_segments(
     part_lens = [len(v) for v in minus_state_vals]
     # make it into one long array
     minus_state_vals = np.concatenate(minus_state_vals, axis=0)
-    # get the first frame in state
-    frames_in_minus, = np.where(minus_state_vals)  # where always returns a tuple
+    # get the first frame in state (np.where always returns a tuple)
+    frames_in_minus, = np.where(minus_state_vals)
     # get the first frame in minus state in minus_trajs, this will become the
     # first frame of the traj since we invert this part
     first_frame_in_minus = np.min(frames_in_minus)
@@ -190,7 +189,7 @@ class ConditionalTrajectoryPropagator:
     Attributes
     ----------
     conditions : list[callable]
-        List of condition functions.
+        List of (wrapped) condition functions.
 
     Notes
     -----
@@ -200,18 +199,8 @@ class ConditionalTrajectoryPropagator:
     We assume non-overlapping conditions, i.e. a configuration can not fullfill
     two conditions at the same time, **it is the users responsibility to ensure
     that their conditions are sane**.
-
-    Methods
-    -------
-    propagate(starting_configuration, workdir, deffnm, continuation=False)
-        Propagate the trajectory until any condition is fullfilled, return a
-        list of trajecory segments and the first condition fullfilled.
-    cut_and_concatenate(trajs, tra_out, overwrite=False)
-        Take a list of trajectory segments and form one continous trajectory
-        until the first frame that fullfills any condition.
-    propagate_and_concatenate(starting_configuration, workdir, deffnm, tra_out, overwrite=False, continuation=False)
-        :meth:`propagate` and :meth:`cut_and_concatenate` in sequence.
     """
+
     # NOTE: we assume that every condition function returns a list/ a 1d array
     #       with True/False for each frame, i.e. if we fullfill condition at
     #       any given frame
@@ -233,8 +222,8 @@ class ConditionalTrajectoryPropagator:
         conditions : list[callable], usually list[TrajectoryFunctionWrapper]
             List of condition functions, usually wrapped function for
             asyncronous application, but can be any callable that takes a
-            :class:`Trajecory` and returns an array of True and False values
-            (one value per frame).
+            :class:`asyncmd.Trajectory` and returns an array of True and False
+            values (one value per frame).
         engine_cls : type(asyncmd.mdengine.MDEngine)
             Class of the MD engine to use, **uninitialized!**
         engine_kwargs : dict
@@ -317,9 +306,9 @@ class ConditionalTrajectoryPropagator:
                                         tra_out: str,
                                         overwrite: bool = False,
                                         continuation: bool = False
-                                        ) -> tuple[Trajectory,int]:
+                                        ) -> tuple[Trajectory, int]:
         """
-        Chain :meth:`propagate` and :meth:`concatenate` methods.
+        Chain :meth:`propagate` and :meth:`cut_and_concatenate` methods.
 
         Parameters
         ----------
@@ -333,10 +322,10 @@ class ConditionalTrajectoryPropagator:
             Absolute or relative path for the concatenated output trajectory.
         overwrite : bool, optional
             Whether the output trajectory should be overwritten if it exists,
-            by default False
+            by default False.
         continuation : bool, optional
             Whether we are continuing a previous MD run (with the same deffnm
-            and working directory), by default False
+            and working directory), by default False.
 
         Returns
         -------
@@ -361,7 +350,7 @@ class ConditionalTrajectoryPropagator:
                                 continuation=continuation
                                                               )
         # NOTE: it should not matter too much speedwise that we recalculate
-        #       the condition functions, they are expected to be wrapped traj-funcs
+        #       the condition functions, they are expected to be wrapped funcs
         #       i.e. the second time we should just get the values from cache
         full_traj, first_condition_fullfilled = await self.cut_and_concatenate(
                                                         trajs=trajs,
@@ -370,31 +359,46 @@ class ConditionalTrajectoryPropagator:
                                                                             )
         return full_traj, first_condition_fullfilled
 
-    async def propagate(self, starting_configuration, workdir, deffnm,
-                        continuation=False):
+    async def propagate(self,
+                        starting_configuration: Trajectory,
+                        workdir: str,
+                        deffnm: str,
+                        continuation: bool = False,
+                        ) -> tuple[list[Trajectory], int]:
         """
-        Propagate in traj parts until any of the conditions is fullfilled.
+        Propagate the trajectory until any condition is fullfilled.
 
-        Parameters:
-        -----------
-        starting_configuration - `aimmd.distributed.Trajectory`
-        workdir - absolute or relative path to an existing directory
-        deffnm - the name to use for all MD engine output files
-        continuation - bool, whether to (try to) continue a previous run
-                       with given workdir and deffnm but possibly changed
-                       conditions
+        Return a list of trajecory segments and the first condition fullfilled.
 
-        Returns (list_of_traj_parts, idx_of_first_condition_fullfilled)
+        Parameters
+        ----------
+        starting_configuration : Trajectory
+            The configuration (including momenta) to start MD from.
+        workdir : str
+            Absolute or relative path to the working directory.
+        deffnm : str
+            MD engine deffnm for trajectory parts and other files.
+        continuation : bool, optional
+            Whether we are continuing a previous MD run (with the same deffnm
+            and working directory), by default False.
+
+        Returns
+        -------
+        (traj_segments, idx_of_condition_fullfilled) : (list[Trajectory], int)
+            List of trajectory (segements), the last entry is the one on which
+            the first condition is fullfilled at some frame, the ineger is the
+            index to the condition function in `conditions`.
+
+        Raises
+        ------
+        MaxStepsReachedError
+            When the defined maximum number of integration steps/trajectory
+            frames has been reached.
         """
         # NOTE: curently this just returns a list of trajs + the condition
         #       fullfilled
         #       this feels a bit uncomfortable but avoids that we concatenate
         #       everything a quadrillion times when we use the results
-        # starting_configuration - Trajectory with starting configuration (or None)
-        # workdir - workdir for engine
-        # deffnm - trajectory name(s) for engine (+ all other output file names)
-        # continuation - bool, if True we will try to continue a previous MD run
-        #                from files but possibly with new/differetn conditions
         # check first if the start configuration is fullfilling any condition
         cond_vals = await self._condition_vals_for_traj(starting_configuration)
         if np.any(cond_vals):
@@ -470,23 +474,37 @@ class ConditionalTrajectoryPropagator:
         first_condition_fullfilled = conds_fullfilled[min_idx]
         return trajs, first_condition_fullfilled
 
-    async def cut_and_concatenate(self, trajs, tra_out, overwrite=False):
+    async def cut_and_concatenate(self,
+                                  trajs: list[Trajectory],
+                                  tra_out: str,
+                                  overwrite: bool = False,
+                                  ) -> tuple[Trajectory, int]:
         """
-        Cut out and concatenate the trajectory until the first condition is True.
+        Cut and concatenate the trajectory until the first condition is True.
 
-        The expected input is a list of trajectories, e.g. the output of the
-        `propagate` method.
+        Take a list of trajectory segments and form one continous trajectory
+        until the first frame that fullfills any condition. The expected input
+        is a list of trajectories, e.g. the output of the :meth:`propagate`
+        method.
 
-        Parameters:
-        -----------
-        trajs - list of `aimmd.distributed.Trajectory`, a continous trajectory
-                split in seperate parts
-        tra_out - the filename of the output trajectory
-        overwrite - whether to overwrite any existing output trajectories
+        Parameters
+        ----------
+        trajs : list[Trajectory]
+            Trajectory segments to cut and concatenate.
+        tra_out : str
+            Absolute or relative path for the concatenated output trajectory.
+        overwrite : bool, optional
+            Whether the output trajectory should be overwritten if it exists,
+            by default False.
 
-        Returns (traj_to_cond, idx_of_first_condition_fullfilled)
+        Returns
+        -------
+        (traj_out, idx_of_condition_fullfilled) : (Trajectory, int)
+            The concatenated output trajectory from starting configuration
+            until the first condition is True and the index to the condition
+            function in `conditions`.
         """
-        # trajs is a list of trajectoryes, e.g. the return of propagate
+        # trajs is a list of trajectories, e.g. the return of propagate
         # tra_out and overwrite are passed directly to the Concatenator
         # NOTE: we assume that frame0 of traj0 does not fullfill any condition
         #       and return only the subtrajectory from frame0 until any
@@ -557,7 +575,8 @@ class ConditionalTrajectoryPropagator:
             coro_res = await asyncio.gather(*coros)
             # now either take the result from coro execution or calculate it
             all_results = []
-            for c, c_is_coro in zip(self.conditions, self._condition_func_is_coroutine):
+            for c, c_is_coro in zip(self.conditions,
+                                    self._condition_func_is_coroutine):
                 if c_is_coro:
                     all_results.append(coro_res.pop(0))
                 else:

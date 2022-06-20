@@ -40,7 +40,15 @@ and overwriting its :py:meth:`FrameExtractor.apply_modification` method.
 
 The :py:mod:`asyncmd.trajectory.convert` module furthermore contains a class to
 concatenate :py:class:`asyncmd.Trajectory` segments, the
-:py:class:`TrajectoryConcatenator`.
+:py:class:`TrajectoryConcatenator`. It can be used to concatenate lists of
+trajectory segments in any order (and possibly with inverted momenta) by
+passing a list of trajectory segments and a list of tuples (slices) that
+specify the frames to use in the concatenated output trajectory. Note that this
+class gives you all customizability at the cost of complexity, if you just want
+to construct a transition from trajectry segments the
+:py:func:`asyncmd.trajectory.construct_TP_from_plus_and_minus_traj_segments` is
+most probably easier to use and waht you want (it uses the
+:py:class:`TrajectoryConcatenator` under the hood anyway).
 
 .. py:currentmodule:: asyncmd
 
@@ -52,6 +60,12 @@ simulations (here the conditions would be the state functions), but can be used
 in general for any situation where the time integration should be stopped on
 given criteria (as opposed to after a fixed number of integratiopn steps or
 when a given walltime is reached).
+There is also a handy function to create a transition, i.e. a trajectory that
+connects to (different) conditions from two conditional propagation runs ending
+in different conditions, the
+:py:func:`asyncmd.trajectory.construct_TP_from_plus_and_minus_traj_segments`
+function. It is most likely usefull for users implementing some form of
+pathsampling.
 
 Trajectory
 ----------
@@ -103,6 +117,8 @@ Conditional trajectory propagation
 
 Trajectory concatenation
 ------------------------
+
+.. autofunction:: asyncmd.trajectory.construct_TP_from_plus_and_minus_traj_segments
 
 .. autoclass:: asyncmd.trajectory.convert.TrajectoryConcatenator
    :members:
