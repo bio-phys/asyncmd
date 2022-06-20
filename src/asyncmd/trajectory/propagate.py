@@ -173,7 +173,6 @@ async def construct_TP_from_plus_and_minus_traj_segments(
     return path_traj
 
 
-# TODO: DOCUMENT
 class ConditionalTrajectoryPropagator:
     """
     Propagate a trajectory until any of the given conditions is fullfilled.
