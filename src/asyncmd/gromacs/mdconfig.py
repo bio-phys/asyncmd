@@ -49,10 +49,12 @@ class MDP(LineBasedMDConfig):
     _FLOAT_SINGLETON_PARAMS = []
     _INT_PARAMS = []
     _INT_SINGLETON_PARAMS = []
+    _STR_SINGLETON_PARAMS = []
     # Run control
     _FLOAT_SINGLETON_PARAMS += ["tinit", "dt"]
     _INT_SINGLETON_PARAMS += ["nsteps", "init-step", "simulation-part",
                               "nstcomm"]
+    _STR_SINGLETON_PARAMS += ["integrator", "comm-mode"]
     # Langevin dynamics
     _FLOAT_SINGLETON_PARAMS += ["bd-fric"]
     _INT_SINGLETON_PARAMS += ["ld-seed"]
@@ -76,32 +78,46 @@ class MDP(LineBasedMDConfig):
     _FLOAT_SINGLETON_PARAMS += ["verlet-buffer-tolerance", "rlist",
                                 "rlistlong"]
     _INT_SINGLETON_PARAMS += ["nstlist", "nstcalclr"]
+    _STR_SINGLETON_PARAMS += ["cutoff-scheme", "ns-type", "pbc",
+                               "periodic-molecules"]
     # Electrostatics
     _FLOAT_SINGLETON_PARAMS += ["rcoulomb-switch", "rcoulomb", "epsilon-r",
                                 "epsilon-rf"]
+    _STR_SINGLETON_PARAMS += ["coulombtype", "coulomb-modifier"]
     # Van der Waals
     _FLOAT_SINGLETON_PARAMS += ["rvdw-switch", "rvdw"]
+    _STR_SINGLETON_PARAMS += ["vdwtype", "vdw-modifier", "DispCorr"]
     # Ewald
     _FLOAT_SINGLETON_PARAMS += ["fourierspacing", "ewald-rtol",
                                 "ewald-rtol-lj"]
     _INT_SINGLETON_PARAMS += ["fourier-nx", "fourier-ny", "fourier-nz",
                               "pme-order"]
+    _STR_SINGLETON_PARAMS += ["lj-pme-comb-rule", "ewald-geometry"]
     # Temperature coupling
     _FLOAT_PARAMS += ["tau-t", "ref-t"]
     _INT_SINGLETON_PARAMS += ["nsttcouple", "nh-chain-length"]
+    _STR_SINGLETON_PARAMS += ["tcoupl", "Tcoupl"]  # GMX accepts both versions
     # Pressure coupling
     _FLOAT_SINGLETON_PARAMS += ["tau-p"]
     _FLOAT_PARAMS += ["compressibility", "ref-p"]
     _INT_SINGLETON_PARAMS += ["nstpcouple"]
+    _STR_SINGLETON_PARAMS += ["pcoupl", "Pcoupl",  # GMX accepts both versions
+                              "pcoupltype", "refcoord-scaling"]
     # Simulated annealing
     _FLOAT_PARAMS += ["annealing-time", "annealing-temp"]
     _INT_PARAMS += ["annealing-npoints"]
     # Velocity generation
     _FLOAT_SINGLETON_PARAMS += ["gen-temp"]
     _INT_SINGLETON_PARAMS += ["gen-seed"]
+    _STR_SINGLETON_PARAMS += ["gen-vel"]
     # Bonds
     _FLOAT_SINGLETON_PARAMS += ["shake-tol", "lincs-warnangle"]
     _INT_SINGLETON_PARAMS += ["lincs-order", "lincs-iter"]
+    _STR_SINGLETON_PARAMS += ["constraints", "constraint-algorithm",
+                              # the next two are referencing the same option
+                              "continuation", "unconstrained-start",
+                              "morse",
+                              ]
     # TODO: Walls and everything below in the GMX manual
 
     def _parse_line(self, line):

@@ -179,8 +179,9 @@ class LineBasedMDConfig(MDConfig):
     # any lines not matching will be left in their default str type
     _FLOAT_PARAMS = []  # can have multiple values per config option
     _FLOAT_SINGLETON_PARAMS = []  # must have one value per config option
-    _INT_PARAMS = []
-    _INT_SINGLETON_PARAMS = []
+    _INT_PARAMS = []  # multiple int per option
+    _INT_SINGLETON_PARAMS = []  # one int per option
+    _STR_SINGLETON_PARAMS = []  # strings with only one value per option
     # NOTE on SPECIAL_PARAM_DISPATCH
     # can be used to set custom type convert functions on a per parameter basis
     # the key must match the key in the dict for in the parsed line,
@@ -215,7 +216,7 @@ class LineBasedMDConfig(MDConfig):
             # but that also accepts single values and converts them to given
             # dtype (which is what we expect can/will happen when the users set
             # singleton vals, i.e. "val" instead of ["val"]
-            if getattr(val, '__len__', None) is None:
+            if isinstance(val, str) or getattr(val, '__len__', None) is None:
                 return dtype(val)
             else:
                 return dtype(val[0])
@@ -249,6 +250,11 @@ class LineBasedMDConfig(MDConfig):
                                                                 dtype=int,
                                                                               )
                               for param in self._INT_SINGLETON_PARAMS})
+        type_dispatch.update({param: lambda v: convert_len1_list_or_singleton(
+                                                                val=v,
+                                                                dtype=str,
+                                                                              )
+                              for param in self._STR_SINGLETON_PARAMS})
         type_dispatch.update(self._SPECIAL_PARAM_DISPATCH)
         return type_dispatch
 
@@ -403,13 +409,17 @@ class LineBasedMDConfig(MDConfig):
             for key, value in self._config.items():
                 line = f"{key}{self._KEY_VALUE_SEPARATOR}"
                 try:
-                    if len(value) > 0:
-                        line += self._INTER_VALUE_CHAR.join(str(v)
-                                                            for v in value
-                                                            )
+                    if len(value) >= 0:
+                        if isinstance(value, str):
+                            # it is a string singleton option
+                            line += f"{value}"
+                        else:
+                            line += self._INTER_VALUE_CHAR.join(str(v)
+                                                                for v in value
+                                                                )
                 except TypeError:
-                    # (probably) not a Sequence/Iterable,
-                    # i.e. one of the singleton options
+                    # not a Sequence/Iterable or string,
+                    # i.e. (probably) one of the float/int singleton options
                     line += f"{value}"
                 lines += [line]
             # concatenate lines and write out at once
