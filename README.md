@@ -13,14 +13,21 @@ This library addresses the tedious, error-prone and boring part of setting up ma
 
 ## Code Example
 
-Run 4 gromacs engines concurently from the same starting configuration (`conf.trr`) for `10000` integration steps each:
+Run `N` gromacs engines concurently from configurations randomly picked up along a trajectory (`traj.trr`) for `n_steps` integration steps each, drawing random Maxwell-Boltzmann velocities for each configuration on the way. Finally turn the python function `func` (which acts on `Trajectory` objects) into an asyncronous and cached function by wrapping it and apply it on all generated trajectories concurrently:
 
 ```python
+import asyncio
+import numpy as np
 import asyncmd
 import asyncmd.gromacs as asyncgmx
 
-init_conf = asyncmd.Trajectory(trajectory_file="conf.trr", structure_file="conf.gro")
-mdps = [asyncgmx.MDP("config.mdp") for _ in range(4)]
+in_traj = asyncmd.Trajectory(trajectory_file="traj.trr", structure_file="conf.gro")
+# get a random number generator and draw N random frames (with replacement)
+rng = np.default_rng()
+frame_idxs = rng.choice(len(in_traj), size=N)
+# use the RandomVelocitiesFrameExtractor to directly get the frames with MB-vels
+extractor = asyncmd.trajectory.convert.RandomVelocitiesFrameExtractor(T=303)
+mdps = [asyncgmx.MDP("config.mdp") for _ in range(N)]
 # MDConfig objects (like MDP) behave like dictionaries and are easy to modify
 for i, mdp in enumerate(mdps):
     # here we just modify the output frequency for every engine separately
@@ -28,20 +35,30 @@ for i, mdp in enumerate(mdps):
     # Note how the values are in the correct types? I.e. that they are ints?
     mdp["nstxout"] *= (i + 1)
     mdp["nstvout"] *= (i + 1)
+# create N gromacs engines
 engines = [asyncgmx.GmxEngine(mdp=mdp, gro_file="conf.gro", top_file="topol.top",
                               # optional (can be omited or None), however naturally without an index file
                               # you can not reference custom groups in the .mdp-file or MDP object
                               ndx_file="index.ndx",
                               )
            for mdp in mdps]
-
-await asyncio.gather(*(e.prepare(starting_configuration=init_conf,
+# extract starting configurations with MB-vels and save them to current directory
+start_confs = [extractor.extract(outfile=f"start_conf{i}.trr", traj_in=in_traj, idx=idx)
+               for i, idx in enumerate(frame_idxs)]
+# prepare the MD (for gromacs this is essentially a `grompp` call)
+await asyncio.gather(*(e.prepare(starting_configuration=,
                                  workdir=".", deffnm=f"engine{i}")
-                       for i, e in enumerate(engines))
+                       for i, (conf, e) in enumerate(zip(start_confs, engines))
+                       )
                      )
-
-trajs = await asyncio.gather(*(e.run_steps(nsteps=10000) for e in engines))
+# and run the molecular dynamics
+out_trajs = await asyncio.gather(*(e.run_steps(nsteps=n_steps) for e in engines))
+# wrapp `func` and apply it on all output trajectories concurrently
+wrapped_func = asyncmd.trajectory.PyTrajectoryFunctionWrapper(function=func)
+cv_vals = await asyncio.gather(*(wrapped_func(traj) for traj in out_trajs))
 ```
+
+Note that running via the [SLURM] queueing system is as easy as replacing the `GmxEngine` with a `SlurmGmxEngine` and the `PyTrajectoryFunctionWrapper` with a `SlurmTrajectoryFunctionWrapper` (and suppling them both with sbatch script skeletons).
 
 For an in-depth introduction see also the `examples` folder in this repository which contains jupyter notebooks on various topics.
 
@@ -110,8 +127,9 @@ asyncmd is under the terms of the GNU general public license version 3 or later,
 ---
 <sub>This README.md is printed from 100% recycled electrons.</sub>
 
-[sphinx]: https://www.sphinx-doc.org/en/master/index.html
+[coverage]: https://pypi.org/project/coverage/
 [flake8]: https://pypi.org/project/flake8/
 [pytest]: https://docs.pytest.org/en/latest/
 [pytest-cov]: https://pypi.org/project/pytest-cov/
-[coverage]: https://pypi.org/project/coverage/
+[SLURM]: https://slurm.schedmd.com/documentation.html
+[sphinx]: https://www.sphinx-doc.org/en/master/index.html
