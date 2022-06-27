@@ -187,7 +187,7 @@ class DummyLineBasedMDConfig(LineBasedMDConfig):
         parser = shlex.shlex(line, posix=True)
         parser.commenters = ""
         # TODO: what wordchars do we want for testing?!
-        parser.wordchars += "-./"
+        parser.wordchars += "-./~"
         tokens = list(parser)
         if len(tokens) >= 3 and tokens[1] == "=":
             # content line, either one or multiple values

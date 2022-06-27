@@ -123,7 +123,7 @@ class MDP(LineBasedMDConfig):
     def _parse_line(self, line):
         parser = shlex.shlex(line, posix=True)
         parser.commenters = ";"
-        parser.wordchars += "-./"  # ./ to not split floats and file paths
+        parser.wordchars += "-./~"  # ./~ to not split floats and file paths
         tokens = list(parser)
         # gromacs mdp can have more than one token/value to the RHS of the '='
         if len(tokens) == 0:
