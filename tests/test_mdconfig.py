@@ -234,6 +234,7 @@ class Test_LineBasedMDConfig:
                                 "int_param": [1, 2, 3, 4, 5, 6],
                                 "int_singleton_param": 6,
                                 "str_singleton_param": "1string",
+                                "empty_param": [],
                                 }
                                ),
                               ]
@@ -285,6 +286,7 @@ class Test_LineBasedMDConfig:
                                 "int_param": [1, 2, 3, 4, 5, 6],
                                 "int_singleton_param": 6,
                                 "str_singleton_param": "1string",
+                                "empty_param": [],
                                 }
                                ),
                               ]
@@ -309,6 +311,7 @@ class Test_LineBasedMDConfig:
                                 "int_param": [1, 2, 3, 4, 5, 6],
                                 "int_singleton_param": 6,
                                 "str_singleton_param": "1string",
+                                "empty_param": [],
                                 }
                                ),
                               ]

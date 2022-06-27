@@ -355,27 +355,26 @@ class LineBasedMDConfig(MDConfig):
     def parse(self):
         """Parse the current ``self.original_file`` to update own state."""
         with open(self.original_file, "r") as f:
-            # NOTE: we split at newlines on all platforms by using readlines()
-            #       since py replaces all newline chars with '\n' internally,
-            #       i.e. python takes care of the differnt platforms for us :)
-            all_lines = f.readlines()
-        parsed = {}
-        for line in all_lines:
-            line_parsed = self._parse_line(line)
-            # check for duplicate options, we warn but take the last one
-            for key in line_parsed:
-                try:
-                    # check if we already have a value for that option
-                    _ = parsed[key]
-                except KeyError:
-                    # as it should be
-                    pass
-                else:
-                    # warn because we will only keep the last occurenc of key
-                    logger.warning("Parsed duplicate configuration option "
-                                   + f"({key}). Last values encountered take "
-                                   + "precedence.")
-            parsed.update(line_parsed)
+            # NOTE: we split at newlines on all platforms by iterating over the
+            #       file, i.e. python takes care of the differnt platforms and
+            #       newline chars for us :)
+            parsed = {}
+            for line in f:
+                line_parsed = self._parse_line(line)
+                # check for duplicate options, we warn but take the last one
+                for key in line_parsed:
+                    try:
+                        # check if we already have a value for that option
+                        _ = parsed[key]
+                    except KeyError:
+                        # as it should be
+                        pass
+                    else:
+                        # warn that we will only keep the last occurenc of key
+                        logger.warning("Parsed duplicate configuration option "
+                                       + f"({key}). Last values encountered "
+                                       + "take precedence.")
+                parsed.update(line_parsed)
         # convert the known types
         self._config = {key: self._type_dispatch[key](value)
                         for key, value in parsed.items()}
