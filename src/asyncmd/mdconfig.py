@@ -355,12 +355,12 @@ class LineBasedMDConfig(MDConfig):
     def parse(self):
         """Parse the current ``self.original_file`` to update own state."""
         with open(self.original_file, "r") as f:
-            file_content = f.read()
+            # NOTE: we split at newlines on all platforms by using readlines()
+            #       since py replaces all newline chars with '\n' internally,
+            #       i.e. python takes care of the differnt platforms for us :)
+            all_lines = f.readlines()
         parsed = {}
-        # NOTE: we can split at '\n' on all platforms since py replaces
-        #       all newline chars with '\n',
-        #       i.e. python takes care of the differnt platforms for us :)
-        for line in file_content.split("\n"):
+        for line in all_lines:
             line_parsed = self._parse_line(line)
             # check for duplicate options, we warn but take the last one
             for key in line_parsed:
@@ -422,7 +422,8 @@ class LineBasedMDConfig(MDConfig):
                     # i.e. (probably) one of the float/int singleton options
                     line += f"{value}"
                 lines += [line]
-            # concatenate lines and write out at once
-            out_str = "\n".join(lines)
+            # concatenate the lines (using the newline-char which is
+            # platform-dependent) and write out at once
+            # TODO/FIXME: use a universal newline char?! platform independent!
             with open(outfile, "w") as f:
-                f.write(out_str)
+                f.write("\n".join(lines))
