@@ -259,7 +259,7 @@ class Test_LineBasedMDConfig:
         # now set single items in sublists
         mdconf["int_param"][0] = 1337
         assert mdconf.changed
-         # reparse and set singleton item
+        # reparse and set singleton item
         mdconf.parse()
         self.compare_mdconf_vals_to_beauty(mdconf=mdconf, beauty=beauty)
         assert not mdconf.changed

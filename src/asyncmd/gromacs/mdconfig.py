@@ -79,7 +79,7 @@ class MDP(LineBasedMDConfig):
                                 "rlistlong"]
     _INT_SINGLETON_PARAMS += ["nstlist", "nstcalclr"]
     _STR_SINGLETON_PARAMS += ["cutoff-scheme", "ns-type", "pbc",
-                               "periodic-molecules"]
+                              "periodic-molecules"]
     # Electrostatics
     _FLOAT_SINGLETON_PARAMS += ["rcoulomb-switch", "rcoulomb", "epsilon-r",
                                 "epsilon-rf"]
