@@ -179,8 +179,9 @@ class LineBasedMDConfig(MDConfig):
     # any lines not matching will be left in their default str type
     _FLOAT_PARAMS = []  # can have multiple values per config option
     _FLOAT_SINGLETON_PARAMS = []  # must have one value per config option
-    _INT_PARAMS = []
-    _INT_SINGLETON_PARAMS = []
+    _INT_PARAMS = []  # multiple int per option
+    _INT_SINGLETON_PARAMS = []  # one int per option
+    _STR_SINGLETON_PARAMS = []  # strings with only one value per option
     # NOTE on SPECIAL_PARAM_DISPATCH
     # can be used to set custom type convert functions on a per parameter basis
     # the key must match the key in the dict for in the parsed line,
@@ -215,7 +216,7 @@ class LineBasedMDConfig(MDConfig):
             # but that also accepts single values and converts them to given
             # dtype (which is what we expect can/will happen when the users set
             # singleton vals, i.e. "val" instead of ["val"]
-            if getattr(val, '__len__', None) is None:
+            if isinstance(val, str) or getattr(val, '__len__', None) is None:
                 return dtype(val)
             else:
                 return dtype(val[0])
@@ -249,6 +250,11 @@ class LineBasedMDConfig(MDConfig):
                                                                 dtype=int,
                                                                               )
                               for param in self._INT_SINGLETON_PARAMS})
+        type_dispatch.update({param: lambda v: convert_len1_list_or_singleton(
+                                                                val=v,
+                                                                dtype=str,
+                                                                              )
+                              for param in self._STR_SINGLETON_PARAMS})
         type_dispatch.update(self._SPECIAL_PARAM_DISPATCH)
         return type_dispatch
 
@@ -349,27 +355,26 @@ class LineBasedMDConfig(MDConfig):
     def parse(self):
         """Parse the current ``self.original_file`` to update own state."""
         with open(self.original_file, "r") as f:
-            file_content = f.read()
-        parsed = {}
-        # NOTE: we can split at '\n' on all platforms since py replaces
-        #       all newline chars with '\n',
-        #       i.e. python takes care of the differnt platforms for us :)
-        for line in file_content.split("\n"):
-            line_parsed = self._parse_line(line)
-            # check for duplicate options, we warn but take the last one
-            for key in line_parsed:
-                try:
-                    # check if we already have a value for that option
-                    _ = parsed[key]
-                except KeyError:
-                    # as it should be
-                    pass
-                else:
-                    # warn because we will only keep the last occurenc of key
-                    logger.warning("Parsed duplicate configuration option "
-                                   + f"({key}). Last values encountered take "
-                                   + "precedence.")
-            parsed.update(line_parsed)
+            # NOTE: we split at newlines on all platforms by iterating over the
+            #       file, i.e. python takes care of the differnt platforms and
+            #       newline chars for us :)
+            parsed = {}
+            for line in f:
+                line_parsed = self._parse_line(line)
+                # check for duplicate options, we warn but take the last one
+                for key in line_parsed:
+                    try:
+                        # check if we already have a value for that option
+                        _ = parsed[key]
+                    except KeyError:
+                        # as it should be
+                        pass
+                    else:
+                        # warn that we will only keep the last occurenc of key
+                        logger.warning("Parsed duplicate configuration option "
+                                       + f"({key}). Last values encountered "
+                                       + "take precedence.")
+                parsed.update(line_parsed)
         # convert the known types
         self._config = {key: self._type_dispatch[key](value)
                         for key, value in parsed.items()}
@@ -403,16 +408,21 @@ class LineBasedMDConfig(MDConfig):
             for key, value in self._config.items():
                 line = f"{key}{self._KEY_VALUE_SEPARATOR}"
                 try:
-                    if len(value) > 0:
-                        line += self._INTER_VALUE_CHAR.join(str(v)
-                                                            for v in value
-                                                            )
+                    if len(value) >= 0:
+                        if isinstance(value, str):
+                            # it is a string singleton option
+                            line += f"{value}"
+                        else:
+                            line += self._INTER_VALUE_CHAR.join(str(v)
+                                                                for v in value
+                                                                )
                 except TypeError:
-                    # (probably) not a Sequence/Iterable,
-                    # i.e. one of the singleton options
+                    # not a Sequence/Iterable or string,
+                    # i.e. (probably) one of the float/int singleton options
                     line += f"{value}"
                 lines += [line]
-            # concatenate lines and write out at once
-            out_str = "\n".join(lines)
+            # concatenate the lines (using the newline-char which is
+            # platform-dependent) and write out at once
+            # TODO/FIXME: use a universal newline char?! platform independent!
             with open(outfile, "w") as f:
-                f.write(out_str)
+                f.write("\n".join(lines))

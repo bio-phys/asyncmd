@@ -347,8 +347,7 @@ class Test_Trajectory(TBase):
             # npz cache explicitly set as default (or implicitly since default=None)
             or ((cache_type is None or initial_cache_type is None)
                 and (default_cache_type == "npz" or default_cache_type is None)
-                )
-            ):
+                )):
             os.unlink(fname_npz_cache)
         else:
             # there should be no file created if npz cache is not involved!
