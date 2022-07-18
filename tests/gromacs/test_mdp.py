@@ -65,6 +65,39 @@ class Test_MDP:
         with pytest.raises(ValueError):
             _ = self.empty_mdp._parse_line(line=line)
 
-    @pytest.mark.skip("TODO!")
-    def test_setitem_getitem_delitem(self):
-        pass
+    @pytest.mark.parametrize(["key", "value", "beauty"],
+                             [
+                    # ref-t is a float param (not singleton)
+                    ("ref-t", ["303.2", "303.4"], [303.2, 303.4]),
+                    ("ref-t", [303.2, 303.4], [303.2, 303.4]),
+                    # dt is a float singleton key
+                    ("dt", 0.002, 0.002),
+                    ("dt", "0.002", 0.002),
+                    # nsteps is an int singleton option
+                    ("nsteps", "100", 100),
+                    ("nsteps", 100, 100),
+                    # annealing-npoints is an int param (not singleton)
+                    ("annealing-npoints", ["1", "2", "3"], [1, 2, 3]),
+                    ("annealing-npoints", [1, 2, 3], [1, 2, 3]),
+                    # string singleton param
+                    ("integrator", "test", "test"),
+                    # charm gui char-replace (unknown key, so not singleton)
+                    ("charmm_GUI_option", "needs_no_value", ["needs_no_value"]),
+                    ("charmm_GUI_option", "needs-no-value", ["needs-no-value"]),
+                              ])
+    def test_setitem_getitem_delitem(self, key, value, beauty):
+        # set it
+        self.empty_mdp[key] = value
+        # get it
+        val_we_got = self.empty_mdp[key]
+        # check that it matches up
+        if getattr(val_we_got, "__len__", None) is None:
+            assert val_we_got == beauty
+        else:
+            for subval_we_got, subval_beauty in zip(val_we_got, beauty):
+                assert subval_we_got == subval_beauty
+        # delete it
+        del self.empty_mdp[key]
+        # should be gone now, so we should gte a KeyError
+        with pytest.raises(KeyError):
+            _ = self.empty_mdp[key]
