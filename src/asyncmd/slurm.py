@@ -40,6 +40,42 @@ class SlurmSubmissionError(SlurmError):
     """Error raised when something goes wrong submitting a SLURM job."""
 
 
+# rudimentary map for slurm state codes to int return codes for poll
+# NOTE: these are the sacct states (they differ from the squeue states)
+#       cf. https://slurm.schedmd.com/sacct.html#lbAG
+#       and https://slurm.schedmd.com/squeue.html#lbAG
+_SLURM_STATE_TO_EXITCODE = {
+    "BOOT_FAIL": 1,  # Job terminated due to launch failure
+    # Job was explicitly cancelled by the user or system administrator.
+    "CANCELLED": 1,
+    # Job has terminated all processes on all nodes with an exit code of
+    # zero.
+    "COMPLETED": 0,
+    "DEADLINE": 1,  # Job terminated on deadline.
+    # Job terminated with non-zero exit code or other failure condition.
+    "FAILED": 1,
+    # Job terminated due to failure of one or more allocated nodes.
+    "NODE_FAIL": 1,
+    "OUT_OF_MEMORY": 1,  # Job experienced out of memory error.
+    "PENDING": None,  # Job is awaiting resource allocation.
+    # NOTE: preemption means interupting a process to later restart it,
+    #       i.e. None is probably the right thing to return
+    "PREEMPTED": None,  # Job terminated due to preemption.
+    "RUNNING": None,  # Job currently has an allocation.
+    "REQUEUED": None,  # Job was requeued.
+    # Job is about to change size.
+    #"RESIZING" TODO: when does this happen? what should we return?
+    # Sibling was removed from cluster due to other cluster starting the
+    # job.
+    "REVOKED": 1,
+    # Job has an allocation, but execution has been suspended and CPUs have
+    # been released for other jobs.
+    "SUSPENDED": None,
+    # Job terminated upon reaching its time limit.
+    "TIMEOUT": 1,  # TODO: can this happen for jobs that finish properly?
+}
+
+
 # TODO: better classname?!
 class SlurmClusterMediator:
     """
@@ -100,7 +136,8 @@ class SlurmClusterMediator:
         self._node_job_successes = collections.Counter()
         self._broken_nodes = []
         self._all_nodes = self.list_all_nodes()
-        self._jobids = []  # list of jobids we monitor
+        self._jobids = []  # list of jobids of jobs we know about
+        self._jobids_sacct = []  # list of jobids we monitor actively via sacct
         # we will store the info about jobs in a dict keys are jobids
         # values are dicts with key queried option and value the (parsed)
         # return value
@@ -141,12 +178,14 @@ class SlurmClusterMediator:
         """
         if jobid not in self._jobids:
             self._jobids.append(jobid)
+            self._jobids_sacct.append(jobid)
             # we use a dict with defaults to make sure that we get a 'PENDING'
             # for new jobs because this will make us check again in a bit
             # (sometimes there is a lag between submission and the appearance
             #  of the job in sacct output)
             self._jobinfo[jobid] = {"state": "PENDING",
                                     "exitcode": None,
+                                    "parsed_exitcode": None,
                                     "nodelist": [],
                                     }
             logger.debug(f"Registered job with id {jobid} for sacct monitoring.")
@@ -166,6 +205,10 @@ class SlurmClusterMediator:
         if jobid in self._jobids:
             self._jobids.remove(jobid)
             del self._jobinfo[jobid]
+            try:
+                self._jobids_sacct.remove(jobid)
+            except ValueError:
+                pass  # already not actively monitored anymore
             logger.debug(f"Removed job with id {jobid} from sacct monitoring.")
         else:
             logger.warning(f"Not monitoring job with id {jobid}, not removing.")
@@ -201,7 +244,7 @@ class SlurmClusterMediator:
         """Call sacct and update cached info for all jobids we know about."""
         sacct_cmd = f"{self.sacct_executable} --noheader"
         # query only for the specific job we are running
-        sacct_cmd += f" -j {','.join(self._jobids)}"
+        sacct_cmd += f" -j {','.join(self._jobids_sacct)}"
         sacct_cmd += " -o jobid,state,exitcode,nodelist"
         sacct_cmd += " --parsable2"  # separate with |
         # 3 file descriptors: stdin,stdout,stderr
@@ -245,6 +288,14 @@ class SlurmClusterMediator:
                 logger.debug(f"Extracted from sacct output: jobid {jobid},"
                              + f" state {state}, exitcode {exitcode} and "
                              + f"nodelist {nodelist}.")
+                parsed_ec = self._get_exitcode_for_slurm_state(slurm_state=state)
+                self._jobinfo[jobid]["parsed_exitcode"] = parsed_ec
+                if parsed_ec is not None:
+                    logger.debug(f"Parsed slurm state {state} for job {jobid}"
+                                 + f" as returncode {parsed_ec}. Removing job"
+                                 + "from sacct calls because its state will not
+                                 + "change anymore.")
+                    self._jobids_sacct.remove(jobid)
 
     def _process_nodelist(self, nodelist: str) -> "list[str]":
         """
@@ -280,6 +331,16 @@ class SlurmClusterMediator:
             nums = nums.rstrip("]")
             nums = nums.split(",")
             return [f"{hostnameprefix}{num}" for num in nums]
+
+    def _get_exitcode_for_slurm_state(self, slurm_state: str) -> typing.Union[None, int]:
+        for key, val in _SLURM_STATE_TO_EXITCODE.items():
+            if key in slurm_state:
+                logger.debug(f"Parsed SLURM state {slurm_state} as {key}.")
+                # this also recognizes `CANCELLED by ...` as CANCELLED
+                return val
+        # we should never finish the loop, it means we miss a slurm job state
+        raise RuntimeError("Could not find a matching exitcode for slurm state"
+                           + f": {slurm_state}")
 
     # TODO: more _process_ functions?!
     #       exitcode? state?
@@ -349,9 +410,6 @@ class SlurmProcess:
     sleep_time : int
         Time (in seconds) between checks if the underlying job has finished
         when using `self.wait`.
-    slurm_state_to_exit_code : dict
-        Dictionary mapping slurm states (string keys) to exit codes (integers),
-        **only touch it if you know what you are doing**...
     """
 
     # use same instance of class for all SlurmProcess instances
@@ -375,40 +433,6 @@ class SlurmProcess:
     #       stderr and stdout
     sbatch_executable = "sbatch"
     scancel_executable = "scancel"
-    # rudimentary map for slurm state codes to int return codes for poll
-    # NOTE: these are the sacct states (they differ from the squeue states)
-    #       cf. https://slurm.schedmd.com/sacct.html#lbAG
-    #       and https://slurm.schedmd.com/squeue.html#lbAG
-    slurm_state_to_exitcode = {
-        "BOOT_FAIL": 1,  # Job terminated due to launch failure
-        # Job was explicitly cancelled by the user or system administrator.
-        "CANCELLED": 1,
-        # Job has terminated all processes on all nodes with an exit code of
-        # zero.
-        "COMPLETED": 0,
-        "DEADLINE": 1,  # Job terminated on deadline.
-        # Job terminated with non-zero exit code or other failure condition.
-        "FAILED": 1,
-        # Job terminated due to failure of one or more allocated nodes.
-        "NODE_FAIL": 1,
-        "OUT_OF_MEMORY": 1,  # Job experienced out of memory error.
-        "PENDING": None,  # Job is awaiting resource allocation.
-        # NOTE: preemption means interupting a process to later restart it,
-        #       i.e. None is probably the right thing to return
-        "PREEMPTED": None,  # Job terminated due to preemption.
-        "RUNNING": None,  # Job currently has an allocation.
-        "REQUEUED": None,  # Job was requeued.
-        # Job is about to change size.
-        #"RESIZING" TODO: when does this happen? what should we return?
-        # Sibling was removed from cluster due to other cluster starting the
-        # job.
-        "REVOKED": 1,
-        # Job has an allocation, but execution has been suspended and CPUs have
-        # been released for other jobs.
-        "SUSPENDED": None,
-        # Job terminated upon reaching its time limit.
-        "TIMEOUT": 1,  # TODO: can this happen for jobs that finish properly?
-    }
 
     def __init__(self, sbatch_script: str, workdir: str, **kwargs) -> None:
         """
@@ -457,6 +481,7 @@ class SlurmProcess:
     def slurm_cluster_mediator(self) -> SlurmClusterMediator:
         if self._slurm_cluster_mediator is None:
             raise RuntimeError("SLURM monitoring not initialized. Please call"
+                               # TODO: correct function!
                                + "`aimmd.distributed.slurm.reinitialize_slurm_settings()`"
                                + " with appropriate arguments.")
         else:
@@ -544,25 +569,11 @@ class SlurmProcess:
     def returncode(self) -> typing.Union[int, None]:
         if self._jobid is None:
             return None
-        # I (hejung) think we can be sure that slurm_job_state will at least be
-        #  "PENDING" if jobid is set, i.e. we submitted the job
-        #if self.slurm_job_state is None:
-        #    return None
-        return self._get_exitcode_for_slurm_state(self.slurm_job_state)
+        return self._jobinfo.get("parsed_exitcode", None)
 
     async def _update_sacct_jobinfo(self) -> None:
         async with _SEMAPHORES["SLURM_CLUSTER_MEDIATOR"]:
             self._jobinfo = await self.slurm_cluster_mediator.get_info_for_job(jobid=self.slurm_jobid)
-
-    def _get_exitcode_for_slurm_state(self, slurm_state):
-        for key, val in self.slurm_state_to_exitcode.items():
-            if key in slurm_state:
-                logger.debug(f"Parsed SLURM state {slurm_state} as {key}.")
-                # this also recognizes `CANCELLED by ...` as CANCELLED
-                return val
-        # we should never finish the loop, it means we miss a slurm job state
-        raise RuntimeError("Could not find a matching exitcode for slurm state"
-                           + f": {slurm_state}")
 
     def _finalize_completed_job(self, node_fail_heuristic: bool) -> None:
         """
