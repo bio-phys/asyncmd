@@ -293,8 +293,8 @@ class SlurmClusterMediator:
                 if parsed_ec is not None:
                     logger.debug(f"Parsed slurm state {state} for job {jobid}"
                                  + f" as returncode {parsed_ec}. Removing job"
-                                 + "from sacct calls because its state will not
-                                 + "change anymore.")
+                                 + "from sacct calls because its state will"
+                                 + " not change anymore.")
                     self._jobids_sacct.remove(jobid)
 
     def _process_nodelist(self, nodelist: str) -> "list[str]":
