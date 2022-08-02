@@ -112,29 +112,31 @@ set_max_files_open()
 
 # SLURM semaphore stuff:
 # TODO: move this to slurm.py? and initialize only if slurm is available?
-# semaphore to make sure we modify clusterinfo only from one thread at a time
-_SEMAPHORES["SLURM_CLUSTER_MEDIATOR"] = asyncio.BoundedSemaphore(1)
 # slurm max job semaphore, if the user sets it it will be used,
 # otherwise we can use an unlimited number of syncronous slurm-jobs
 # (if the simulation requires that much)
-# TODO: document that somewhere, bc usually clusters have a job-limit?!
-_SEMAPHORES["SLURM_MAX_JOB"] = None
-
-
-def set_slurm_max_jobs(num: int):
+# TODO: document that somewhere, bc usually clusters have a job number limit?!
+def set_slurm_max_jobs(num: typing.Union[int, None]):
     """
     Set the maximum number of simultaneously submitted SLURM jobs.
 
     Parameters
     ----------
-    num : int
-        The maximum number of simulteneous SLURM jobs for this invocation of
-        python/asyncmd.
+    num : int or None
+        The maximum number of simultaneous SLURM jobs for this invocation of
+        python/asyncmd. `None` means do not limit the maximum number of jobs.
     """
     global _SEMAPHORES
-    _SEMAPHORES["SLURM_MAX_JOB"] = asyncio.BoundedSemaphore(num)
+    if num is None:
+        _SEMAPHORES["SLURM_MAX_JOB"] = None
+    else:
+        _SEMAPHORES["SLURM_MAX_JOB"] = asyncio.BoundedSemaphore(num)
 
 
+set_slurm_max_jobs(num=None)
+
+
+# Trajectory function value config
 def set_default_trajectory_cache_type(cache_type: str):
     """
     Set the default cache type for TrajectoryFunctionValues.
@@ -180,8 +182,8 @@ def register_h5py_cache(h5py_group, make_default: bool = False):
     h5py_group : h5py.Group or h5py.File
         The file or group to use for caching.
     make_default: bool,
-        Whether we should also make `h5p` the default trajectory function cache
-        type. By default False.
+        Whether we should also make "h5py" the default trajectory function
+        cache type. By default False.
     """
     global _GLOBALS
     if make_default:

@@ -281,6 +281,10 @@ class SlurmClusterMediator:
                     continue
                 # parse returns (remove spaces, etc.) and put them in cache
                 jobid = jobid.strip()
+                if self._jobinfo[jobid]["state"] == state:
+                    # only process nodelist and update jobinfo when necessary
+                    # i.e. if the slurm_state changed
+                    continue
                 nodelist = self._process_nodelist(nodelist=nodelist)
                 self._jobinfo[jobid]["nodelist"] = nodelist
                 self._jobinfo[jobid]["exitcode"] = exitcode
@@ -288,7 +292,7 @@ class SlurmClusterMediator:
                 logger.debug(f"Extracted from sacct output: jobid {jobid},"
                              + f" state {state}, exitcode {exitcode} and "
                              + f"nodelist {nodelist}.")
-                parsed_ec = self._get_exitcode_for_slurm_state(slurm_state=state)
+                parsed_ec = self._parse_exitcode_from_slurm_state(slurm_state=state)
                 self._jobinfo[jobid]["parsed_exitcode"] = parsed_ec
                 if parsed_ec is not None:
                     logger.debug(f"Parsed slurm state {state} for job {jobid}"
@@ -296,6 +300,11 @@ class SlurmClusterMediator:
                                  + "from sacct calls because its state will"
                                  + " not change anymore.")
                     self._jobids_sacct.remove(jobid)
+                    self._node_fail_heuristic(jobid=jobid,
+                                              parsed_exitcode=parsed_ec,
+                                              slurm_state=state,
+                                              nodelist=nodelist,
+                                              )
 
     def _process_nodelist(self, nodelist: str) -> "list[str]":
         """
@@ -332,7 +341,9 @@ class SlurmClusterMediator:
             nums = nums.split(",")
             return [f"{hostnameprefix}{num}" for num in nums]
 
-    def _get_exitcode_for_slurm_state(self, slurm_state: str) -> typing.Union[None, int]:
+    def _parse_exitcode_from_slurm_state(self, slurm_state: str) -> typing.Union[None, int]:
+        # TODO: use re module to match the text instead if iterating over the
+        #       dict each time?!
         for key, val in _SLURM_STATE_TO_EXITCODE.items():
             if key in slurm_state:
                 logger.debug(f"Parsed SLURM state {slurm_state} as {key}.")
@@ -348,15 +359,57 @@ class SlurmClusterMediator:
     #       ...currently we have all the state -> exitcode logic in SlurmProcess
     #       until we parse exitcodes from sacct here that probably makes sense?!
 
-    # TODO/FIXME: we have one func for success and one for fail?
-    # TODO: make this one function? 'notify_of_job_done(success, listofnodes)'?
-    def notify_of_job_fail(self, listofnodes: "list[str]") -> None:
-        # TODO? use slurm_job_state to decide if we even supect the node is broken?!
-        # NOTE: I (hejung) think it is smarter to handle that on the level of
-        #       the SlurmProcess as that can also (potentialy) ask the
-        #       next higher-level (CV/MDEngine) if it is a node fail or smth else...?
-        logger.debug(f"Adding nodes {listofnodes} to node fail counter.")
-        for node in listofnodes:
+    def _node_fail_heuristic(self, jobid: str, parsed_exitcode: int,
+                             slurm_state: str, nodelist: list[str]) -> None:
+        """
+        Implement node fail heuristic.
+
+        Check if a job failed and if yes determine heuristically if it failed
+        because of a node failure.
+        Also call the respective functions to update counters for successfull
+        and unsuccessfull job executions on each of the involved nodes.
+
+        Parameters
+        ----------
+        jobid : str
+            SLURM jobid of the job.
+        parsed_exitcode : int
+            Exitcode already parsed from slurm_state.
+        slurm_state : str
+            Full SLURM state string, used for more detailed failure analysis.
+        nodelist : list[str]
+            List of nodes associated with the job.
+        """
+        # Job/node fail heuristic
+        if parsed_exitcode == 0:
+            # all good
+            self._note_job_success_on_nodes(nodelist=nodelist)
+            logger.debug("Node fail heuristic noted successful job with id "
+                         + f"{jobid} on nodes {nodelist}.")
+        elif parsed_exitcode != 0:
+            log_str = ("Node fail heuristic noted unsuccessful job with id "
+                       + f"{jobid} on nodes {nodelist}.")
+            if "fail" in slurm_state.lower():
+                # NOTE: only some job failures are node failures
+                # this should catch 'FAILED', 'NODE_FAIL' and 'BOOT_FAIL'
+                # but excludes 'CANCELLED', 'DEADLINE', 'OUT_OF_MEMORY',
+                # 'REVOKE' and 'TIMEOUT'
+                # TODO: is this what we want?
+                # I (hejung) think yes, the later 5 are quite probably not a
+                # node failure but a code/user error
+                logger.debug(log_str + " MARKING NODES AS POSSIBLY BROKEN.")
+                self._note_job_fail_on_nodes(nodelist=nodelist)
+            else:
+                logger.debug(log_str + " Not marking nodes because the slurm "
+                             + f"state ({slurm_state}) hints at code/user"
+                             + " error and not node failure."
+                             )
+
+    # Bookkeeping functions for node fail heuristic, one for success updates
+    # one for failure updates
+    def _note_job_fail_on_nodes(self, nodelist: list[str]) -> None:
+        logger.debug(f"Adding nodes {nodelist} to node fail counter.")
+        for node in nodelist:
             self._node_job_fails[node] += 1
             if self._node_job_fails[node] >= self.num_fails_for_broken_node:
                 # declare it broken
@@ -364,7 +417,7 @@ class SlurmClusterMediator:
                 if node not in self._broken_nodes:
                     self._broken_nodes.append(node)
                 else:
-                    logger.debug(f"Node {node} already in broken node list.")
+                    logger.error(f"Node {node} already in broken node list.")
         # failsaves
         all_nodes = len(self._all_nodes)
         broken_nodes = len(self._broken_nodes)
@@ -377,9 +430,12 @@ class SlurmClusterMediator:
                 if broken_nodes >= all_nodes * 0.75:
                     raise RuntimeError("Houston? 3/4 of the cluster is broken?")
 
-    def notify_of_job_success(self, listofnodes: "list[str]") -> None:
-        logger.debug(f"Adding nodes {listofnodes} to node success counter.")
-        for node in listofnodes:
+    def _note_job_success_on_nodes(self, nodelist: list[str]) -> None:
+        logger.debug(f"Adding nodes {nodelist} to node success counter.")
+        for node in nodelist:
+            if node not in self._node_job_fails:
+                # only count successes for nodes on which we have seen failures
+                continue
             self._node_job_successes[node] += 1
             if self._node_job_successes[node] >= self.success_to_fail_ratio:
                 # we seen enough success to decrease the fail count by one
@@ -391,6 +447,8 @@ class SlurmClusterMediator:
                 logger.debug(log_str + "Zeroing success counter.")
                 if self._node_job_fails[node] > 0:
                     # we have seen failures previously, so decrease counter
+                    # but do not go below 0 and also do not delete it, i.e.
+                    # keep counting successes
                     self._node_job_fails[node] -= 1
                     logger.info(log_str + "Decreasing node fail count by one.")
 
@@ -481,8 +539,7 @@ class SlurmProcess:
     def slurm_cluster_mediator(self) -> SlurmClusterMediator:
         if self._slurm_cluster_mediator is None:
             raise RuntimeError("SLURM monitoring not initialized. Please call"
-                               # TODO: correct function!
-                               + "`aimmd.distributed.slurm.reinitialize_slurm_settings()`"
+                               + "`asyncmd.config.set_slurm_settings()`"
                                + " with appropriate arguments.")
         else:
             return self._slurm_cluster_mediator
@@ -546,7 +603,7 @@ class SlurmProcess:
                                        + f" sbatch returned {sbatch_return}.")
         logger.info(f"Submited SLURM job with jobid {jobid}.")
         self._jobid = jobid
-        # I (hejung) think we dont need the semaphore here
+        # I (hejung) think we dont need the semaphore for non-async calls like here(?)
         #async with _SEMAPHORES["SLURM_CLUSTER_MEDIATOR"]:
         self.slurm_cluster_mediator.monitor_register_job(jobid=jobid)
         # get jobinfo (these will probably just be the defaults but at
@@ -572,70 +629,12 @@ class SlurmProcess:
         return self._jobinfo.get("parsed_exitcode", None)
 
     async def _update_sacct_jobinfo(self) -> None:
-        async with _SEMAPHORES["SLURM_CLUSTER_MEDIATOR"]:
-            self._jobinfo = await self.slurm_cluster_mediator.get_info_for_job(jobid=self.slurm_jobid)
-
-    def _finalize_completed_job(self, node_fail_heuristic: bool) -> None:
-        """
-        Cleanup/housekeeping function for interaction with SlurmClusterMonitor.
-
-        Takes care of deregistering the job with SlurmClusterMonitor.
-        If node_fail_heuristic is True we handle failed jobs/suspected broken
-        nodes.
-
-        Parameters
-        ----------
-        node_fail_heuristic : bool
-            Whether we should heuristically handle failed jobs/broken nodes
-            based on the jobs exitcode and slurm exit state.
-        """
-        # first deregister the job from sacct calls
-        # NOTE: I (hejung) think we do not need the semaphore here for this
-        #       non-async function call?
-        #       the reason beeing that python only switches tasks at await
-        #       so as long as we always finish in one non-async codeblock
-        #       we dont need the semaphore to ensure consistent states?
+        # I (hejung) think we dont need the SLURM_CLUSTER_MEDIATOR semaphore at all?!
+        # i.e. I dont think we need it here as the cluster mediator limits
+        # the call frequency for sacct updates and is the same for all
+        # SlurmProcess instances
         #async with _SEMAPHORES["SLURM_CLUSTER_MEDIATOR"]:
-        self.slurm_cluster_mediator.monitor_remove_job(jobid=self.slurm_jobid)
-        # TODO: do we want to set self._jobid = None?
-        #       Note that this would enable us to call submit again but make us
-        #       forget everything about the job (returncode, slurm_state, ...)
-        if not node_fail_heuristic:
-            # nothing more to do, get out of here
-            return
-        # Job/node fail heuristic
-        if self.returncode is None:
-            # this should never happen! Except maybe when the job is cancelled?
-            logger.warning("Not able to apply heuristc for job fails/successes"
-                           + " for jobs with unknown exitcode. Not adding the"
-                           + f" nodes on which job with id {self._jobid} ran"
-                           + " to any counter.")
-        elif self.returncode == 0:
-            # all good
-            self.slurm_cluster_mediator.notify_of_job_success(
-                                                listofnodes=self.nodes,
-                                                              )
-            logger.debug("Notified slurm_cluster_mediator of successful job"
-                         + f" with id {self._jobid}.")
-        elif self.returncode != 0:
-            if "fail" in self.slurm_job_state.lower():
-                # NOTE: only some job failures are node failures
-                # this should catch 'FAILED', 'NODE_FAIL' and 'BOOT_FAIL'
-                # but excludes 'CANCELLED', 'DEADLINE', 'OUT_OF_MEMORY',
-                # 'REVOKE' and 'TIMEOUT'
-                # TODO: is this what we want?
-                # I (hejung) think yes, the later 5 are quite probably not a
-                # node failure but a code/user error
-                self.slurm_cluster_mediator.notify_of_job_fail(
-                                                        listofnodes=self.nodes,
-                                                               )
-                logger.debug("Notified slurm_cluster_mediator of failed job"
-                             + f" with id {self._jobid}.")
-            else:
-                logger.debug("Not notifying slurm_cluster_mediator of job with"
-                             + " nonzero exitcode because the slurm state "
-                             + "hints at code/user error and not node failure."
-                             )
+        self._jobinfo = await self.slurm_cluster_mediator.get_info_for_job(jobid=self.slurm_jobid)
 
     async def wait(self) -> int:
         """
@@ -654,7 +653,8 @@ class SlurmProcess:
         while self.returncode is None:
             await asyncio.sleep(self.sleep_time)
             await self._update_sacct_jobinfo()  # update local cached jobinfo
-        self._finalize_completed_job(node_fail_heuristic=True)
+        #async with _SEMAPHORES["SLURM_CLUSTER_MEDIATOR"]:
+        self.slurm_cluster_mediator.monitor_remove_job(jobid=self.slurm_jobid)
         return self.returncode
 
     async def communicate(self, input=None):
@@ -696,7 +696,7 @@ class SlurmProcess:
             logger.debug(f"Canceled SLURM job with jobid {self.slurm_jobid}."
                          + f"scancel returned {scancel_out}.")
             # remove the job from the monitoring
-            self._finalize_completed_job(node_fail_heuristic=False)
+            self.slurm_cluster_mediator.monitor_remove_job(jobid=self._jobid)
         else:
             # we probably never submitted the job?
             raise RuntimeError("Can not cancel a job with unknown jobid.")
