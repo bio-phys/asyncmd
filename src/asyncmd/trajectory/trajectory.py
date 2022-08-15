@@ -55,7 +55,7 @@ class Trajectory:
     concatenated trajectory.
     """
 
-    def __init__(self, trajectory_files: list[str] | str, structure_file: str,
+    def __init__(self, trajectory_files: typing.Union[list[str],str], structure_file: str,
                  nstout: typing.Optional[int] = None,
                  cache_type: typing.Optional[str] = None,
                  **kwargs):
