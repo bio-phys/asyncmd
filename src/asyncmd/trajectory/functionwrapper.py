@@ -406,13 +406,15 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         """
         # first construct the path/name for the numpy npy file in which we expect
         # the results to be written
-        tra_dir, tra_name = os.path.split(traj.trajectory_file)
+        # TODO/FIXME: tra_dir,tra_name are a hack for multipart, we should
+        #             at least check if it is multipart and add that to the name?
+        tra_dir, tra_name = os.path.split(traj.trajectory_files[0])
         result_file = os.path.join(tra_dir,
                                    f"{tra_name}_CVfunc_id_{self.id}")
         # we expect executable to take 3 postional args:
         # struct traj outfile
         cmd_str = f"{self.executable} {traj.structure_file}"
-        cmd_str += f" {traj.trajectory_file} {result_file}"
+        cmd_str += f" {' '.join(traj.trajectory_files)} {result_file}"
         if len(self.call_kwargs) > 0:
             for key, val in self.call_kwargs.items():
                 cmd_str += f" {key} {val}"
