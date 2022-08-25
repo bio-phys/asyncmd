@@ -300,6 +300,28 @@ class Trajectory:
                                + "self._setup_cache is called. "
                                + f"Was {self._cache_type}.")
 
+    def _populate_properties(self) -> None:
+        """
+        Populate cached properties from the underlying trajectory.
+        """
+        # create/open a mdanalysis universe to get...
+        u = mda.Universe(self.structure_file, *self.trajectory_files,
+                         tpr_resid_from_one=True)
+        # ...the number of frames
+        self._len = len(u.trajectory)
+        # ...the first integration step and time
+        ts = u.trajectory[0]
+        # FIXME/NOTE: works only(?) for trr and xtc
+        self._first_step = ts.data["step"]
+        self._first_time = ts.data["time"]
+        # ...the time diff between subsequent frames
+        self._dt = ts.data["dt"]
+        # ...the last integration step and time
+        ts = u.trajectory[-1]
+        # FIXME/NOTE: works only(?) for trr and xtc
+        self._last_step = ts.data["step"]
+        self._last_time = ts.data["time"]
+
     def __len__(self) -> int:
         """
         Return the number of frames in the trajectory.
@@ -309,12 +331,8 @@ class Trajectory:
         int
             The number of frames in the trajectory.
         """
-        if self._len is not None:
-            return self._len
-        # create/open a mdanalysis universe to get the number of frames
-        u = mda.Universe(self.structure_file, *self.trajectory_files,
-                         tpr_resid_from_one=True)
-        self._len = len(u.trajectory)
+        if self._len is None:
+            self._populate_properties()
         return self._len
 
     def __repr__(self) -> str:
@@ -392,55 +410,35 @@ class Trajectory:
     def first_step(self) -> int:
         """Return the integration step of the first frame in the trajectory."""
         if self._first_step is None:
-            u = mda.Universe(self.structure_file, self.trajectory_files[0],
-                             tpr_resid_from_one=True)
-            ts = u.trajectory[0]
-            # NOTE: works only(?) for trr and xtc
-            self._first_step = ts.data["step"]
+            self._populate_properties()
         return self._first_step
 
     @property
     def last_step(self) -> int:
         """Return the integration step of the last frame in the trajectory."""
         if self._last_step is None:
-            u = mda.Universe(self.structure_file, self.trajectory_files[-1],
-                             tpr_resid_from_one=True)
-            ts = u.trajectory[-1]
-            # TODO/FIXME:
-            # NOTE: works only(?) for trr and xtc
-            self._last_step = ts.data["step"]
+            self._populate_properties()
         return self._last_step
 
     @property
     def dt(self) -> float:
         """The time intervall between subsequent *frames* (not steps) in ps."""
         if self._dt is None:
-            # TODO/FIXME: should we check that dt is the same in all trajs?!
-            u = mda.Universe(self.structure_file, self.trajectory_files[0],
-                             tpr_resid_from_one=True)
-            # any frame is fine (assuming they all have the same spacing)
-            ts = u.trajectory[0]
-            self._dt = ts.data["dt"]
+            self._populate_properties()
         return self._dt
 
     @property
     def first_time(self) -> float:
         """Return the integration timestep of the first frame in ps."""
         if self._first_time is None:
-            u = mda.Universe(self.structure_file, self.trajectory_files[0],
-                             tpr_resid_from_one=True)
-            ts = u.trajectory[0]
-            self._first_time = ts.data["time"]
+            self._populate_properties()
         return self._first_time
 
     @property
     def last_time(self) -> float:
         """Return the integration timestep of the last frame in ps."""
         if self._last_time is None:
-            u = mda.Universe(self.structure_file, self.trajectory_files[-1],
-                             tpr_resid_from_one=True)
-            ts = u.trajectory[-1]
-            self._last_time = ts.data["time"]
+            self._populate_properties()
         return self._last_time
 
     async def _apply_wrapped_func(self, func_id, wrapped_func):
