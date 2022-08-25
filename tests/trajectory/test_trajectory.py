@@ -214,6 +214,59 @@ class Test_Trajectory(TBase):
                                 "__ne__": True,
                                 }
                                ),
+                               # same for lists of trajs
+                               # two times the same traj with the same struct
+                              ((["tests/test_data/trajectory/ala_traj.trr",
+                                 "tests/test_data/trajectory/ala_traj.trr"],
+                                ["tests/test_data/trajectory/ala_traj.trr",
+                                 "tests/test_data/trajectory/ala_traj.trr"],
+                                ),
+                               ("tests/test_data/trajectory/ala.tpr",
+                                "tests/test_data/trajectory/ala.tpr",
+                                ),
+                               {"__eq__": True,
+                                "__ne__": False,
+                                }
+                               ),
+                              # two times the same traj with different structs
+                              ((["tests/test_data/trajectory/ala_traj.trr",
+                                 "tests/test_data/trajectory/ala_traj.trr"],
+                                ["tests/test_data/trajectory/ala_traj.trr",
+                                 "tests/test_data/trajectory/ala_traj.trr"],
+                                ),
+                               ("tests/test_data/trajectory/ala.tpr",
+                                "tests/test_data/trajectory/ala.gro",
+                                ),
+                               {"__eq__": True,
+                                "__ne__": False,
+                                }
+                               ),
+                              # different trajs with the same struct file ;)
+                              ((["tests/test_data/trajectory/ala_traj.trr",
+                                 "tests/test_data/trajectory/ala_traj.trr"],
+                                ["tests/test_data/trajectory/ala_traj.xtc",
+                                 "tests/test_data/trajectory/ala_traj.xtc"],
+                                ),
+                               ("tests/test_data/trajectory/ala.tpr",
+                                "tests/test_data/trajectory/ala.tpr",
+                                ),
+                               {"__eq__": False,
+                                "__ne__": True,
+                                }
+                               ),
+                              # different trajs with different struct files
+                              ((["tests/test_data/trajectory/ala_traj.trr",
+                                 "tests/test_data/trajectory/ala_traj.trr"],
+                                ["tests/test_data/trajectory/ala_traj.xtc",
+                                 "tests/test_data/trajectory/ala_traj.xtc"],
+                                ),
+                               ("tests/test_data/trajectory/ala.tpr",
+                                "tests/test_data/trajectory/ala.gro",
+                                ),
+                               {"__eq__": False,
+                                "__ne__": True,
+                                }
+                               ),
                               ]
                              )
     def test_binary_magic_methods(self, traj_files, struct_files, truth):
