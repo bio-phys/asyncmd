@@ -14,6 +14,7 @@
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import os
 import abc
+import shlex
 import asyncio
 import inspect
 import logging
@@ -267,7 +268,8 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
 
         - full filepath of the structure file associated with the trajectory
 
-        - full filepath of the trajectory to calculate values for
+        - full filepath of the trajectory to calculate values for, note that
+          multipart trajectories result in multiple files/arguments here.
 
         - full filepath of the file the results should be written to without
           fileending. Note that if no custom loading function is supplied we
@@ -320,6 +322,8 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             will be added to the call as pair ' {key} {val}', note that in case
             you want to pass single command line flags (like '-v') this can be
             achieved by setting key='-v' and val='', i.e. to the empty string.
+            The values are shell escaped using `shlex.quote()` when writing
+            them to the sbatch script.
         load_results_func : None or function
             Function to call to customize the loading of the results.
             If a function is supplied, it will be called with the full path to
@@ -406,16 +410,23 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         """
         # first construct the path/name for the numpy npy file in which we expect
         # the results to be written
-        tra_dir, tra_name = os.path.split(traj.trajectory_file)
-        result_file = os.path.join(tra_dir,
-                                   f"{tra_name}_CVfunc_id_{self.id}")
+        tra_dir, tra_name = os.path.split(traj.trajectory_files[0])
+        hash_part = str(traj.trajectory_hash)[:5]
+        # put in the hash (calculated over all traj parts for multipart)
+        # to make sure trajectories with the same first part but different
+        # remaining parts dont get mixed up
+        result_file = os.path.join(
+                        tra_dir, f"{tra_name}_{hash_part}_CVfunc_id_{self.id}"
+                                   )
         # we expect executable to take 3 postional args:
         # struct traj outfile
         cmd_str = f"{self.executable} {traj.structure_file}"
-        cmd_str += f" {traj.trajectory_file} {result_file}"
+        cmd_str += f" {' '.join(traj.trajectory_files)} {result_file}"
         if len(self.call_kwargs) > 0:
             for key, val in self.call_kwargs.items():
-                cmd_str += f" {key} {val}"
+                # shell escape only the values,
+                # the keys (i.e. option names/flags) should be no issue
+                cmd_str += f" {key} {shlex.quote(val)}"
         # construct jobname
         # TODO: do we want the traj name in the jobname here?!
         #       I think rather not, becasue then we can cancel all jobs for one
@@ -452,7 +463,7 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                     raise RuntimeError(
                                 "Non-zero exit code from CV batch job for "
                                 + f"executable {self.executable} on "
-                                + f"trajectory {traj.trajectory_file} "
+                                + f"trajectory {traj} "
                                 + f"(slurm jobid {slurm_proc.slurm_jobid})."
                                 + f" Exit code was: {exit_code}."
                                        )

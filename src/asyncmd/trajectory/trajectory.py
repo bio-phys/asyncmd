@@ -35,7 +35,7 @@ class Trajectory:
     """
     Represent a trajectory.
 
-    Keep track of the paths of the trajectory and the structure file.
+    Keep track of the paths of the trajectory and the structure files.
     Caches values for (wrapped) functions acting on the trajectory.
     Supports pickling and unpickling with the cached values restored, the
     values will be written to a hidden numpy npz file next to the trajectory.
@@ -55,7 +55,7 @@ class Trajectory:
     concatenated trajectory.
     """
 
-    def __init__(self, trajectory_file: str, structure_file: str,
+    def __init__(self, trajectory_files: typing.Union[list[str],str], structure_file: str,
                  nstout: typing.Optional[int] = None,
                  cache_type: typing.Optional[str] = None,
                  **kwargs):
@@ -64,8 +64,9 @@ class Trajectory:
 
         Parameters
         ----------
-        trajectory_file : str
-            Absolute or relative path to the trajectory file (e.g. trr, xtc).
+        trajectory_files : list[str] or str
+            Absolute or relative path(s) to the trajectory file(s),
+            e.g. trr, xtc, dcd, ...
         structure_file : str
             Absolute or relative path to the structure file (e.g. tpr, gro).
         nstout : int or None, optional
@@ -81,7 +82,7 @@ class Trajectory:
         Raises
         ------
         ValueError
-            If the ``trajectory_file`` or the ``structure_file`` are not
+            If the ``trajectory_files`` or the ``structure_file`` are not
             accessible.
         """
         # NOTE: we assume tra = trr and struct = tpr
@@ -101,11 +102,15 @@ class Trajectory:
         #                        + f"mismatching type ({type(value)}). "
         #                        + f" Default type is {type(cval)}."
         #                        )
-        if os.path.isfile(trajectory_file):
-            self._trajectory_file = os.path.abspath(trajectory_file)
-        else:
-            raise ValueError(f"trajectory_file ({trajectory_file}) must be "
-                             + "accessible.")
+        if isinstance(trajectory_files, str):
+            trajectory_files = [trajectory_files]
+        self._trajectory_files = []
+        for traj_f in trajectory_files:
+            if os.path.isfile(traj_f):
+                self._trajectory_files += [os.path.abspath(traj_f)]
+            else:
+                raise ValueError(f"Trajectory file ({traj_f}) must be "
+                                 + "accessible.")
         if os.path.isfile(structure_file):
             self._structure_file = os.path.abspath(structure_file)
         else:
@@ -116,10 +121,21 @@ class Trajectory:
         # note that we do not include the structure file on purpose because
         # that allows for changing .gro <-> .tpr or similar
         # (which we expect to not change the calculated CV values)
-        with open(self._trajectory_file, "rb") as traj_file:
-            # TODO: how much should we read?
-            #       (I [hejung] think the first 5 MB are enough for sure)
-            data = traj_file.read(5120)  # read the first 5 MB of the file
+        # TODO/FIXME?: What happens if we append to an existing traj?
+        #              I [hejung] think this will only change the end of
+        #              the traj, so we would need to remember the len/size
+        #              of the traj or additionally hash the end of it?!
+        # TODO: how much should we read?
+        #      (I [hejung] think the first and last 2.5 MB are enough for sure)
+        data = bytes()
+        for traj_f in self._trajectory_files:
+            with open(traj_f, "rb") as traj_file:
+                # read the first 2.5 MB of each file
+                data += traj_file.read(2560)
+                # and read the last 2.5 MB of each file
+                traj_file.seek(-2560, io.SEEK_END)
+                data += traj_file.read(2560)
+        # calculate one hash over all traj_files
         self._traj_hash = int(hashlib.blake2b(data,
                                               # digest size 8 bytes = 64 bit
                                               # to make sure the hash fits into
@@ -205,7 +221,7 @@ class Trajectory:
         # Note that we can just set self._npz to this cache because it is
         # stateless (in the sense that if it existed it be exactly the same)
         self._npz_cache = TrajectoryFunctionValueCacheNPZ(
-                                        fname_traj=self.trajectory_file,
+                                        fname_trajs=self.trajectory_files,
                                         hash_traj=self._traj_hash,
                                                           )
         if self._cache_type == "memory":
@@ -288,6 +304,28 @@ class Trajectory:
                                + "self._setup_cache is called. "
                                + f"Was {self._cache_type}.")
 
+    def _populate_properties(self) -> None:
+        """
+        Populate cached properties from the underlying trajectory.
+        """
+        # create/open a mdanalysis universe to get...
+        u = mda.Universe(self.structure_file, *self.trajectory_files,
+                         tpr_resid_from_one=True)
+        # ...the number of frames
+        self._len = len(u.trajectory)
+        # ...the first integration step and time
+        ts = u.trajectory[0]
+        # FIXME/NOTE: works only(?) for trr and xtc
+        self._first_step = ts.data["step"]
+        self._first_time = ts.data["time"]
+        # ...the time diff between subsequent frames
+        self._dt = ts.data["dt"]
+        # ...the last integration step and time
+        ts = u.trajectory[-1]
+        # FIXME/NOTE: works only(?) for trr and xtc
+        self._last_step = ts.data["step"]
+        self._last_time = ts.data["time"]
+
     def __len__(self) -> int:
         """
         Return the number of frames in the trajectory.
@@ -297,16 +335,16 @@ class Trajectory:
         int
             The number of frames in the trajectory.
         """
-        if self._len is not None:
-            return self._len
-        # create/open a mdanalysis universe to get the number of frames
-        u = mda.Universe(self.structure_file, self.trajectory_file,
-                         tpr_resid_from_one=True)
-        self._len = len(u.trajectory)
+        if self._len is None:
+            self._populate_properties()
         return self._len
 
     def __repr__(self) -> str:
-        return (f"Trajectory(trajectory_file={self.trajectory_file},"
+        if len(self.trajectory_files) == 1:
+            return (f"Trajectory(trajectory_files={self.trajectory_files[0]},"
+                    + f" structure_file={self.structure_file})"
+                    )
+        return (f"Trajectory(trajectory_files={self.trajectory_files},"
                 + f" structure_file={self.structure_file})"
                 )
 
@@ -314,17 +352,23 @@ class Trajectory:
         if not isinstance(other, Trajectory):
             # if its not a trajectory it cant be equal
             return False
-        if self._traj_hash != other._traj_hash:
+        if self.trajectory_hash != other.trajectory_hash:
             # if it has a different hash it cant be equal
             return False
+        # if they dont have the same number of trajecory files they can not be
+        # the same
+        if len(self.trajectory_files) != len(other.trajectory_files):
+            return False
+        # they might be the same file (bitwise) but at different locations in
+        # the FS, then they are not equal (at least for out purposes)
+        for traj_f_self, traj_f_other in zip(self.trajectory_files,
+                                             other.trajectory_files):
+            if traj_f_self != traj_f_other:
+                return False
         if len(self) != len(other):
-            # since we only hash the beginning of the file they might
+            # since we only hash the beginning of the file(s) they might
             # be the same start but different number of frames/end
             # so we check if they have the same length
-            return False
-        if self.trajectory_file != other.trajectory_file:
-            # they might be the same file but at different locations in the FS
-            # then they are not equal (at least for out purposes)
             return False
         # NOTE: we allow the structure file to change
         #       this way we consider e.g. the same traj with a gro and with a
@@ -349,9 +393,14 @@ class Trajectory:
         return copy.copy(self._structure_file)
 
     @property
-    def trajectory_file(self) -> str:
-        """Return absolute path to the trajectory file."""
-        return copy.copy(self._trajectory_file)
+    def trajectory_files(self) -> str:
+        """Return absolute path to the trajectory files."""
+        return copy.copy(self._trajectory_files)
+
+    @property
+    def trajectory_hash(self) -> int:
+        """Return hash over the trajecory files"""
+        return copy.copy(self._traj_hash)
 
     @property
     def nstout(self) -> typing.Union[int, None]:
@@ -370,54 +419,35 @@ class Trajectory:
     def first_step(self) -> int:
         """Return the integration step of the first frame in the trajectory."""
         if self._first_step is None:
-            u = mda.Universe(self.structure_file, self.trajectory_file,
-                             tpr_resid_from_one=True)
-            ts = u.trajectory[0]
-            # NOTE: works only(?) for trr and xtc
-            self._first_step = ts.data["step"]
+            self._populate_properties()
         return self._first_step
 
     @property
     def last_step(self) -> int:
         """Return the integration step of the last frame in the trajectory."""
         if self._last_step is None:
-            u = mda.Universe(self.structure_file, self.trajectory_file,
-                             tpr_resid_from_one=True)
-            ts = u.trajectory[-1]
-            # TODO/FIXME:
-            # NOTE: works only(?) for trr and xtc
-            self._last_step = ts.data["step"]
+            self._populate_properties()
         return self._last_step
 
     @property
     def dt(self) -> float:
         """The time intervall between subsequent *frames* (not steps) in ps."""
         if self._dt is None:
-            u = mda.Universe(self.structure_file, self.trajectory_file,
-                             tpr_resid_from_one=True)
-            # any frame is fine (assuming they all have the same spacing)
-            ts = u.trajectory[0]
-            self._dt = ts.data["dt"]
+            self._populate_properties()
         return self._dt
 
     @property
     def first_time(self) -> float:
         """Return the integration timestep of the first frame in ps."""
         if self._first_time is None:
-            u = mda.Universe(self.structure_file, self.trajectory_file,
-                             tpr_resid_from_one=True)
-            ts = u.trajectory[0]
-            self._first_time = ts.data["time"]
+            self._populate_properties()
         return self._first_time
 
     @property
     def last_time(self) -> float:
         """Return the integration timestep of the last frame in ps."""
         if self._last_time is None:
-            u = mda.Universe(self.structure_file, self.trajectory_file,
-                             tpr_resid_from_one=True)
-            ts = u.trajectory[-1]
-            self._last_time = ts.data["time"]
+            self._populate_properties()
         return self._last_time
 
     async def _apply_wrapped_func(self, func_id, wrapped_func):
@@ -491,7 +521,7 @@ class Trajectory:
         #       the then preferred cache
         if self._npz_cache is None:
             self._npz_cache = TrajectoryFunctionValueCacheNPZ(
-                                        fname_traj=self.trajectory_file,
+                                        fname_trajs=self.trajectory_files,
                                         hash_traj=self._traj_hash,
                                                              )
             if self._memory_cache is not None:
@@ -579,7 +609,7 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
     Drop-in replacement for the dictionary that is used for in-memory caching.
     """
 
-    _hash_traj_npz_key = "hash_of_traj_start"  # key of hash_traj in npz file
+    _hash_traj_npz_key = "hash_of_trajs"  # key of hash_traj in npz file
 
     # NOTE: this is written with the assumption that stored trajectories are
     #       immutable (except for adding additional stored function values)
@@ -596,20 +626,22 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
     #    too it does not really matter (as they can not be async either)?
     # ...and as we also leave some room for non-semaphored file openings anyway
 
-    def __init__(self, fname_traj: str, hash_traj: int) -> None:
+    def __init__(self, fname_trajs: str, hash_traj: int) -> None:
         """
         Initialize a `TrajectoryFunctionValueCacheNPZ`.
 
         Parameters
         ----------
-        fname_traj : str
-            Absolute filename to the trajectory for which we cache CV values.
+        fname_trajs : str
+            Absolute filenames to the trajectories for which we cache CV values.
         hash_traj : int
             Hash over the first part of the trajectory file,
             used to make sure we cache only for the right trajectory
             (and not any trajectories with the same filename).
         """
-        self.fname_npz = self._get_cache_filename(fname_traj=fname_traj)
+        self.fname_npz = self._get_cache_filename(fname_trajs=fname_trajs,
+                                                  trajectory_hash=hash_traj,
+                                                  )
         self._hash_traj = hash_traj
         self._func_ids = []
         # sort out if we have an associated npz file already
@@ -642,25 +674,32 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
         # now if the old npz did not match we should remove it
         # then we will rewrite it with the first cached CV values
         if not existing_npz_matches:
+            logger.debug(f"Found existing npz file ({self.fname_npz}) but the"
+                         + " trajectory hash does not match."
+                         + " Recreating the npz cache from scratch.")
             os.unlink(self.fname_npz)
 
     @classmethod
-    def _get_cache_filename(cls, fname_traj: str) -> str:
+    def _get_cache_filename(cls, fname_trajs: list[str],
+                            trajectory_hash: int) -> str:
         """
         Construct cachefilename from trajectory fname.
 
         Parameters
         ----------
-        fname_traj : str
+        fname_trajs : list[str]
             Absolute path to the trajectory for which we cache.
+        trajectory_hash : int
+            Hash of the trajectory (files).
 
         Returns
         -------
         str
             Absolute path to the cachefile associated with trajectory.
         """
-        head, tail = os.path.split(fname_traj)
-        return os.path.join(head, f".{tail}_asyncmd_cv_cache.npz")
+        head, tail = os.path.split(fname_trajs[0])
+        hash_part = str(trajectory_hash)[:5]
+        return os.path.join(head, f".{tail}_{hash_part}_asyncmd_cv_cache.npz")
 
     def __len__(self) -> int:
         return len(self._func_ids)
@@ -743,7 +782,7 @@ class TrajectoryFunctionValueCacheH5PY(collections.abc.Mapping):
     #       but we assume that the actual underlying trajectory stays the same,
     #       i.e. it is not extended after first storing it
 
-    def __init__(self, h5py_cache, hash_traj: str):
+    def __init__(self, h5py_cache, hash_traj: int):
         self.h5py_cache = h5py_cache
         self._hash_traj = hash_traj
         self._h5py_paths = {"ids": "FunctionIDs",

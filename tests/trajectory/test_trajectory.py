@@ -39,7 +39,7 @@ class TBase:
         self.ran_gen = np.random.default_rng()
         ii64 = np.iinfo(np.int64)
 
-        def make_trajectory_hash():
+        def make_trajectory_hash() -> int:
             return self.ran_gen.integers(low=ii64.min,
                                          high=ii64.max,
                                          endpoint=True,
@@ -110,7 +110,7 @@ class Test_Trajectory(TBase):
                               ]
                              )
     def test_properties(self, traj_file, struct_file, truth):
-        traj = Trajectory(trajectory_file=traj_file,
+        traj = Trajectory(trajectory_files=traj_file,
                           structure_file=struct_file,
                           )
         # put the comparisson in a function to call it twice
@@ -155,7 +155,7 @@ class Test_Trajectory(TBase):
                               ]
                              )
     def test_unary_magic_methods(self, traj_file, struct_file, truth):
-        traj = Trajectory(trajectory_file=traj_file,
+        traj = Trajectory(trajectory_files=traj_file,
                           structure_file=struct_file,
                           )
         # same logic as for properties, put in func to call twice to check both
@@ -214,13 +214,66 @@ class Test_Trajectory(TBase):
                                 "__ne__": True,
                                 }
                                ),
+                               # same for lists of trajs
+                               # two times the same traj with the same struct
+                              ((["tests/test_data/trajectory/ala_traj.trr",
+                                 "tests/test_data/trajectory/ala_traj.trr"],
+                                ["tests/test_data/trajectory/ala_traj.trr",
+                                 "tests/test_data/trajectory/ala_traj.trr"],
+                                ),
+                               ("tests/test_data/trajectory/ala.tpr",
+                                "tests/test_data/trajectory/ala.tpr",
+                                ),
+                               {"__eq__": True,
+                                "__ne__": False,
+                                }
+                               ),
+                              # two times the same traj with different structs
+                              ((["tests/test_data/trajectory/ala_traj.trr",
+                                 "tests/test_data/trajectory/ala_traj.trr"],
+                                ["tests/test_data/trajectory/ala_traj.trr",
+                                 "tests/test_data/trajectory/ala_traj.trr"],
+                                ),
+                               ("tests/test_data/trajectory/ala.tpr",
+                                "tests/test_data/trajectory/ala.gro",
+                                ),
+                               {"__eq__": True,
+                                "__ne__": False,
+                                }
+                               ),
+                              # different trajs with the same struct file ;)
+                              ((["tests/test_data/trajectory/ala_traj.trr",
+                                 "tests/test_data/trajectory/ala_traj.trr"],
+                                ["tests/test_data/trajectory/ala_traj.xtc",
+                                 "tests/test_data/trajectory/ala_traj.xtc"],
+                                ),
+                               ("tests/test_data/trajectory/ala.tpr",
+                                "tests/test_data/trajectory/ala.tpr",
+                                ),
+                               {"__eq__": False,
+                                "__ne__": True,
+                                }
+                               ),
+                              # different trajs with different struct files
+                              ((["tests/test_data/trajectory/ala_traj.trr",
+                                 "tests/test_data/trajectory/ala_traj.trr"],
+                                ["tests/test_data/trajectory/ala_traj.xtc",
+                                 "tests/test_data/trajectory/ala_traj.xtc"],
+                                ),
+                               ("tests/test_data/trajectory/ala.tpr",
+                                "tests/test_data/trajectory/ala.gro",
+                                ),
+                               {"__eq__": False,
+                                "__ne__": True,
+                                }
+                               ),
                               ]
                              )
     def test_binary_magic_methods(self, traj_files, struct_files, truth):
-        traj1 = Trajectory(trajectory_file=traj_files[0],
+        traj1 = Trajectory(trajectory_files=traj_files[0],
                            structure_file=struct_files[0],
                            )
-        traj2 = Trajectory(trajectory_file=traj_files[1],
+        traj2 = Trajectory(trajectory_files=traj_files[1],
                            structure_file=struct_files[1],
                            )
         for mm_name, truth_value in truth.items():
@@ -232,7 +285,7 @@ class Test_Trajectory(TBase):
         # i.e. at single points (possibly with mocks) to make them uneqal
         def make_traj():
             return Trajectory(
-                    trajectory_file="tests/test_data/trajectory/ala_traj.trr",
+                    trajectory_files="tests/test_data/trajectory/ala_traj.trr",
                     structure_file="tests/test_data/trajectory/ala.tpr",
                               )
 
@@ -245,7 +298,11 @@ class Test_Trajectory(TBase):
         assert traj1 == traj2  # make sure they are equal to begin with
         assert not traj1 != traj2  # and check that neq also works
         # modify trajectory file
-        traj2._trajectory_file += "test123"
+        traj2._trajectory_files[-1] += "test123"
+        assert_neq(traj1, traj2)
+        traj2 = make_traj()  # get a new traj2
+        # add a trajectory file
+        traj2._trajectory_files += ["test123"]
         assert_neq(traj1, traj2)
         traj2 = make_traj()  # get a new traj2
         # modify length of the traj
@@ -299,7 +356,7 @@ class Test_Trajectory(TBase):
             except KeyError:
                 pass
         traj = Trajectory(
-                    trajectory_file="tests/test_data/trajectory/ala_traj.trr",
+                    trajectory_files="tests/test_data/trajectory/ala_traj.trr",
                     structure_file="tests/test_data/trajectory/ala.tpr",
                     cache_type=initial_cache_type,
                           )
@@ -341,7 +398,8 @@ class Test_Trajectory(TBase):
         # cleanup
         # remove the npz cache file (if it can be there)!
         fname_npz_cache = TrajectoryFunctionValueCacheNPZ._get_cache_filename(
-                                            fname_traj=traj.trajectory_file,
+                                        fname_trajs=traj.trajectory_files,
+                                        trajectory_hash=traj.trajectory_hash,
                                                                               )
         if ("npz" in [cache_type, initial_cache_type]  # npz cache explicitly used
             # npz cache explicitly set as default (or implicitly since default=None)
@@ -387,7 +445,7 @@ class Test_Trajectory(TBase):
             except KeyError:
                 pass
         traj = Trajectory(
-                    trajectory_file="tests/test_data/trajectory/ala_traj.trr",
+                    trajectory_files="tests/test_data/trajectory/ala_traj.trr",
                     structure_file="tests/test_data/trajectory/ala.tpr",
                     cache_type=cache_type,
                           )
@@ -441,7 +499,8 @@ class Test_Trajectory(TBase):
         # cleanup
         # remove the npz cache file!
         fname_npz_cache = TrajectoryFunctionValueCacheNPZ._get_cache_filename(
-                                            fname_traj=traj.trajectory_file,
+                                        fname_trajs=traj.trajectory_files,
+                                        trajectory_hash=traj.trajectory_hash,
                                                                               )
         os.unlink(fname_npz_cache)
 
@@ -459,7 +518,7 @@ class Test_TrajectoryFunctionValueCache(TBase):
     def test_append_iter_len___getitem___errs(self, tmp_path, cache_class):
         first_arg = None
         if cache_class is TrajectoryFunctionValueCacheNPZ:
-            first_arg = tmp_path / "traj_name.traj"
+            first_arg = [tmp_path / "traj_name.traj"]
         elif cache_class is TrajectoryFunctionValueCacheH5PY:
             h5py = pytest.importorskip("h5py", minversion=None,
                                        reason="Requires 'h5py' to run.",
@@ -524,7 +583,7 @@ class Test_TrajectoryFunctionValueCache(TBase):
                              )
     def test_stateful_append_iter_len(self, tmp_path, cache_class):
         if cache_class is TrajectoryFunctionValueCacheNPZ:
-            first_arg = tmp_path / "traj_name.traj"
+            first_arg = [tmp_path / "traj_name.traj"]
         elif cache_class is TrajectoryFunctionValueCacheH5PY:
             h5py = pytest.importorskip("h5py", minversion=None,
                                        reason="Requires 'h5py' to run.",
@@ -577,7 +636,7 @@ class Test_TrajectoryFunctionValueCache(TBase):
     def test__ensure_consistent_npz(self, tmp_path):
         # we also check in here that we get back what we saved
         # first generate name and hash for the traj + some mock CV data
-        fname_traj = tmp_path / "traj_name.traj"
+        fname_trajs = [tmp_path / "traj_name.traj"]
         hash_traj = self.make_trajectory_hash()
         n_cached_cvs = 4
         traj_len = 223
@@ -586,14 +645,14 @@ class Test_TrajectoryFunctionValueCache(TBase):
         test_data_func_values = [self.make_func_values(traj_len, cv_dim)
                                  for cv_dim in cv_dims]
         # now create a fresh cache and append
-        npz_cache = TrajectoryFunctionValueCacheNPZ(fname_traj=fname_traj,
+        npz_cache = TrajectoryFunctionValueCacheNPZ(fname_trajs=fname_trajs,
                                                     hash_traj=hash_traj,
                                                     )
         for func_id, func_values in zip(test_data_func_ids,
                                         test_data_func_values):
             npz_cache.append(func_id=func_id, vals=func_values)
         # now create a second npz cache to test that it will load the data
-        npz_cache2 = TrajectoryFunctionValueCacheNPZ(fname_traj=fname_traj,
+        npz_cache2 = TrajectoryFunctionValueCacheNPZ(fname_trajs=fname_trajs,
                                                      hash_traj=hash_traj,
                                                      )
         for func_id, func_values in zip(test_data_func_ids,
@@ -601,12 +660,17 @@ class Test_TrajectoryFunctionValueCache(TBase):
             # and check that the loaded and saved data are equal
             assert np.all(np.equal(npz_cache2[func_id], func_values))
         # now check that the npz file will be removed if the traj hashes dont
-        # match
-        cache_file_name = npz_cache._get_cache_filename(fname_traj=fname_traj)
-        hash_traj_mm = self.make_trajectory_hash()
-        # creating a cache with a matching fname_traj but mismatching hash
+        # match, currently we have the first 5 digits of the hash in the cache
+        # filename, so artificially modify only the last digit(s)
+        hash_traj_mm = hash_traj - 1
+        if not (str(hash_traj)[:5] == str(hash_traj_mm)[:5]):
+            hash_traj_mm = hash_traj + 1
+        cache_file_name = npz_cache._get_cache_filename(
+                                                fname_trajs=fname_trajs,
+                                                trajectory_hash=hash_traj)
+        # creating a cache with a matching fname_trajs but mismatching hash
         # should remove the npz file
-        npz_cache_mm = TrajectoryFunctionValueCacheNPZ(fname_traj=fname_traj,
+        npz_cache_mm = TrajectoryFunctionValueCacheNPZ(fname_trajs=fname_trajs,
                                                        hash_traj=hash_traj_mm,
                                                        )
         assert not os.path.exists(cache_file_name)
@@ -617,7 +681,7 @@ class Test_TrajectoryFunctionValueCache(TBase):
         # and now test for removal of npz if mismatching npz file format is
         # detected (triggered by changing the key for the hash_traj in npz)
         TrajectoryFunctionValueCacheNPZ._hash_traj_npz_key = "TEST123"
-        _ = TrajectoryFunctionValueCacheNPZ(fname_traj=fname_traj,
+        _ = TrajectoryFunctionValueCacheNPZ(fname_trajs=fname_trajs,
                                             hash_traj=hash_traj_mm,
                                             )
         assert not os.path.exists(cache_file_name)
