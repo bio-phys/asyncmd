@@ -111,7 +111,7 @@ class TrajectoryConcatenator:
                              )
 
         # special treatment for traj0 because we need n_atoms for the writer
-        u0 = mda.Universe(trajs[0].structure_file, trajs[0].trajectory_file,
+        u0 = mda.Universe(trajs[0].structure_file, *trajs[0].trajectory_files,
                           tpr_resid_from_one=True)
         start0, stop0, step0 = slices[0]
         # if the file exists MDAnalysis will silently overwrite
@@ -125,7 +125,7 @@ class TrajectoryConcatenator:
                     last_time_seen = ts.data["time"]
             del u0  # should free up memory and does no harm?!
             for traj, sl in zip(trajs[1:], slices[1:]):
-                u = mda.Universe(traj.structure_file, traj.trajectory_file,
+                u = mda.Universe(traj.structure_file, *traj.trajectory_files,
                                  tpr_resid_from_one=True)
                 start, stop, step = sl
                 for ts in u.trajectory[start:stop:step]:
@@ -230,13 +230,13 @@ class FrameExtractor(abc.ABC):
             raise ValueError("Output structure file must exist."
                              + f"(given struct_out is {struct_out})."
                              )
-        u = mda.Universe(traj_in.structure_file, traj_in.trajectory_file,
+        u = mda.Universe(traj_in.structure_file, *traj_in.trajectory_files,
                          tpr_resid_from_one=True)
         with mda.Writer(outfile, n_atoms=u.trajectory.n_atoms) as W:
             ts = u.trajectory[idx]
             self.apply_modification(u, ts)
             W.write(u.atoms)
-        return Trajectory(trajectory_file=outfile, structure_file=struct_out)
+        return Trajectory(trajectory_files=outfile, structure_file=struct_out)
 
 
 class NoModificationFrameExtractor(FrameExtractor):
