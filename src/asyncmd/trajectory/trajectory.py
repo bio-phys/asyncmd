@@ -126,11 +126,15 @@ class Trajectory:
         #              the traj, so we would need to remember the len/size
         #              of the traj or additionally hash the end of it?!
         # TODO: how much should we read?
-        #       (I [hejung] think the first 5 MB are enough for sure)
+        #      (I [hejung] think the first and last 2.5 MB are enough for sure)
         data = bytes()
         for traj_f in self._trajectory_files:
             with open(traj_f, "rb") as traj_file:
-                data += traj_file.read(5120)  # read the first 5 MB of each file
+                # read the first 2.5 MB of each file
+                data += traj_file.read(2560)
+                # and read the last 2.5 MB of each file
+                traj_file.seek(-2560, io.SEEK_END)
+                data += traj_file.read(2560)
         # calculate one hash over all traj_files
         self._traj_hash = int(hashlib.blake2b(data,
                                               # digest size 8 bytes = 64 bit
@@ -348,7 +352,7 @@ class Trajectory:
         if not isinstance(other, Trajectory):
             # if its not a trajectory it cant be equal
             return False
-        if self._traj_hash != other._traj_hash:
+        if self.trajectory_hash != other.trajectory_hash:
             # if it has a different hash it cant be equal
             return False
         # if they dont have the same number of trajecory files they can not be
@@ -392,6 +396,11 @@ class Trajectory:
     def trajectory_files(self) -> str:
         """Return absolute path to the trajectory files."""
         return copy.copy(self._trajectory_files)
+
+    @property
+    def trajectory_hash(self) -> int:
+        """Return hash over the trajecory files"""
+        return copy.copy(self._traj_hash)
 
     @property
     def nstout(self) -> typing.Union[int, None]:
@@ -600,7 +609,7 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
     Drop-in replacement for the dictionary that is used for in-memory caching.
     """
 
-    _hash_traj_npz_key = "hash_of_traj_start"  # key of hash_traj in npz file
+    _hash_traj_npz_key = "hash_of_trajs"  # key of hash_traj in npz file
 
     # NOTE: this is written with the assumption that stored trajectories are
     #       immutable (except for adding additional stored function values)
@@ -630,7 +639,9 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
             used to make sure we cache only for the right trajectory
             (and not any trajectories with the same filename).
         """
-        self.fname_npz = self._get_cache_filename(fname_trajs=fname_trajs)
+        self.fname_npz = self._get_cache_filename(fname_trajs=fname_trajs,
+                                                  trajectory_hash=hash_traj,
+                                                  )
         self._hash_traj = hash_traj
         self._func_ids = []
         # sort out if we have an associated npz file already
@@ -669,7 +680,8 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
             os.unlink(self.fname_npz)
 
     @classmethod
-    def _get_cache_filename(cls, fname_trajs: list[str]) -> str:
+    def _get_cache_filename(cls, fname_trajs: list[str],
+                            trajectory_hash: int) -> str:
         """
         Construct cachefilename from trajectory fname.
 
@@ -677,6 +689,8 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
         ----------
         fname_trajs : list[str]
             Absolute path to the trajectory for which we cache.
+        trajectory_hash : int
+            Hash of the trajectory (files).
 
         Returns
         -------
@@ -684,11 +698,8 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
             Absolute path to the cachefile associated with trajectory.
         """
         head, tail = os.path.split(fname_trajs[0])
-        if len(fname_trajs) > 1:
-            return os.path.join(head,
-                                f".{tail}_multipart_asyncmd_cv_cache.npz",
-                                )
-        return os.path.join(head, f".{tail}_asyncmd_cv_cache.npz")
+        hash_part = str(trajectory_hash)[:5]
+        return os.path.join(head, f".{tail}_{hash_part}_asyncmd_cv_cache.npz")
 
     def __len__(self) -> int:
         return len(self._func_ids)
@@ -771,7 +782,7 @@ class TrajectoryFunctionValueCacheH5PY(collections.abc.Mapping):
     #       but we assume that the actual underlying trajectory stays the same,
     #       i.e. it is not extended after first storing it
 
-    def __init__(self, h5py_cache, hash_traj: str):
+    def __init__(self, h5py_cache, hash_traj: int):
         self.h5py_cache = h5py_cache
         self._hash_traj = hash_traj
         self._h5py_paths = {"ids": "FunctionIDs",

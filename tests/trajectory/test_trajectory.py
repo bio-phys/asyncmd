@@ -39,7 +39,7 @@ class TBase:
         self.ran_gen = np.random.default_rng()
         ii64 = np.iinfo(np.int64)
 
-        def make_trajectory_hash():
+        def make_trajectory_hash() -> int:
             return self.ran_gen.integers(low=ii64.min,
                                          high=ii64.max,
                                          endpoint=True,
@@ -398,7 +398,8 @@ class Test_Trajectory(TBase):
         # cleanup
         # remove the npz cache file (if it can be there)!
         fname_npz_cache = TrajectoryFunctionValueCacheNPZ._get_cache_filename(
-                                            fname_trajs=traj.trajectory_files,
+                                        fname_trajs=traj.trajectory_files,
+                                        trajectory_hash=traj.trajectory_hash,
                                                                               )
         if ("npz" in [cache_type, initial_cache_type]  # npz cache explicitly used
             # npz cache explicitly set as default (or implicitly since default=None)
@@ -498,7 +499,8 @@ class Test_Trajectory(TBase):
         # cleanup
         # remove the npz cache file!
         fname_npz_cache = TrajectoryFunctionValueCacheNPZ._get_cache_filename(
-                                            fname_trajs=traj.trajectory_files,
+                                        fname_trajs=traj.trajectory_files,
+                                        trajectory_hash=traj.trajectory_hash,
                                                                               )
         os.unlink(fname_npz_cache)
 
@@ -658,9 +660,14 @@ class Test_TrajectoryFunctionValueCache(TBase):
             # and check that the loaded and saved data are equal
             assert np.all(np.equal(npz_cache2[func_id], func_values))
         # now check that the npz file will be removed if the traj hashes dont
-        # match
-        cache_file_name = npz_cache._get_cache_filename(fname_trajs=fname_trajs)
-        hash_traj_mm = self.make_trajectory_hash()
+        # match, currently we have the first 5 digits of the hash in the cache
+        # filename, so artificially modify only the last digit(s)
+        hash_traj_mm = hash_traj - 1
+        if not (str(hash_traj)[:5] == str(hash_traj_mm)[:5]):
+            hash_traj_mm = hash_traj + 1
+        cache_file_name = npz_cache._get_cache_filename(
+                                                fname_trajs=fname_trajs,
+                                                trajectory_hash=hash_traj)
         # creating a cache with a matching fname_trajs but mismatching hash
         # should remove the npz file
         npz_cache_mm = TrajectoryFunctionValueCacheNPZ(fname_trajs=fname_trajs,

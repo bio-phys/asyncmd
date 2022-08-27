@@ -269,7 +269,7 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         - full filepath of the structure file associated with the trajectory
 
         - full filepath of the trajectory to calculate values for, note that
-          multipart trajectotries result in multiple files/arguments here.
+          multipart trajectories result in multiple files/arguments here.
 
         - full filepath of the file the results should be written to without
           fileending. Note that if no custom loading function is supplied we
@@ -411,18 +411,13 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         # first construct the path/name for the numpy npy file in which we expect
         # the results to be written
         tra_dir, tra_name = os.path.split(traj.trajectory_files[0])
-        if len(traj.trajectory_files) == 1:
-            result_file = os.path.join(tra_dir,
-                                       f"{tra_name}_CVfunc_id_{self.id}")
-        else:
-            # TODO: do we want/need to fix this?
-            # NOTE: Here we implictly assume that no one will use the same CV
-            #       on multiple multipart trajectories with the same starting
-            #       file but different remaining files at the same time
-            #       (otherwise the result files will get mixed up)
-            result_file = os.path.join(
-                                tra_dir,
-                                f"{tra_name}_multipart_CVfunc_id_{self.id}")
+        hash_part = str(traj.trajectory_hash)[:5]
+        # put in the hash (calculated over all traj parts for multipart)
+        # to make sure trajectories with the same first part but different
+        # remaining parts dont get mixed up
+        result_file = os.path.join(
+                        tra_dir, f"{tra_name}_{hash_part}_CVfunc_id_{self.id}"
+                                   )
         # we expect executable to take 3 postional args:
         # struct traj outfile
         cmd_str = f"{self.executable} {traj.structure_file}"
