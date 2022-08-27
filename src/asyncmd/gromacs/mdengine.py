@@ -211,7 +211,7 @@ class GmxEngine(MDEngine):
             # set makes sure that we have at least prepared running the traj
             # but it might not be done yet
             traj = Trajectory(
-                    trajectory_file=os.path.join(
+                    trajectory_files=os.path.join(
                                         self.workdir,
                                         (f"{self._deffnm}"
                                          + f"{self._num_suffix(self._simulation_part)}"
@@ -445,7 +445,7 @@ class GmxEngine(MDEngine):
             constraints_mdp["gen-seed"] = -1
         constraints_mdp["nsteps"] = 0
         await self._run_grompp(workdir=swdir, deffnm=run_name,
-                               trr_in=conf_in.trajectory_file,
+                               trr_in=conf_in.trajectory_files[0],
                                tpr_out=f"{run_name}.tpr",
                                mdp_obj=constraints_mdp)
         # TODO: this is a bit hacky, and should probably not be necessary?
@@ -480,7 +480,7 @@ class GmxEngine(MDEngine):
                             conf_out_name)
                 shutil.rmtree(swdir)  # remove the whole directory we used as wdir
                 return Trajectory(
-                                  trajectory_file=conf_out_name,
+                                  trajectory_files=conf_out_name,
                                   # structure file of the conf_in because we
                                   # delete the other one with the folder
                                   structure_file=conf_in.structure_file,
@@ -507,16 +507,8 @@ class GmxEngine(MDEngine):
             The name (prefix) to use for all files.
         """
         # deffnm is the default name/prefix for all outfiles (as in gmx)
-        self.workdir = workdir  # sets to abspath and check if it is a dir
-        if starting_configuration is None:
-            # enable to start from the initial structure file ('-c' option)
-            trr_in = None
-        elif isinstance(starting_configuration, Trajectory):
-            trr_in = starting_configuration.trajectory_file
-        else:
-            raise TypeError("Starting_configuration must be None or a wrapped "
-                            + f"trr ({Trajectory}).")
         self._deffnm = deffnm
+        self.workdir = workdir  # sets to abspath and check if it is a dir
         # check 'simulation-part' option in mdp file / MDP options
         # it decides at which .partXXXX the gmx numbering starts,
         # however gromacs ignores it if there is no -cpi [CheckPointIn]
@@ -524,6 +516,7 @@ class GmxEngine(MDEngine):
         # and check if there is a checkpoint with the right name [deffnm.cpt]
         # if yes we set our internal simulation_part counter to the value from
         # the mdp - 1 (we increase *before* each simulation part)
+        cpt_fname = os.path.join(self.workdir, f"{deffnm}.cpt")
         try:
             sim_part = self._mdp["simulation-part"]
         except KeyError:
@@ -534,17 +527,42 @@ class GmxEngine(MDEngine):
             self._simulation_part = 0
         else:
             if sim_part > 1:
-                cpt_file = os.path.join(self.workdir, f"{deffnm}.cpt")
-                if not os.path.isfile(cpt_file):
+                if not os.path.isfile(cpt_fname):
                     raise ValueError("'simulation-part' > 1 is only possible "
                                      + "if starting from a checkpoint, but "
-                                     + f"{cpt_file} does not exists."
+                                     + f"{cpt_fname} does not exists."
                                      )
                 logger.warning(f"Starting value for 'simulation-part' > 1 (={sim_part}).")
             self._simulation_part = sim_part - 1
-
+        # check for previous runs with the same deffnm in workdir
+        # NOTE: we only check for checkpoint files and trajectory parts as gmx
+        #       will move everything and only the checkpoint and trajs let us
+        #       trip and get the part numbering wrong
+        trajs_with_same_deffnm = get_all_traj_parts(
+                                            folder=self.workdir,
+                                            deffnm=deffnm,
+                                            traj_type=self.output_traj_type,
+                                                    )
+        if (len(trajs_with_same_deffnm) > 0
+                or (os.path.isfile(cpt_fname) and self._simulation_part == 0)):
+            raise ValueError(f"There are files in workdir ({self.workdir}) "
+                             + f"with the same deffnm ({deffnm}). Use "
+                             + "`prepare_from_files()` method to continue an "
+                             + "existing MD run or change the workdir and or "
+                             + "deffnm.")
+        # actucal preparation of MDrun: sort out starting configuration...
+        if starting_configuration is None:
+            # enable to start from the initial structure file ('-c' option)
+            trr_in = None
+        elif isinstance(starting_configuration, Trajectory):
+            trr_in = starting_configuration.trajectory_files[0]
+        else:
+            raise TypeError("Starting_configuration must be None or a wrapped "
+                            + f"trr ({Trajectory}).")
+        # ...and call grompp to get a tpr
         tpr_out = os.path.join(self.workdir, deffnm + ".tpr")
-        self._tpr = tpr_out  # remember the path to use as structure file for out trajs
+        # remember the path to use as structure file for out trajs
+        self._tpr = tpr_out
         await self._run_grompp(workdir=self.workdir, deffnm=self._deffnm,
                                trr_in=trr_in, tpr_out=tpr_out,
                                mdp_obj=self._mdp)
@@ -600,11 +618,12 @@ class GmxEngine(MDEngine):
             _SEMAPHORES["MAX_FILES_OPEN"].release()
             _SEMAPHORES["MAX_FILES_OPEN"].release()
 
-    async def prepare_from_files(self, workdir, deffnm):
+    async def prepare_from_files(self, workdir: str, deffnm: str):
         """
         Prepare continuation run starting from the last part found in workdir.
 
-        Expects all files to exists, will (probably) fail otherwise.
+        Expects the checkpoint file and last trajectory part to exist, will
+        (probably) fail otherwise.
 
         Parameters
         ----------
@@ -617,13 +636,23 @@ class GmxEngine(MDEngine):
         self.workdir = workdir
         previous_trajs = get_all_traj_parts(self.workdir, deffnm=deffnm,
                                             traj_type=self.output_traj_type)
+        last_trajname = os.path.split(previous_trajs[-1].trajectory_files[0])[-1]
+        last_partnum = int(last_trajname.lstrip(f"{deffnm}.part")
+                           .rstrip("." + self.output_traj_type.lower())
+                           )
+        if last_partnum != len(previous_trajs):
+            logger.warn("Not all previous trajectory parts seem to be present "
+                        + "in the current workdir. Assuming the highest part "
+                        + "number corresponds to the checkpoint file and "
+                        + "continuing anyway."
+                        )
         # load the 'old' mdp_in
         self._mdp = MDP(os.path.join(self.workdir, f"{deffnm}.mdp"))
         self._deffnm = deffnm
         # Note that we dont need to explicitly check for the tpr existing,
         # if it does not exist we will err when getting the traj lengths
         self._tpr = os.path.join(self.workdir, deffnm + ".tpr")
-        self._simulation_part = len(previous_trajs)
+        self._simulation_part = last_partnum
         # len(t), because for frames we do not care if first frame is in traj
         self._frames_done = sum(len(t) for t in previous_trajs)
         # steps done is the more reliable info if we want to know how many
@@ -775,12 +804,9 @@ class GmxEngine(MDEngine):
         """
         return await self.run(walltime=walltime)
 
-    def _num_suffix(self, sim_part):
+    def _num_suffix(self, sim_part: int) -> str:
         # construct gromacs num part suffix from simulation_part
-        num_suffix = str(sim_part)
-        while len(num_suffix) < 4:
-            num_suffix = "0" + num_suffix
-        num_suffix = ".part" + num_suffix
+        num_suffix = ".part{:04d}".format(sim_part)
         return num_suffix
 
     def _grompp_cmd(self, mdp_in, tpr_out, trr_in=None, mdp_out=None):

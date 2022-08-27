@@ -80,8 +80,7 @@ def get_all_traj_parts(folder: str, deffnm: str,
     """
     Find and return a list of trajectory parts produced by a GmxEngine.
 
-    NOTE: This assumes all files/parts are there, i.e. nothing was deleted
-          we just check for the highest number and also assume they all exist.
+    NOTE: This returns only the parts that exist in ascending order.
 
     Parameters
     ----------
@@ -100,7 +99,7 @@ def get_all_traj_parts(folder: str, deffnm: str,
     ending = traj_type.lower()
     traj_files = get_all_file_parts(folder=folder, deffnm=deffnm,
                                     file_ending=ending)
-    trajs = [Trajectory(trajectory_file=traj_file,
+    trajs = [Trajectory(trajectory_files=traj_file,
                         structure_file=os.path.join(folder, f"{deffnm}.tpr")
                         )
              for traj_file in traj_files]
@@ -111,8 +110,7 @@ def get_all_file_parts(folder: str, deffnm: str, file_ending: str) -> "list[str]
     """
     Find and return all files with given ending produced by GmxEngine.
 
-    NOTE: This assumes all files/parts are there, i.e. nothing was deleted
-          we just check for the highest number and also assume they all exist.
+    NOTE: This returns only the parts that exist in ascending order.
 
     Parameters
     ----------
@@ -144,10 +142,9 @@ def get_all_file_parts(folder: str, deffnm: str, file_ending: str) -> "list[str]
                 ]
     partnums = [int(f.lstrip(f"{deffnm}.part").rstrip(file_ending))
                 for f in filtered]
-    # max_num = 0 will result in us returning an empty list
-    max_num = np.max(partnums) if len(partnums) > 0 else 0
+    partnums.sort()
     parts = [os.path.join(folder, f"{deffnm}{partnum_suffix(num)}{file_ending}")
-             for num in range(1, max_num+1)]
+             for num in partnums]
     return parts
 
 
