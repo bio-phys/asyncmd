@@ -75,7 +75,7 @@ class TrajectoryFunctionWrapper(abc.ABC):
     @call_kwargs.setter
     def call_kwargs(self, value):
         if not isinstance(value, dict):
-            raise ValueError("call_kwargs must be a dictionary.")
+            raise TypeError("call_kwargs must be a dictionary.")
         self._call_kwargs = value
         self._id = self._get_id_str()  # get/set ID
 
@@ -110,9 +110,9 @@ class TrajectoryFunctionWrapper(abc.ABC):
         if isinstance(value, Trajectory) and self.id is not None:
             return await value._apply_wrapped_func(self.id, self)
         else:
-            raise ValueError(f"{type(self)} must be called"
-                             + " with an `asyncmd.Trajectory` "
-                             + f"but was called with {type(value)}.")
+            raise TypeError(f"{type(self)} must be called"
+                            + " with an `asyncmd.Trajectory` "
+                            + f"but was called with {type(value)}.")
 
 
 class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
