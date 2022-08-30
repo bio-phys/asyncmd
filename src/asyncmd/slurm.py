@@ -16,6 +16,7 @@ import os
 import time
 import shlex
 import asyncio
+import aiofiles
 import subprocess
 import collections
 import typing
@@ -492,7 +493,8 @@ class SlurmProcess:
     sbatch_executable = "sbatch"
     scancel_executable = "scancel"
 
-    def __init__(self, sbatch_script: str, workdir: str, **kwargs) -> None:
+    def __init__(self, jobname: str, sbatch_script: str, workdir: str,
+                 **kwargs) -> None:
         """
         Initialize a `SlurmProcess`.
 
@@ -501,6 +503,8 @@ class SlurmProcess:
 
         Parameters
         ----------
+        jobname : str
+            SLURM jobname (`--job-name`).
         sbatch_script : str
             Absolute or relative path to a SLURM submission script.
         workdir : str
@@ -530,6 +534,7 @@ class SlurmProcess:
         # this either checks for our defaults or whatever we just set via kwargs
         ensure_executable_available(self.sbatch_executable)
         ensure_executable_available(self.scancel_executable)
+        self.jobname = jobname
         self.sbatch_script = os.path.abspath(sbatch_script)
         self.workdir = os.path.abspath(workdir)
         self._jobid = None
@@ -558,6 +563,10 @@ class SlurmProcess:
         if self._jobid is not None:
             raise RuntimeError(f"Already monitoring job with id {self._jobid}.")
         sbatch_cmd = f"{self.sbatch_executable}"
+        sbatch_cmd += f" --job-name={self.jobname}"
+        # TODO: does this work for job-arrays? (probably not, but do we care?)
+        sbatch_cmd += f" --output=./{self.jobname}.out.%j"
+        sbatch_cmd += f" --error=./{self.jobname}.err.%j"
         # I (hejung) think we dont need the semaphore here
         #async with _SEMAPHORES["SLURM_CLUSTER_MEDIATOR"]:
         broken_nodes = self.slurm_cluster_mediator.broken_nodes
@@ -658,11 +667,25 @@ class SlurmProcess:
         return self.returncode
 
     async def communicate(self, input=None):
-        # TODO: write this (if we need it)
-        #       [at least the reading from stdout, stderr should be doable
-        #        if we know the slurm output files for that]
-        # NOTE: make sure we deregister the job from monitoring when it is done
-        raise NotImplementedError
+        # TODO: implement input argument?!
+        # NOTE: wait makes sure we deregister the job from monitoring
+        #       we use it here to make sure we read thr full data from stdout, stderr
+        #       *after* the process is done to emulate the behavior of asyncio
+        #       there it is 1.) read until EOF is reached 2.) wait for the proc
+        returncode = await self.wait()
+        # we read them in binary mode to get bytes objects back, this way they
+        # behave like the bytes objects returned by asyncio.subprocess
+        async with aiofiles.open(
+            os.path.join(self.workdir, f"{self.jobname}.out.{self.slurm_jobid}"),
+            "rb"
+                                 ) as f:
+            stdout = await f.read()
+        async with aiofiles.open(
+            os.path.join(self.workdir, f"{self.jobname}.err.{self.slurm_jobid}"),
+            "rb"
+                                 ) as f:
+            stderr = await f.read()
+        return stdout, stderr
 
     def send_signal(self, signal):
         # TODO: write this! (if we actually need it?)

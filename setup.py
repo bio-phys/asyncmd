@@ -33,9 +33,10 @@ CLASSIFIERS = [
   "Operating System :: OS Independent",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.6",
-  "Programming Language :: Python :: 3.7",
-  "Programming Language :: Python :: 3.8",
+  # py < 3.9 does not work because we e.g. use new style type annotations
+  # "Programming Language :: Python :: 3.6",
+  # "Programming Language :: Python :: 3.7",
+  # "Programming Language :: Python :: 3.8",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Topic :: Scientific/Engineering",
@@ -44,7 +45,7 @@ CLASSIFIERS = [
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 SETUP_REQUIRES = []
-INSTALL_REQUIRES = ["mdanalysis", "numpy"]
+INSTALL_REQUIRES = ["mdanalysis", "numpy", "aiofiles"]
 EXTRAS_REQUIRE = {
     "docs": ["sphinx"],
     "tests": ["pytest", "pytest-asyncio"],

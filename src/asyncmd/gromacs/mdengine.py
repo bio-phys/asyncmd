@@ -456,36 +456,44 @@ class GmxEngine(MDEngine):
         #       to be runing when/if we are able to call apply_constraints?
         old_proc_val = self._proc
         cmd_str = self._mdrun_cmd(tpr=f"{run_name}.tpr", deffnm=run_name)
-        logger.info(f"{cmd_str}")
+        logger.debug(f"{cmd_str}")
+        returncode = None
+        stderr = bytes()
+        stdout = bytes()
         await self._acquire_resources_gmx_mdrun(local_mdrun=local_mdrun)
-        try:  # this try is just to make sure we always call cleanup/release
+        try:
             await self._start_gmx_mdrun(cmd_str=cmd_str, workdir=swdir,
                                         local_mdrun=local_mdrun,
                                         deffnm=run_name,
                                         )
-            try:
-                # self._proc is set by _start_gmx_mdrun!
-                exit_code = await self._proc.wait()
-            except asyncio.CancelledError:
-                self._proc.kill()
-                raise  # reraise the error for encompassing coroutines
-            else:
-                if exit_code != 0:
-                    raise EngineCrashedError("Non-zero exit code from mdrun."
-                                             + f" Exit code was: {exit_code}.")
-                # just get the output trajectory, it is only one configuration
-                shutil.move(os.path.join(swdir, (f"{run_name}{self._num_suffix(1)}"
-                                                 + f".{self.output_traj_type}")
-                                         ),
-                            conf_out_name)
-                shutil.rmtree(swdir)  # remove the whole directory we used as wdir
-                return Trajectory(
-                                  trajectory_files=conf_out_name,
-                                  # structure file of the conf_in because we
-                                  # delete the other one with the folder
-                                  structure_file=conf_in.structure_file,
-                                  nstout=self.nstout,
-                                  )
+            # self._proc is set by _start_gmx_mdrun!
+            stdout, stderr = await self._proc.communicate()
+            returncode = self._proc.returncode
+        except asyncio.CancelledError:
+            self._proc.kill()
+            raise  # reraise the error for encompassing coroutines
+        else:
+            if returncode != 0:
+                raise EngineCrashedError(
+                    f"Non-zero (or no) exit code from mdrun (= {returncode}).\n"
+                    + "\n--------\n"
+                    + f"stderr: \n--------\n {stderr.decode()}"
+                    + "\n--------\n"
+                    + f"stdout: \n--------\n {stdout.decode()}"
+                                         )
+            # just get the output trajectory, it is only one configuration
+            shutil.move(os.path.join(swdir, (f"{run_name}{self._num_suffix(1)}"
+                                             + f".{self.output_traj_type}")
+                                     ),
+                        conf_out_name)
+            shutil.rmtree(swdir)  # remove the whole directory we used as wdir
+            return Trajectory(
+                              trajectory_files=conf_out_name,
+                              # structure file of the conf_in because we
+                              # delete the other one with the folder
+                              structure_file=conf_in.structure_file,
+                              nstout=self.nstout,
+                              )
         finally:
             await self._cleanup_gmx_mdrun(local_mdrun=local_mdrun)
             self._proc = old_proc_val
@@ -501,7 +509,7 @@ class GmxEngine(MDEngine):
             configuration (including velocities) or None, then the initial
             configuration is the gro-file.
         workdir : str
-            Absolute or relative path to an exisiting directory to use as
+            Absolute or relative path to an existing directory to use as
             working directory.
         deffnm : str
             The name (prefix) to use for all files.
@@ -684,24 +692,12 @@ class GmxEngine(MDEngine):
         await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
         await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
 
-    async def _cleanup_gmx_mdrun(self, exit_code=0, **kwargs):
+    async def _cleanup_gmx_mdrun(self, **kwargs):
         # *always* called after any gmx_mdrun, use to release Semaphores and friends
-        # read stdout and stderr from gmx mdrun
-        stdout, stderr = await self._proc.communicate()
-        logger.debug(f"gmx mdrun stdout: {stdout.decode()}")
-        logger.debug(f"gmx mdrun stderr: {stderr.decode()}")
         # release the semaphore for the 3 file descriptors
         _SEMAPHORES["MAX_FILES_OPEN"].release()
         _SEMAPHORES["MAX_FILES_OPEN"].release()
         _SEMAPHORES["MAX_FILES_OPEN"].release()
-        if exit_code != 0:
-            raise EngineCrashedError(
-                    f"Non-zero (or no) exit code from mdrun (= {exit_code}).\n"
-                    + "\n--------\n"
-                    + f"stderr: \n--------\n {stderr.decode()}"
-                    + "\n--------\n"
-                    + f"stdout: \n--------\n {stdout.decode()}"
-                                     )
 
     async def run(self, nsteps=None, walltime=None, steps_per_part=False):
         """
@@ -752,29 +748,39 @@ class GmxEngine(MDEngine):
         cmd_str = self._mdrun_cmd(tpr=self._tpr, deffnm=self._deffnm,
                                   # TODO: use more/any other kwargs?
                                   maxh=walltime, nsteps=nsteps)
-        logger.info(f"{cmd_str}")
-        exit_code = None
+        logger.debug(f"{cmd_str}")
+        returncode = None
+        stderr = bytes()
+        stdout = bytes()
         await self._acquire_resources_gmx_mdrun()
         try:
             await self._start_gmx_mdrun(cmd_str=cmd_str, workdir=self.workdir)
             # self._proc is set by _start_gmx_mdrun!
-            exit_code = await self._proc.wait()
+            stdout, stderr = await self._proc.communicate()
+            returncode = self._proc.returncode
         except asyncio.CancelledError:
             self._proc.kill()
             raise  # reraise the error for encompassing coroutines
         else:
-            #if exit_code != 0:
-            #    raise EngineCrashedError("Non-zero exit code from mdrun."
-            #                             + f" Exit code was: {exit_code}.")
-            if exit_code == 0:
+            #logger.debug(f"gmx mdrun stdout: {stdout.decode()}")
+            #logger.debug(f"gmx mdrun stderr: {stderr.decode()}")
+            if returncode == 0:
                 self._frames_done += len(self.current_trajectory)
                 # dont care if we did a little more and only the checkpoint knows
                 # we will only find out with the next trajectory part anyways
                 self._steps_done = self.current_trajectory.last_step
                 self._time_done = self.current_trajectory.last_time
                 return self.current_trajectory
+            else:
+                raise EngineCrashedError(
+                    f"Non-zero (or no) exit code from mdrun (= {returncode}).\n"
+                    + "\n--------\n"
+                    + f"stderr: \n--------\n {stderr.decode()}"
+                    + "\n--------\n"
+                    + f"stdout: \n--------\n {stdout.decode()}"
+                                         )
         finally:
-            await self._cleanup_gmx_mdrun(exit_code=exit_code)
+            await self._cleanup_gmx_mdrun()
 
     async def run_steps(self, nsteps, steps_per_part=False):
         """
@@ -889,6 +895,7 @@ class SlurmGmxEngine(GmxEngine):
     # without/sans slurm, i.e. locally (on the login node)
     # TODO/FIXME: running sans slurm is not possible using gmx_mpi!
     #             and we will probably also need the option to pass other mdrun_extra_args?!
+    #             I.e. we might want to remove this option entirely?!
     constraints_md_sans_slurm = False
 
     def __init__(self, mdconfig, gro_file, top_file, sbatch_script, ndx_file=None,
