@@ -81,7 +81,7 @@ class Trajectory:
 
         Raises
         ------
-        ValueError
+        FileNotFoundError
             If the ``trajectory_files`` or the ``structure_file`` are not
             accessible.
         """
@@ -109,13 +109,13 @@ class Trajectory:
             if os.path.isfile(traj_f):
                 self._trajectory_files += [os.path.abspath(traj_f)]
             else:
-                raise ValueError(f"Trajectory file ({traj_f}) must be "
-                                 + "accessible.")
+                raise FileNotFoundError(f"Trajectory file ({traj_f}) must be "
+                                        + "accessible.")
         if os.path.isfile(structure_file):
             self._structure_file = os.path.abspath(structure_file)
         else:
-            raise ValueError(f"structure_file ({structure_file}) must be "
-                             + "accessible.")
+            raise FileNotFoundError(f"structure_file ({structure_file}) must be "
+                                    + "accessible.")
         # calculate a hash over the first part of the traj file
         # (we use it to make sure the cached CV values match the traj)
         # note that we do not include the structure file on purpose because

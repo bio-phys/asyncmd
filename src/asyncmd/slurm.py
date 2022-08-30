@@ -350,8 +350,8 @@ class SlurmClusterMediator:
                 # this also recognizes `CANCELLED by ...` as CANCELLED
                 return val
         # we should never finish the loop, it means we miss a slurm job state
-        raise RuntimeError("Could not find a matching exitcode for slurm state"
-                           + f": {slurm_state}")
+        raise SlurmError("Could not find a matching exitcode for slurm state"
+                         + f": {slurm_state}")
 
     # TODO: more _process_ functions?!
     #       exitcode? state?
@@ -649,7 +649,7 @@ class SlurmProcess:
             # make sure we can only wait after submitting, otherwise we would
             # wait indefinitively if we call wait() before submit()
             raise RuntimeError("Can only wait for submitted SLURM jobs with "
-                               + "known jobid.")
+                               + "known jobid. Did you ever submit the job?")
         while self.returncode is None:
             await asyncio.sleep(self.sleep_time)
             await self._update_sacct_jobinfo()  # update local cached jobinfo
@@ -699,7 +699,8 @@ class SlurmProcess:
             self.slurm_cluster_mediator.monitor_remove_job(jobid=self._jobid)
         else:
             # we probably never submitted the job?
-            raise RuntimeError("Can not cancel a job with unknown jobid.")
+            raise RuntimeError("self.jobid is not set, can not cancel a job "
+                               + "with unknown jobid. Did you ever submit it?")
 
     def kill(self) -> None:
         """Alias for :meth:`terminate`."""

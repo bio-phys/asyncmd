@@ -93,22 +93,22 @@ class TrajectoryConcatenator:
 
         Raises
         ------
-        ValueError
+        FileExistsError
             If ``tra_out`` exists and ``overwrite=False``.
-        ValueError
+        FileNotFoundError
             If ``struct_out`` given but the file is not accessible.
         """
         tra_out = os.path.abspath(tra_out)
         if os.path.exists(tra_out) and not overwrite:
-            raise ValueError(f"overwrite=False and tra_out exists: {tra_out}")
+            raise FileExistsError(f"overwrite=False and tra_out exists: {tra_out}")
         struct_out = (trajs[0].structure_file if struct_out is None
                       else os.path.abspath(struct_out))
         if not os.path.isfile(struct_out):
             # although we would expect that it exists if it comes from an
             # existing traj, we still check to catch other unrelated issues :)
-            raise ValueError(
+            raise FileNotFoundError(
                         f"Output structure file must exist ({struct_out})."
-                             )
+                                    )
 
         # special treatment for traj0 because we need n_atoms for the writer
         u0 = mda.Universe(trajs[0].structure_file, *trajs[0].trajectory_files,
@@ -209,9 +209,9 @@ class FrameExtractor(abc.ABC):
 
         Raises
         ------
-        ValueError
+        FileExistsError
             If `outfile` exists and `overwrite=False`.
-        ValueError
+        FileNotFoundError
             If `struct_out` is given but does not exist.
         """
         # TODO: should we check that idx is an idx, i.e. an int?
@@ -221,15 +221,15 @@ class FrameExtractor(abc.ABC):
         #       enable the use of slices (and iterables of indices?)
         outfile = os.path.abspath(outfile)
         if os.path.exists(outfile) and not overwrite:
-            raise ValueError(f"overwrite=False but outfile={outfile} exists.")
+            raise FileExistsError(f"overwrite=False but outfile={outfile} exists.")
         struct_out = (traj_in.structure_file if struct_out is None
                       else os.path.abspath(struct_out))
         if not os.path.isfile(struct_out):
             # although we would expect that it exists if it comes from an
             # existing traj, we still check to catch other unrelated issues :)
-            raise ValueError("Output structure file must exist."
-                             + f"(given struct_out is {struct_out})."
-                             )
+            raise FileNotFoundError("Output structure file must exist."
+                                    + f"(given struct_out is {struct_out})."
+                                    )
         u = mda.Universe(traj_in.structure_file, *traj_in.trajectory_files,
                          tpr_resid_from_one=True)
         with mda.Writer(outfile, n_atoms=u.trajectory.n_atoms) as W:
