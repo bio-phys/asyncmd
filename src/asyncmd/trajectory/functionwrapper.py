@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 from .._config import _SEMAPHORES
-from ..slurm import SlurmProcess
+from .. import slurm
 from ..tools import ensure_executable_available
 from .trajectory import Trajectory
 
@@ -444,60 +444,66 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             with open(sbatch_fname, 'w') as f:
                 f.write(script)
         # and submit it
-        slurm_proc = SlurmProcess(sbatch_script=sbatch_fname, workdir=tra_dir,
-                                  sleep_time=15,  # sleep 15 s between checking
-                                  )
         if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
             await _SEMAPHORES["SLURM_MAX_JOB"].acquire()
         try:  # this try is just to make sure we always release the semaphore
-            await slurm_proc.submit()
+            slurm_proc = await slurm.create_slurmprocess_submit(
+                                                jobname=self.slurm_jobname,
+                                                sbatch_script=sbatch_fname,
+                                                workdir=tra_dir,
+                                                # sleep 15 s between checking
+                                                sleep_time=15,
+                                                                )
             # wait for the slurm job to finish
             # also cancel the job when this future is canceled
-            try:
-                exit_code = await slurm_proc.wait()
-            except asyncio.CancelledError:
-                slurm_proc.kill()
-                raise  # reraise for encompassing coroutines
+            stdout, stderr = await slurm_proc.communicate()
+            returncode = slurm_proc.returncode
+        except asyncio.CancelledError:
+            slurm_proc.kill()
+            raise  # reraise for encompassing coroutines
+        else:
+            if returncode != 0:
+                raise RuntimeError(
+                            "Non-zero exit code from CV batch job for "
+                            + f"executable {self.executable} on "
+                            + f"trajectory {traj} "
+                            + f"(slurm jobid {slurm_proc.slurm_jobid})."
+                            + f" Exit code was: {returncode}."
+                            + f" stderr was: {stderr.decode()}."
+                            + f" and stdout was: {stdout.decode()}"
+                                    )
+            os.remove(sbatch_fname)
+            if self.load_results_func is None:
+                # we do not have '.npy' ending in results_file,
+                # numpy.save() adds it if it is not there, so we need it here
+                vals = np.load(result_file + ".npy")
+                os.remove(result_file + ".npy")
             else:
-                if exit_code != 0:
-                    raise RuntimeError(
-                                "Non-zero exit code from CV batch job for "
-                                + f"executable {self.executable} on "
-                                + f"trajectory {traj} "
-                                + f"(slurm jobid {slurm_proc.slurm_jobid})."
-                                + f" Exit code was: {exit_code}."
-                                       )
-                os.remove(sbatch_fname)
-                if self.load_results_func is None:
-                    # we do not have '.npy' ending in results_file,
-                    # numpy.save() adds it if it is not there, so we need it here
-                    vals = np.load(result_file + ".npy")
-                    os.remove(result_file + ".npy")
-                else:
-                    # use custom loading function from user
-                    vals = self.load_results_func(result_file)
-                    os.remove(result_file)
-                try:
-                    # (try to) remove slurm output files
-                    os.remove(
-                        os.path.join(tra_dir,
-                                     f"{self.slurm_jobname}.out.{slurm_proc.slurm_jobid}",
-                                     )
-                              )
-                    os.remove(
-                        os.path.join(tra_dir,
-                                     f"{self.slurm_jobname}.err.{slurm_proc.slurm_jobid}",
-                                     )
-                              )
-                except FileNotFoundError:
-                    # probably just a naming issue, so lets warn our users
-                    logger.warning(
-                            "Could not remove SLURM output files. Maybe "
-                            + "they were not named as expected? Consider "
-                            + "adding '#SBATCH -o ./{jobname}.out.%j'"
-                            + " and '#SBATCH -e ./{jobname}.err.%j' to the "
-                            + "submission script.")
-                return vals
+                # use custom loading function from user
+                vals = self.load_results_func(result_file)
+                os.remove(result_file)
+            try:
+                # TODO/FIXME: move the removal logic to slurmProcess!
+                # (try to) remove slurm output files
+                os.remove(
+                    os.path.join(tra_dir,
+                                 f"{self.slurm_jobname}.out.{slurm_proc.slurm_jobid}",
+                                 )
+                          )
+                os.remove(
+                    os.path.join(tra_dir,
+                                 f"{self.slurm_jobname}.err.{slurm_proc.slurm_jobid}",
+                                 )
+                          )
+            except FileNotFoundError:
+                # probably just a naming issue, so lets warn our users
+                logger.warning(
+                        "Could not remove SLURM output files. Maybe "
+                        + "they were not named as expected? Consider "
+                        + "adding '#SBATCH -o ./{jobname}.out.%j'"
+                        + " and '#SBATCH -e ./{jobname}.err.%j' to the "
+                        + "submission script.")
+            return vals
         finally:
             if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
                 _SEMAPHORES["SLURM_MAX_JOB"].release()

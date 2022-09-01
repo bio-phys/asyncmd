@@ -535,7 +535,11 @@ class SlurmProcess:
         ensure_executable_available(self.sbatch_executable)
         ensure_executable_available(self.scancel_executable)
         self.jobname = jobname
+        # TODO/FIXME: do we want sbatch_script to be relative to wdir?
+        #             (currently it is relative to current dir when creating
+        #              the slurmprocess)
         self.sbatch_script = os.path.abspath(sbatch_script)
+        # TODO: default to current dir when creating?
         self.workdir = os.path.abspath(workdir)
         self._jobid = None
         self._jobinfo = {}  # dict with jobinfo cached from slurm cluster mediator
@@ -687,7 +691,7 @@ class SlurmProcess:
         self.slurm_cluster_mediator.monitor_remove_job(jobid=self.slurm_jobid)
         return self.returncode
 
-    async def communicate(self, input : typing.Optional[bytes] = None):
+    async def communicate(self, input : typing.Optional[bytes] = None) -> tuple[bytes, bytes]:
         """
         Interact with process. Optionally send data to the process.
         Wait for the process to finish, then read from stdout and stderr (files)
@@ -702,7 +706,7 @@ class SlurmProcess:
 
         Returns
         -------
-        tuple[bytes]
+        tuple[bytes, bytes]
             (stdout, stderr)
 
         Raises
@@ -789,6 +793,44 @@ class SlurmProcess:
     def kill(self) -> None:
         """Alias for :meth:`terminate`."""
         self.terminate()
+
+
+async def create_slurmprocess_submit(jobname: str,
+                                     sbatch_script: str,
+                                     workdir: str,
+                                     stdin: typing.Optional[str] = None,
+                                     **kwargs,
+                                     ):
+    """
+    Create and submit a SlurmProcess.
+
+    All arguments are directly passed trough to :meth:`SlurmProcess.__init__`
+    and :meth:`SlurmProcess.submit`.
+
+    Parameters
+    ----------
+    jobname : str
+        SLURM jobname (``--job-name``).
+    sbatch_script : str
+        Absolute or relative path to a SLURM submission script.
+    workdir : str
+        Absolute or relative path to use as working directory.
+    stdin : str or None
+        If given it is interpreted as a file to which we connect the batch
+        scripts stdin via sbatchs ``--input`` option. This enables sending
+        data to the processes stdin via :meth:`communicate`.
+        Note that if it is desired to send data to the process the process
+        has to be submited with stdin.
+
+    Returns
+    -------
+    SlurmProcess
+        The submitted slurm process instance.
+    """
+    proc = SlurmProcess(jobname=jobname, sbatch_script=sbatch_script,
+                        workdir=workdir, **kwargs)
+    await proc.submit(stdin=stdin)
+    return proc
 
 
 def set_slurm_settings(sinfo_executable: str = "sinfo",
