@@ -831,7 +831,7 @@ class SlurmProcess:
                                      "wb",
                                      ) as f:
                 await f.write(input)
-        stdout, stderr = self._read_stdfiles()
+        stdout, stderr = await self._read_stdfiles()
         # NOTE: wait makes sure we deregister the job from monitoring and also
         #       removes the stdfiles as/if requested
         returncode = await self.wait()
