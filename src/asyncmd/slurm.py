@@ -629,7 +629,9 @@ class SlurmProcess:
                 err = True
         if err:
             raise SlurmSubmissionError("Could not submit SLURM job."
-                                       + f" sbatch returned {sbatch_return}.")
+                                       + f" sbatch stdout: {sbatch_return}"
+                                       + f" and stderr: {stderr.decode()}."
+                                       )
         logger.info(f"Submited SLURM job with jobid {jobid}.")
         self._jobid = jobid
         # I (hejung) think we dont need the semaphore for non-async calls like here(?)
