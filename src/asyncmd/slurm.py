@@ -816,6 +816,9 @@ class SlurmProcess:
         #   1.) write to stdin (optional)
         #   2.) read until EOF is reached
         #   3.) wait for the proc to finish
+        # Note that we wait first because we can only start reading the
+        # stdfiles when the job has at least started, so we just wait for it
+        # and read the files at the end completely
         if self._jobid is None:
             # make sure we can only wait after submitting, otherwise we would
             # wait indefinitively if we call wait() before submit()
@@ -831,10 +834,10 @@ class SlurmProcess:
                                      "wb",
                                      ) as f:
                 await f.write(input)
-        stdout, stderr = await self._read_stdfiles()
         # NOTE: wait makes sure we deregister the job from monitoring and also
         #       removes the stdfiles as/if requested
         returncode = await self.wait()
+        stdout, stderr = await self._read_stdfiles()
         return stdout, stderr
 
     def send_signal(self, signal):
