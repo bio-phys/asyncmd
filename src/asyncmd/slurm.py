@@ -629,8 +629,8 @@ class SlurmProcess:
                 err = True
         if err:
             raise SlurmSubmissionError("Could not submit SLURM job."
-                                       + f" sbatch stdout: {sbatch_return}"
-                                       + f" and stderr: {stderr.decode()}."
+                                       + f" sbatch stdout: {sbatch_return} \n"
+                                       + f" sbatch stderr: {stderr.decode()}."
                                        )
         logger.info(f"Submited SLURM job with jobid {jobid}.")
         self._jobid = jobid
