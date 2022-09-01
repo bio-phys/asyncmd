@@ -24,7 +24,7 @@ import logging
 from .._config import _SEMAPHORES
 from ..mdengine import MDEngine, EngineError, EngineCrashedError
 from ..trajectory.trajectory import Trajectory
-from ..slurm import SlurmProcess
+from .. import slurm
 from .mdconfig import MDP
 from .utils import nstout_from_mdp, get_all_traj_parts
 from ..tools import ensure_executable_available
@@ -919,8 +919,6 @@ class SlurmGmxEngine(GmxEngine):
 
              - {mdrun_cmd} : Replaced by the command to run mdrun
 
-             - {jobname} : Replaced by the name of the job (usually the deffnm of the mdrun)
-
         ndx_file: str or None
             Optional, absolute or relative path to a gromacs index file.
 
@@ -1009,7 +1007,7 @@ class SlurmGmxEngine(GmxEngine):
         else:
             name = self._deffnm + self._num_suffix(sim_part=self._simulation_part)
         # substitute placeholders in submit script
-        script = self.sbatch_script.format(mdrun_cmd=cmd_str, jobname=name)
+        script = self.sbatch_script.format(mdrun_cmd=cmd_str)
         # write it out
         fname = os.path.join(workdir, name + ".slurm")
         if os.path.exists(fname):
@@ -1018,8 +1016,10 @@ class SlurmGmxEngine(GmxEngine):
         async with _SEMAPHORES["MAX_FILES_OPEN"]:
             with open(fname, 'w') as f:
                 f.write(script)
-        self._proc = SlurmProcess(sbatch_script=fname, workdir=workdir)
-        await self._proc.submit()
+        self._proc = await slurm.create_slurmprocess_submit(jobname=name,
+                                                            sbatch_script=fname,
+                                                            workdir=workdir,
+                                                            )
 
     async def _acquire_resources_gmx_mdrun(self, local_mdrun=False, **kwargs):
         if local_mdrun:
