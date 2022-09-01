@@ -891,6 +891,7 @@ class SlurmProcess:
 async def create_slurmprocess_submit(jobname: str,
                                      sbatch_script: str,
                                      workdir: str,
+                                     remove_stdfiles: str = "success",
                                      stdin: typing.Optional[str] = None,
                                      **kwargs,
                                      ):
@@ -908,6 +909,15 @@ async def create_slurmprocess_submit(jobname: str,
         Absolute or relative path to a SLURM submission script.
     workdir : str
         Absolute or relative path to use as working directory.
+    remove_stdfiles : str
+        Whether to remove the stdout, stderr (and possibly stdin) files.
+        Possible values are:
+
+         - "success": remove on sucessful completion, i.e. zero returncode)
+         - "no": never remove
+         - "yes"/"always": remove on job completion independent of
+           returncode and also when using :meth:`terminate`
+
     stdin : str or None
         If given it is interpreted as a file to which we connect the batch
         scripts stdin via sbatchs ``--input`` option. This enables sending
@@ -921,7 +931,8 @@ async def create_slurmprocess_submit(jobname: str,
         The submitted slurm process instance.
     """
     proc = SlurmProcess(jobname=jobname, sbatch_script=sbatch_script,
-                        workdir=workdir, **kwargs)
+                        workdir=workdir, remove_stdfiles=remove_stdfiles,
+                        **kwargs)
     await proc.submit(stdin=stdin)
     return proc
 
