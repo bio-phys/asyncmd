@@ -315,8 +315,6 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
 
              - {cmd_str} : Replaced by the command to call the executable on a given trajectory.
 
-             - {jobname} : Replaced by the name of the job (usually containing the hash of the function).
-
         call_kwargs : dict
             Dictionary of additional arguments to pass to the executable, they
             will be added to the call as pair ' {key} {val}', note that in case
@@ -432,8 +430,7 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         #       I think rather not, becasue then we can cancel all jobs for one
         #       trajfunc in one `scancel` (i.e. independant of the traj)
         # now prepare the sbatch script
-        script = self.sbatch_script.format(cmd_str=cmd_str,
-                                           jobname=self.slurm_jobname)
+        script = self.sbatch_script.format(cmd_str=cmd_str)
         # write it out
         sbatch_fname = os.path.join(tra_dir,
                                     tra_name + "_" + self.slurm_jobname + ".slurm")
@@ -451,8 +448,10 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                                                 jobname=self.slurm_jobname,
                                                 sbatch_script=sbatch_fname,
                                                 workdir=tra_dir,
-                                                # sleep 15 s between checking
-                                                sleep_time=15,
+                                                remove_stdfiles="success",
+                                                stdin=None,
+                                                # sleep 5 s between checking
+                                                sleep_time=5,
                                                                 )
             # wait for the slurm job to finish
             # also cancel the job when this future is canceled
@@ -482,27 +481,6 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                 # use custom loading function from user
                 vals = self.load_results_func(result_file)
                 os.remove(result_file)
-            try:
-                # TODO/FIXME: move the removal logic to slurmProcess!
-                # (try to) remove slurm output files
-                os.remove(
-                    os.path.join(tra_dir,
-                                 f"{self.slurm_jobname}.out.{slurm_proc.slurm_jobid}",
-                                 )
-                          )
-                os.remove(
-                    os.path.join(tra_dir,
-                                 f"{self.slurm_jobname}.err.{slurm_proc.slurm_jobid}",
-                                 )
-                          )
-            except FileNotFoundError:
-                # probably just a naming issue, so lets warn our users
-                logger.warning(
-                        "Could not remove SLURM output files. Maybe "
-                        + "they were not named as expected? Consider "
-                        + "adding '#SBATCH -o ./{jobname}.out.%j'"
-                        + " and '#SBATCH -e ./{jobname}.err.%j' to the "
-                        + "submission script.")
             return vals
         finally:
             if _SEMAPHORES["SLURM_MAX_JOB"] is not None:

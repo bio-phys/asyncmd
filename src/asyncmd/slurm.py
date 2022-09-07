@@ -12,7 +12,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
-from genericpath import isfile
 import os
 import time
 import shlex
@@ -103,8 +102,8 @@ class SlurmClusterMediator:
 
     sinfo_executable = "sinfo"
     sacct_executable = "sacct"
-    # wait for at least 10 s between two sacct calls
-    min_time_between_sacct_calls = 10
+    # wait for at least 5 s between two sacct calls
+    min_time_between_sacct_calls = 5
     # NOTE: We track the number of failed/successfull jobs associated with each
     #       node and use this information to decide if a node is broken
     # number of 'suspected fail' counts that a node needs to accumulate for us
@@ -485,7 +484,7 @@ class SlurmProcess:
                        + " with the appropriate arguments.")
     # we can not simply wait for the subprocess, since slurm exits directly
     # so we will sleep for this long between checks if slurm-job completed
-    sleep_time = 30  # TODO: heuristic? dynamically adapt?
+    sleep_time = 20  # TODO: heuristic? dynamically adapt?
     # NOTE: no options to set/pass extra_args for sbatch:
     #       the only command line options for sbatch we allow will be contolled
     #       by us since cmd line options for sbatch take precendece over every-

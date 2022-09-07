@@ -1016,9 +1016,12 @@ class SlurmGmxEngine(GmxEngine):
         async with _SEMAPHORES["MAX_FILES_OPEN"]:
             with open(fname, 'w') as f:
                 f.write(script)
-        self._proc = await slurm.create_slurmprocess_submit(jobname=name,
-                                                            sbatch_script=fname,
-                                                            workdir=workdir,
+        self._proc = await slurm.create_slurmprocess_submit(
+                                                jobname=name,
+                                                sbatch_script=fname,
+                                                workdir=workdir,
+                                                remove_stdfiles="success",
+                                                stdin=None,
                                                             )
 
     async def _acquire_resources_gmx_mdrun(self, local_mdrun=False, **kwargs):
