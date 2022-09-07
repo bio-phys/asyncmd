@@ -429,8 +429,9 @@ class ConditionalTrajectoryPropagator:
             # there, i.e. append to the last traj part found
             # NOTE: we assume that the condition functions could be different
             # so get all traj parts and calculate the condition funcs on them
-            trajs = get_all_traj_parts(folder=workdir, deffnm=deffnm,
-                                       engine=engine)
+            trajs = await get_all_traj_parts(folder=workdir, deffnm=deffnm,
+                                             engine=engine,
+                                             )
             cond_vals = await asyncio.gather(
                             *(self._condition_vals_for_traj(t) for t in trajs)
                                              )

@@ -20,6 +20,9 @@ import string
 import shutil
 import asyncio
 import logging
+import aiofiles
+import aiofiles.os
+import aiofiles.ospath
 
 from .._config import _SEMAPHORES
 from ..mdengine import MDEngine, EngineError, EngineCrashedError
@@ -33,8 +36,6 @@ from ..tools import ensure_executable_available
 logger = logging.getLogger(__name__)
 
 
-# TODO: DOCUMENT!
-# TODO: capture mdrun stdout+ stderr? for local gmx? for slurm it goes to file
 # NOTE: with tra we usually mean trr, i.e. a full precision trajectory with velocities
 class GmxEngine(MDEngine):
     """
@@ -322,7 +323,7 @@ class GmxEngine(MDEngine):
     @property
     def steps_done(self):
         """
-        Number of integration steps done since last call to `self.prepare()`.
+        Number of integration steps done since last call to :meth:`prepare`.
 
         NOTE: steps != frames * nstout
         Some remarks on the relation between frames_done and steps_done:
@@ -345,7 +346,7 @@ class GmxEngine(MDEngine):
     @property
     def frames_done(self):
         """
-        Number of frames produced since last call to `self.prepare()`.
+        Number of frames produced since last call to :meth:`prepare`.
 
         NOTE: frames != steps / nstout
         See the steps_done docstring for more.
@@ -426,7 +427,7 @@ class GmxEngine(MDEngine):
                                           )
                            )
         swdir = os.path.join(wdir, run_name)
-        os.mkdir(swdir)
+        await aiofiles.os.mkdir(swdir)
         constraints_mdp = copy.deepcopy(self._mdp)
         constraints_mdp["continuation"] = "no" if constraints else "yes"
         constraints_mdp["gen-vel"] = "yes" if generate_velocities else "no"
@@ -541,13 +542,14 @@ class GmxEngine(MDEngine):
         # NOTE: we only check for checkpoint files and trajectory parts as gmx
         #       will move everything and only the checkpoint and trajs let us
         #       trip and get the part numbering wrong
-        trajs_with_same_deffnm = get_all_traj_parts(
+        trajs_with_same_deffnm = await get_all_traj_parts(
                                             folder=self.workdir,
                                             deffnm=deffnm,
                                             traj_type=self.output_traj_type,
-                                                    )
+                                                          )
         if (len(trajs_with_same_deffnm) > 0
-                or (os.path.isfile(cpt_fname) and self._simulation_part == 0)):
+                or (await aiofiles.ospath.isfile(cpt_fname)
+                    and self._simulation_part == 0)):
             raise ValueError(f"There are files in workdir ({self.workdir}) "
                              + f"with the same deffnm ({deffnm}). Use "
                              + "`prepare_from_files()` method to continue an "
@@ -569,7 +571,7 @@ class GmxEngine(MDEngine):
         await self._run_grompp(workdir=self.workdir, deffnm=self._deffnm,
                                trr_in=trr_in, tpr_out=tpr_out,
                                mdp_obj=self._mdp)
-        if not os.path.isfile(self._tpr):
+        if not await aiofiles.ospath.isfile(self._tpr):
             # better be save than sorry :)
             raise RuntimeError("Something went wrong generating the tpr."
                                + f"{self._tpr} does not seem to be a file.")
@@ -583,8 +585,11 @@ class GmxEngine(MDEngine):
     async def _run_grompp(self, workdir, deffnm, trr_in, tpr_out, mdp_obj):
         # NOTE: file paths from workdir and deffnm
         mdp_in = os.path.join(workdir, deffnm + ".mdp")
-        # write the mdp file
-        mdp_obj.write(mdp_in)
+        # write the mdp file (always overwriting existing mdps)
+        # I (hejung) think this is what we want as the prepare methods check
+        # for leftover files with the same deffnm, so if only the mdp is there
+        # we can (and want to) just ovewrite it without raising an err
+        mdp_obj.write(mdp_in, overwrite=True)
         mdp_out = os.path.join(workdir, deffnm + "_mdout.mdp")
         cmd_str = self._grompp_cmd(mdp_in=mdp_in, tpr_out=tpr_out,
                                    trr_in=trr_in, mdp_out=mdp_out)
@@ -637,8 +642,9 @@ class GmxEngine(MDEngine):
             The name (prefix) to use for all files.
         """
         self.workdir = workdir
-        previous_trajs = get_all_traj_parts(self.workdir, deffnm=deffnm,
-                                            traj_type=self.output_traj_type)
+        previous_trajs = await get_all_traj_parts(self.workdir, deffnm=deffnm,
+                                                  traj_type=self.output_traj_type,
+                                                  )
         last_trajname = os.path.split(previous_trajs[-1].trajectory_files[0])[-1]
         last_partnum = int(last_trajname.lstrip(f"{deffnm}.part")
                            .rstrip("." + self.output_traj_type.lower())
@@ -993,12 +999,12 @@ class SlurmGmxEngine(GmxEngine):
         script = self.sbatch_script.format(mdrun_cmd=cmd_str)
         # write it out
         fname = os.path.join(workdir, name + ".slurm")
-        if os.path.exists(fname):
+        if await aiofiles.ospath.exists(fname):
             # TODO: should we raise an error?
             logger.error(f"Overwriting existing submission file ({fname}).")
         async with _SEMAPHORES["MAX_FILES_OPEN"]:
-            with open(fname, 'w') as f:
-                f.write(script)
+            async with aiofiles.open(fname, 'w') as f:
+                await f.write(script)
         self._proc = await slurm.create_slurmprocess_submit(
                                                 jobname=name,
                                                 sbatch_script=fname,
