@@ -66,6 +66,7 @@ class GmxEngine(MDEngine):
         the MDP settings we will still write xtc and trr, but return only the
         trajectories with matching ending.
     """
+
     # local prepare and option to run a local gmx (mainly for testing)
     _grompp_executable = "gmx grompp"
     _mdrun_executable = "gmx mdrun"
@@ -311,9 +312,7 @@ class GmxEngine(MDEngine):
     # TODO: check that nstxout == nstvout?!
     @property
     def nstout(self):
-        """
-        Smallest output frequency for current output_traj_type.
-        """
+        """Smallest output frequency for current output_traj_type."""
         if self._nstout is None:
             nstout = nstout_from_mdp(self._mdp,
                                      traj_type=self.output_traj_type)
@@ -377,7 +376,7 @@ class GmxEngine(MDEngine):
                                     wdir=wdir,
                                     constraints=True,
                                     generate_velocities=False,
-                                    local_mdrun=True)
+                                    )
 
     async def generate_velocities(self, conf_in, conf_out_name, wdir=".",
                                   constraints=True):
@@ -407,13 +406,10 @@ class GmxEngine(MDEngine):
                                     wdir=wdir,
                                     constraints=constraints,
                                     generate_velocities=True,
-                                    local_mdrun=True)
+                                    )
 
     async def _0step_md(self, conf_in, conf_out_name, wdir,
-                        constraints: bool, generate_velocities: bool,
-                        local_mdrun: bool):
-        # NOTE: local_mdrun is only relevant for SlurmGmxEngine: this way we
-        #       can decide if we do the 0step mdruns locally or via slurm
+                        constraints: bool, generate_velocities: bool):
         if (self.workdir is not None) and (wdir == "."):
             # use own working directory if know/set
             wdir = self.workdir
@@ -460,10 +456,9 @@ class GmxEngine(MDEngine):
         returncode = None
         stderr = bytes()
         stdout = bytes()
-        await self._acquire_resources_gmx_mdrun(local_mdrun=local_mdrun)
+        await self._acquire_resources_gmx_mdrun()
         try:
             await self._start_gmx_mdrun(cmd_str=cmd_str, workdir=swdir,
-                                        local_mdrun=local_mdrun,
                                         deffnm=run_name,
                                         )
             # self._proc is set by _start_gmx_mdrun!
@@ -495,7 +490,7 @@ class GmxEngine(MDEngine):
                               nstout=self.nstout,
                               )
         finally:
-            await self._cleanup_gmx_mdrun(local_mdrun=local_mdrun)
+            await self._cleanup_gmx_mdrun()
             self._proc = old_proc_val
 
     async def prepare(self, starting_configuration, workdir, deffnm):
@@ -673,9 +668,6 @@ class GmxEngine(MDEngine):
     # NOTE: this enables us to reuse run and prepare methods in SlurmGmxEngine,
     # i.e. we only need to overwite the next 3 functions to write out the slurm
     # submission script, submit the job and allocate/release different resources
-    # NOTE: the kwargs enable us to pass e.g. local_mdrun to the slurm engine
-    #  to enable us to run the 0step MDs (velocity generation and constraints)
-    #  locally (on the login node or whereever the main code is running)
     async def _start_gmx_mdrun(self, cmd_str, workdir, **kwargs):
         proc = await asyncio.create_subprocess_exec(
                                             *shlex.split(cmd_str),
@@ -877,7 +869,10 @@ class SlurmGmxEngine(GmxEngine):
     # reimplement `_start_gmx_mdrun()`, `_acquire_resources_gmx_mdrun()` and
     # `_cleanup_gmx_mdrun()` to have a working SlurmGmxEngine
     # take submit script as str/file, use pythons .format to insert stuff!
-    # TODO: document what we insert! currently: mdrun_cmd, jobname
+    # TODO: use SLURM also for grompp?! (would make stuff faster?)
+    #       I (hejung) think probably not by much because we already use
+    #       asyncios subprocess for grompp (i.e. do it asyncronous) and grompp
+    #       will most likely not take much resources on the login (local) node
     # TODO/FIXME: we should insert time if we know it!
     #  (some qeue eligibility can depend on time requested so we should request
     #   the known minimum)
@@ -891,12 +886,6 @@ class SlurmGmxEngine(GmxEngine):
     #           so also probably not?!)
 
     _mdrun_executable = "gmx_mpi mdrun"  # MPI as default for clusters
-    # whether we run the 0step MDruns (velocity generation and constraints)
-    # without/sans slurm, i.e. locally (on the login node)
-    # TODO/FIXME: running sans slurm is not possible using gmx_mpi!
-    #             and we will probably also need the option to pass other mdrun_extra_args?!
-    #             I.e. we might want to remove this option entirely?!
-    constraints_md_sans_slurm = False
 
     def __init__(self, mdconfig, gro_file, top_file, sbatch_script, ndx_file=None,
                  **kwargs):
@@ -962,7 +951,7 @@ class SlurmGmxEngine(GmxEngine):
                                     wdir=wdir,
                                     constraints=True,
                                     generate_velocities=False,
-                                    local_mdrun=self.constraints_md_sans_slurm)
+                                    )
 
     async def generate_velocities(self, conf_in, conf_out_name, wdir=".",
                                   constraints=True):
@@ -992,15 +981,9 @@ class SlurmGmxEngine(GmxEngine):
                                     wdir=wdir,
                                     constraints=constraints,
                                     generate_velocities=True,
-                                    local_mdrun=self.constraints_md_sans_slurm)
+                                    )
 
-    async def _start_gmx_mdrun(self, cmd_str, workdir,
-                               local_mdrun=False, deffnm=None, **kwargs):
-        if local_mdrun:
-            # run locally using supers start method
-            # (used for 0step MDs: gen-vel and constraints)
-            return await super()._start_gmx_mdrun(cmd_str=cmd_str,
-                                                  workdir=workdir)
+    async def _start_gmx_mdrun(self, cmd_str, workdir, deffnm=None, **kwargs):
         # create a name from deffnm and partnum
         if deffnm is not None:
             name = deffnm + self._num_suffix(sim_part=1)
@@ -1024,11 +1007,7 @@ class SlurmGmxEngine(GmxEngine):
                                                 stdin=None,
                                                             )
 
-    async def _acquire_resources_gmx_mdrun(self, local_mdrun=False, **kwargs):
-        if local_mdrun:
-            # running locally: use supers acquire method
-            # (used for 0step MDs: gen-vel and constraints)
-            return await super()._acquire_resources_gmx_mdrun()
+    async def _acquire_resources_gmx_mdrun(self, **kwargs):
         if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
             logger.debug(f"SLURM_MAX_JOB semaphore is {_SEMAPHORES['SLURM_MAX_JOB']}"
                          + " before acquiring.")
@@ -1036,11 +1015,7 @@ class SlurmGmxEngine(GmxEngine):
         else:
             logger.debug("SLURM_MAX_JOB semaphore is None")
 
-    async def _cleanup_gmx_mdrun(self, local_mdrun=False, **kwargs):
-        if local_mdrun:
-            # running locally: use supers cleanup method
-            # (used for 0step MDs: gen-vel and constraints)
-            return await super()._cleanup_gmx_mdrun()
+    async def _cleanup_gmx_mdrun(self, **kwargs):
         if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
             _SEMAPHORES["SLURM_MAX_JOB"].release()
 
