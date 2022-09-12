@@ -1,11 +1,6 @@
 #!/bin/bash -l
-# Standard output and error:
-#SBATCH -o ./{jobname}.out.%j
-#SBATCH -e ./{jobname}.err.%j
 # Initial working directory:
 #SBATCH -D ./
-# Job Name:
-#SBATCH -J {jobname}
 #
 # Queue (Partition):
 #SBATCH --partition=s.bio  ## makes sure you run on the s. partition where left over resources of a node can be filled by other jobs
