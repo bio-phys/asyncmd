@@ -1,14 +1,7 @@
 #!/bin/bash -l
 # Standard output and error:
-# NOTE: the naming here is important, the code expects these filenames
-#       otherwise we will not be able to delete the SLURM outfile and SLURM errorfile
-#SBATCH -o ./{jobname}.out.%j
-#SBATCH -e ./{jobname}.err.%j
 # Initial working directory:
 #SBATCH -D ./
-# Job Name:
-#SBATCH -J {jobname}
-#
 # NOTE: adopt the queue etc to your own needs, the bit below works for phys and CVs that use parallel code (we use 2 CPU-cores)
 # Queue (Partition):
 #SBATCH --partition=s.bio  ## makes sure you run on the s. partition where left over resources of a node can be filled by other jobs

@@ -722,7 +722,7 @@ class SlurmProcess:
             fp = os.path.join(self.workdir, f)
             if await aiofiles.os.path.isfile(fp):
                 # TODO: should we warn if the files is not there?
-                await aiofiles.os.remove()
+                await aiofiles.os.remove(fp)
 
     async def _read_stdfiles(self) -> tuple[bytes, bytes]:
         if self._stdout_data is not None and self._stderr_data is not None:

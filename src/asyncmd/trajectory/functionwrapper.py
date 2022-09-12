@@ -424,7 +424,7 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             for key, val in self.call_kwargs.items():
                 # shell escape only the values,
                 # the keys (i.e. option names/flags) should be no issue
-                cmd_str += f" {key} {shlex.quote(val)}"
+                cmd_str += f" {key} {shlex.quote(str(val))}"
         # construct jobname
         # TODO: do we want the traj name in the jobname here?!
         #       I think rather not, becasue then we can cancel all jobs for one
