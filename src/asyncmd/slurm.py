@@ -192,8 +192,8 @@ class SlurmClusterMediator:
                                     }
             logger.debug(f"Registered job with id {jobid} for sacct monitoring.")
         else:
-            logger.warning(f"Job with id {jobid} already registered for "
-                           + "monitoring. Not adding it again.")
+            logger.info(f"Job with id {jobid} already registered for "
+                        + "monitoring. Not adding it again.")
 
     def monitor_remove_job(self, jobid: str) -> None:
         """
@@ -213,7 +213,7 @@ class SlurmClusterMediator:
                 pass  # already not actively monitored anymore
             logger.debug(f"Removed job with id {jobid} from sacct monitoring.")
         else:
-            logger.warning(f"Not monitoring job with id {jobid}, not removing.")
+            logger.info(f"Not monitoring job with id {jobid}, not removing.")
 
     async def get_info_for_job(self, jobid: str) -> dict:
         """
