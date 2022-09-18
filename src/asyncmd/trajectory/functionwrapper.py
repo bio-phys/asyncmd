@@ -453,7 +453,7 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                                                 jobname=self.slurm_jobname,
                                                 sbatch_script=sbatch_fname,
                                                 workdir=tra_dir,
-                                                remove_stdfiles="success",
+                                                stdfiles_removal="success",
                                                 stdin=None,
                                                 # sleep 5 s between checking
                                                 sleep_time=5,

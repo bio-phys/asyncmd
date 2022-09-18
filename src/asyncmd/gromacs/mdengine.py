@@ -18,6 +18,7 @@ import shlex
 import random
 import string
 import shutil
+import typing
 import asyncio
 import logging
 import aiofiles
@@ -460,7 +461,7 @@ class GmxEngine(MDEngine):
         await self._acquire_resources_gmx_mdrun()
         try:
             await self._start_gmx_mdrun(cmd_str=cmd_str, workdir=swdir,
-                                        deffnm=run_name,
+                                        run_name=run_name,
                                         )
             # self._proc is set by _start_gmx_mdrun!
             stdout, stderr = await self._proc.communicate()
@@ -479,7 +480,7 @@ class GmxEngine(MDEngine):
                                          )
             # just get the output trajectory, it is only one configuration
             shutil.move(os.path.join(swdir, (f"{run_name}{self._num_suffix(1)}"
-                                             + f".{self.output_traj_type}")
+                                             + f".{conf_out_name.split('.')[-1]}")
                                      ),
                         conf_out_name)
             shutil.rmtree(swdir)  # remove the whole directory we used as wdir
@@ -488,10 +489,10 @@ class GmxEngine(MDEngine):
                               # structure file of the conf_in because we
                               # delete the other one with the folder
                               structure_file=conf_in.structure_file,
-                              nstout=self.nstout,
+                              nstout=1,
                               )
         finally:
-            await self._cleanup_gmx_mdrun()
+            await self._cleanup_gmx_mdrun(workdir=swdir, run_name=run_name)
             self._proc = old_proc_val
 
     async def prepare(self, starting_configuration, workdir, deffnm):
@@ -778,7 +779,7 @@ class GmxEngine(MDEngine):
                     + f"stdout: \n--------\n {stdout.decode()}"
                                          )
         finally:
-            await self._cleanup_gmx_mdrun()
+            await self._cleanup_gmx_mdrun(workdir=self.workdir)
 
     async def run_steps(self, nsteps, steps_per_part=False):
         """
@@ -879,7 +880,7 @@ class SlurmGmxEngine(GmxEngine):
     #       I (hejung) think probably not by much because we already use
     #       asyncios subprocess for grompp (i.e. do it asyncronous) and grompp
     #       will most likely not take much resources on the login (local) node
-    # TODO/FIXME: we should insert time if we know it!
+    # TODO/FIXME: we should insert time if we know it! This should be a SlurmProcess feature!
     #  (some qeue eligibility can depend on time requested so we should request
     #   the known minimum)
 
@@ -933,68 +934,16 @@ class SlurmGmxEngine(GmxEngine):
                 sbatch_script = f.read()
         self.sbatch_script = sbatch_script
 
-    async def apply_constraints(self, conf_in, conf_out_name, wdir="."):
-        """
-        Apply constraints to given configuration.
-
-        Parameters
-        ----------
-        conf_in : asyncmd.Trajectory
-            A (one-frame) trajectory whose first frame we will constrain.
-        conf_out_name : str
-            Output path for the constrained configuration.
-        wdir : str, optional
-            Working directory for the constraint engine, by default ".",
-            a subfolder with random name will be created.
-
-        Returns
-        -------
-        Trajectory
-            The constrained configuration.
-        """
-        return await self._0step_md(conf_in=conf_in,
-                                    conf_out_name=conf_out_name,
-                                    wdir=wdir,
-                                    constraints=True,
-                                    generate_velocities=False,
-                                    )
-
-    async def generate_velocities(self, conf_in, conf_out_name, wdir=".",
-                                  constraints=True):
-        """
-        Generate random Maxwell-Boltzmann velocities for given configuration.
-
-        Parameters
-        ----------
-        conf_in : asyncmd.Trajectory
-            A (one-frame) trajectory whose first frame we will constrain.
-        conf_out_name : str
-            Output path for the constrained configuration.
-        wdir : str, optional
-            Working directory for the constraint engine, by default ".",
-            a subfolder with random name will be created.
-        constraints : bool, optional
-            Whether to also apply constraints, by default True.
-
-        Returns
-        -------
-        Trajectory
-            The configuration with random velocities and optionally constraints
-            enforced.
-        """
-        return await self._0step_md(conf_in=conf_in,
-                                    conf_out_name=conf_out_name,
-                                    wdir=wdir,
-                                    constraints=constraints,
-                                    generate_velocities=True,
-                                    )
-
-    async def _start_gmx_mdrun(self, cmd_str, workdir, deffnm=None, **kwargs):
-        # create a name from deffnm and partnum
-        if deffnm is not None:
-            name = deffnm + self._num_suffix(sim_part=1)
+    def _name_from_name_or_none(self, run_name: typing.Optional[str]) -> str:
+        if run_name is not None:
+            name = run_name
         else:
+            # create a name from deffnm and partnum
             name = self._deffnm + self._num_suffix(sim_part=self._simulation_part)
+        return name
+
+    async def _start_gmx_mdrun(self, cmd_str, workdir, run_name=None, **kwargs):
+        name = self._name_from_name_or_none(run_name=run_name)
         # substitute placeholders in submit script
         script = self.sbatch_script.format(mdrun_cmd=cmd_str)
         # write it out
@@ -1009,7 +958,7 @@ class SlurmGmxEngine(GmxEngine):
                                                 jobname=name,
                                                 sbatch_script=fname,
                                                 workdir=workdir,
-                                                remove_stdfiles="success",
+                                                stdfiles_removal="success",
                                                 stdin=None,
                                                             )
 
@@ -1021,9 +970,16 @@ class SlurmGmxEngine(GmxEngine):
         else:
             logger.debug("SLURM_MAX_JOB semaphore is None")
 
-    async def _cleanup_gmx_mdrun(self, **kwargs):
+    async def _cleanup_gmx_mdrun(self, workdir, run_name=None, **kwargs):
         if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
             _SEMAPHORES["SLURM_MAX_JOB"].release()
+        # remove the sbatch script
+        name = self._name_from_name_or_none(run_name=run_name)
+        fname = os.path.join(workdir, name + ".slurm")
+        if await aiofiles.ospath.exists(fname):
+            # Note: the 0step MD removes the whole folder in which it runs
+            # (including the sbatch script)
+            await aiofiles.os.unlink(fname)
 
     # TODO: do we even need/want that?
     @property
