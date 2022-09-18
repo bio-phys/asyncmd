@@ -495,7 +495,7 @@ class SlurmProcess:
     scancel_executable = "scancel"
 
     def __init__(self, jobname: str, sbatch_script: str, workdir: str,
-                 remove_stdfiles: str = "success", **kwargs) -> None:
+                 stdfiles_removal: str = "success", **kwargs) -> None:
         """
         Initialize a `SlurmProcess`.
 
@@ -510,7 +510,7 @@ class SlurmProcess:
             Absolute or relative path to a SLURM submission script.
         workdir : str
             Absolute or relative path to use as working directory.
-        remove_stdfiles : str
+        stdfiles_removal : str
             Whether to remove the stdout, stderr (and possibly stdin) files.
             Possible values are:
 
@@ -550,23 +550,23 @@ class SlurmProcess:
         self.sbatch_script = os.path.abspath(sbatch_script)
         # TODO: default to current dir when creating?
         self.workdir = os.path.abspath(workdir)
-        self.remove_stdfiles = remove_stdfiles
+        self.stdfiles_removal = stdfiles_removal
         self._jobid = None
         self._jobinfo = {}  # dict with jobinfo cached from slurm cluster mediator
         self._stdout_data = None
         self._stderr_data = None
 
     @property
-    def remove_stdfiles(self) -> str:
-        return self._remove_stdfiles
+    def stdfiles_removal(self) -> str:
+        return self._stdfiles_removal
 
-    @remove_stdfiles.setter
-    def remove_stdfiles(self, val: str) -> None:
+    @stdfiles_removal.setter
+    def stdfiles_removal(self, val: str) -> None:
         allowed_vals = ["success", "no", "yes", "always"]
         if val.lower() not in allowed_vals:
             raise ValueError(f"remove_stdfiles must be one of {allowed_vals}, "
                              + f"but was {val.lower()}.")
-        self._remove_stdfiles = val.lower()
+        self._stdfiles_removal = val.lower()
 
     @property
     def slurm_cluster_mediator(self) -> SlurmClusterMediator:
@@ -777,9 +777,9 @@ class SlurmProcess:
             await self._update_sacct_jobinfo()  # update local cached jobinfo
         #async with _SEMAPHORES["SLURM_CLUSTER_MEDIATOR"]:
         self.slurm_cluster_mediator.monitor_remove_job(jobid=self.slurm_jobid)
-        if (((self.returncode == 0) and (self._remove_stdfiles == "success"))
-                or self._remove_stdfiles == "yes"
-                or self._remove_stdfiles == "always"):
+        if (((self.returncode == 0) and (self._stdfiles_removal == "success"))
+                or self._stdfiles_removal == "yes"
+                or self._stdfiles_removal == "always"):
             # read them in and cache them so we can still call communicate()
             # to get the data later
             stdout, stderr = await self._read_stdfiles()
@@ -874,7 +874,7 @@ class SlurmProcess:
                          + f"scancel returned {scancel_out}.")
             # remove the job from the monitoring
             self.slurm_cluster_mediator.monitor_remove_job(jobid=self._jobid)
-            if self._remove_stdfiles == "yes" or self._remove_stdfiles == "always":
+            if self._stdfiles_removal == "yes" or self._stdfiles_removal == "always":
                 # and remove stdfiles as/if requested
                 self._remove_stdfiles_sync()
         else:
@@ -890,7 +890,7 @@ class SlurmProcess:
 async def create_slurmprocess_submit(jobname: str,
                                      sbatch_script: str,
                                      workdir: str,
-                                     remove_stdfiles: str = "success",
+                                     stdfiles_removal: str = "success",
                                      stdin: typing.Optional[str] = None,
                                      **kwargs,
                                      ):
@@ -908,7 +908,7 @@ async def create_slurmprocess_submit(jobname: str,
         Absolute or relative path to a SLURM submission script.
     workdir : str
         Absolute or relative path to use as working directory.
-    remove_stdfiles : str
+    stdfiles_removal : str
         Whether to remove the stdout, stderr (and possibly stdin) files.
         Possible values are:
 
@@ -930,7 +930,7 @@ async def create_slurmprocess_submit(jobname: str,
         The submitted slurm process instance.
     """
     proc = SlurmProcess(jobname=jobname, sbatch_script=sbatch_script,
-                        workdir=workdir, remove_stdfiles=remove_stdfiles,
+                        workdir=workdir, stdfiles_removal=stdfiles_removal,
                         **kwargs)
     await proc.submit(stdin=stdin)
     return proc
