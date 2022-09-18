@@ -601,6 +601,8 @@ class SlurmProcess:
             raise RuntimeError(f"Already monitoring job with id {self._jobid}.")
         sbatch_cmd = f"{self.sbatch_executable}"
         sbatch_cmd += f" --job-name={self.jobname}"
+        # set working directory for batch script to workdir
+        sbatch_cmd += f" --chdir={self.workdir}"
         # FIXME/TODO: does this work for job-arrays?
         #             (probably not, but do we care?)
         sbatch_cmd += f" --output=./{self._stdout_name(use_slurm_symbols=True)}"
