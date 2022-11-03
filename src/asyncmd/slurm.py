@@ -179,8 +179,6 @@ class SlurmClusterMediator:
             The SLURM jobid of the job to monitor.
         """
         if jobid not in self._jobids:
-            self._jobids.append(jobid)
-            self._jobids_sacct.append(jobid)
             # we use a dict with defaults to make sure that we get a 'PENDING'
             # for new jobs because this will make us check again in a bit
             # (sometimes there is a lag between submission and the appearance
@@ -190,6 +188,9 @@ class SlurmClusterMediator:
                                     "parsed_exitcode": None,
                                     "nodelist": [],
                                     }
+            # add the jobid to the sacct calls only **after** we set the defaults
+            self._jobids.append(jobid)
+            self._jobids_sacct.append(jobid)
             logger.debug(f"Registered job with id {jobid} for sacct monitoring.")
         else:
             logger.info(f"Job with id {jobid} already registered for "
