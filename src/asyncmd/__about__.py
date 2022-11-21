@@ -34,10 +34,17 @@ def _get_git_version():
         # execute in the directory where the source files live
         # to get the correct git_rev even if we changed the working dir
         source_dir = os.path.dirname(os.path.abspath(__file__))
-        output = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE,
-            env=env, cwd=source_dir).communicate()[0]
-        return output
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                # read from stderr too so it does not confuse
+                                # out users because it gets printed to the
+                                # console
+                                stderr=subprocess.PIPE,
+                                env=env, cwd=source_dir,
+                                )
+        stdout, stderr = proc.communicate()
+        if proc.returncode != 0:
+            raise OSError(f"Something went wrong executing {cmd}.")
+        return stdout
     try:
         out = _minimal_ext_cmd(['git', 'rev-parse', 'HEAD'])
         git_revision = out.strip().decode('ascii')
