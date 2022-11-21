@@ -14,8 +14,7 @@
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import os
 import logging
-import numpy as np
-
+import aiofiles.os
 
 from ..trajectory.trajectory import Trajectory
 from .mdconfig import MDP
@@ -75,8 +74,8 @@ def nstout_from_mdp(mdp: MDP, traj_type: str = "TRR") -> int:
     return nstout
 
 
-def get_all_traj_parts(folder: str, deffnm: str,
-                       traj_type: str = "TRR") -> "list[Trajectory]":
+async def get_all_traj_parts(folder: str, deffnm: str,
+                             traj_type: str = "TRR") -> "list[Trajectory]":
     """
     Find and return a list of trajectory parts produced by a GmxEngine.
 
@@ -97,8 +96,8 @@ def get_all_traj_parts(folder: str, deffnm: str,
         Ordered list of all trajectory parts with given deffnm and type.
     """
     ending = traj_type.lower()
-    traj_files = get_all_file_parts(folder=folder, deffnm=deffnm,
-                                    file_ending=ending)
+    traj_files = await get_all_file_parts(folder=folder, deffnm=deffnm,
+                                          file_ending=ending)
     trajs = [Trajectory(trajectory_files=traj_file,
                         structure_file=os.path.join(folder, f"{deffnm}.tpr")
                         )
@@ -106,7 +105,7 @@ def get_all_traj_parts(folder: str, deffnm: str,
     return trajs
 
 
-def get_all_file_parts(folder: str, deffnm: str, file_ending: str) -> "list[str]":
+async def get_all_file_parts(folder: str, deffnm: str, file_ending: str) -> "list[str]":
     """
     Find and return all files with given ending produced by GmxEngine.
 
@@ -128,15 +127,12 @@ def get_all_file_parts(folder: str, deffnm: str, file_ending: str) -> "list[str]
     """
     def partnum_suffix(num):
         # construct gromacs num part suffix from simulation_part
-        num_suffix = str(num)
-        while len(num_suffix) < 4:
-            num_suffix = "0" + num_suffix
-        num_suffix = ".part" + num_suffix
+        num_suffix = ".part{:04d}".format(num)
         return num_suffix
 
     if not file_ending.startswith("."):
         file_ending = "." + file_ending
-    content = os.listdir(folder)
+    content = await aiofiles.os.listdir(folder)
     filtered = [f for f in content
                 if (f.endswith(file_ending) and f.startswith(f"{deffnm}.part"))
                 ]

@@ -18,13 +18,17 @@ import shlex
 import random
 import string
 import shutil
+import typing
 import asyncio
 import logging
+import aiofiles
+import aiofiles.os
+import aiofiles.ospath
 
 from .._config import _SEMAPHORES
 from ..mdengine import MDEngine, EngineError, EngineCrashedError
 from ..trajectory.trajectory import Trajectory
-from ..slurm import SlurmProcess
+from .. import slurm
 from .mdconfig import MDP
 from .utils import nstout_from_mdp, get_all_traj_parts
 from ..tools import ensure_executable_available
@@ -33,8 +37,6 @@ from ..tools import ensure_executable_available
 logger = logging.getLogger(__name__)
 
 
-# TODO: DOCUMENT!
-# TODO: capture mdrun stdout+ stderr? for local gmx? for slurm it goes to file
 # NOTE: with tra we usually mean trr, i.e. a full precision trajectory with velocities
 class GmxEngine(MDEngine):
     """
@@ -66,6 +68,7 @@ class GmxEngine(MDEngine):
         the MDP settings we will still write xtc and trr, but return only the
         trajectories with matching ending.
     """
+
     # local prepare and option to run a local gmx (mainly for testing)
     _grompp_executable = "gmx grompp"
     _mdrun_executable = "gmx mdrun"
@@ -311,9 +314,7 @@ class GmxEngine(MDEngine):
     # TODO: check that nstxout == nstvout?!
     @property
     def nstout(self):
-        """
-        Smallest output frequency for current output_traj_type.
-        """
+        """Smallest output frequency for current output_traj_type."""
         if self._nstout is None:
             nstout = nstout_from_mdp(self._mdp,
                                      traj_type=self.output_traj_type)
@@ -323,7 +324,7 @@ class GmxEngine(MDEngine):
     @property
     def steps_done(self):
         """
-        Number of integration steps done since last call to `self.prepare()`.
+        Number of integration steps done since last call to :meth:`prepare`.
 
         NOTE: steps != frames * nstout
         Some remarks on the relation between frames_done and steps_done:
@@ -346,7 +347,7 @@ class GmxEngine(MDEngine):
     @property
     def frames_done(self):
         """
-        Number of frames produced since last call to `self.prepare()`.
+        Number of frames produced since last call to :meth:`prepare`.
 
         NOTE: frames != steps / nstout
         See the steps_done docstring for more.
@@ -377,7 +378,7 @@ class GmxEngine(MDEngine):
                                     wdir=wdir,
                                     constraints=True,
                                     generate_velocities=False,
-                                    local_mdrun=True)
+                                    )
 
     async def generate_velocities(self, conf_in, conf_out_name, wdir=".",
                                   constraints=True):
@@ -407,13 +408,10 @@ class GmxEngine(MDEngine):
                                     wdir=wdir,
                                     constraints=constraints,
                                     generate_velocities=True,
-                                    local_mdrun=True)
+                                    )
 
     async def _0step_md(self, conf_in, conf_out_name, wdir,
-                        constraints: bool, generate_velocities: bool,
-                        local_mdrun: bool):
-        # NOTE: local_mdrun is only relevant for SlurmGmxEngine: this way we
-        #       can decide if we do the 0step mdruns locally or via slurm
+                        constraints: bool, generate_velocities: bool):
         if (self.workdir is not None) and (wdir == "."):
             # use own working directory if know/set
             wdir = self.workdir
@@ -430,7 +428,7 @@ class GmxEngine(MDEngine):
                                           )
                            )
         swdir = os.path.join(wdir, run_name)
-        os.mkdir(swdir)
+        await aiofiles.os.mkdir(swdir)
         constraints_mdp = copy.deepcopy(self._mdp)
         constraints_mdp["continuation"] = "no" if constraints else "yes"
         constraints_mdp["gen-vel"] = "yes" if generate_velocities else "no"
@@ -456,38 +454,45 @@ class GmxEngine(MDEngine):
         #       to be runing when/if we are able to call apply_constraints?
         old_proc_val = self._proc
         cmd_str = self._mdrun_cmd(tpr=f"{run_name}.tpr", deffnm=run_name)
-        logger.info(f"{cmd_str}")
-        await self._acquire_resources_gmx_mdrun(local_mdrun=local_mdrun)
-        try:  # this try is just to make sure we always call cleanup/release
+        logger.debug(f"{cmd_str}")
+        returncode = None
+        stderr = bytes()
+        stdout = bytes()
+        await self._acquire_resources_gmx_mdrun()
+        try:
             await self._start_gmx_mdrun(cmd_str=cmd_str, workdir=swdir,
-                                        local_mdrun=local_mdrun,
-                                        deffnm=run_name,
+                                        run_name=run_name,
                                         )
-            try:
-                # self._proc is set by _start_gmx_mdrun!
-                exit_code = await self._proc.wait()
-            except asyncio.CancelledError:
-                self._proc.kill()
-                raise  # reraise the error for encompassing coroutines
-            else:
-                if exit_code != 0:
-                    raise EngineCrashedError("Non-zero exit code from mdrun."
-                                             + f" Exit code was: {exit_code}.")
-                # just get the output trajectory, it is only one configuration
-                shutil.move(os.path.join(swdir, (f"{run_name}{self._num_suffix(1)}"
-                                                 + f".{self.output_traj_type}")
-                                         ),
-                            conf_out_name)
-                shutil.rmtree(swdir)  # remove the whole directory we used as wdir
-                return Trajectory(
-                                  trajectory_files=conf_out_name,
-                                  # structure file of the conf_in because we
-                                  # delete the other one with the folder
-                                  structure_file=conf_in.structure_file,
-                                  nstout=self.nstout,
-                                  )
+            # self._proc is set by _start_gmx_mdrun!
+            stdout, stderr = await self._proc.communicate()
+            returncode = self._proc.returncode
+        except asyncio.CancelledError:
+            self._proc.kill()
+            raise  # reraise the error for encompassing coroutines
+        else:
+            if returncode != 0:
+                raise EngineCrashedError(
+                    f"Non-zero (or no) exit code from mdrun (= {returncode}).\n"
+                    + "\n--------\n"
+                    + f"stderr: \n--------\n {stderr.decode()}"
+                    + "\n--------\n"
+                    + f"stdout: \n--------\n {stdout.decode()}"
+                                         )
+            # just get the output trajectory, it is only one configuration
+            shutil.move(os.path.join(swdir, (f"{run_name}{self._num_suffix(1)}"
+                                             + f".{conf_out_name.split('.')[-1]}")
+                                     ),
+                        conf_out_name)
+            shutil.rmtree(swdir)  # remove the whole directory we used as wdir
+            return Trajectory(
+                              trajectory_files=conf_out_name,
+                              # structure file of the conf_in because we
+                              # delete the other one with the folder
+                              structure_file=conf_in.structure_file,
+                              nstout=1,
+                              )
         finally:
-            await self._cleanup_gmx_mdrun(local_mdrun=local_mdrun)
+            await self._cleanup_gmx_mdrun(workdir=swdir, run_name=run_name)
             self._proc = old_proc_val
 
     async def prepare(self, starting_configuration, workdir, deffnm):
@@ -501,7 +506,7 @@ class GmxEngine(MDEngine):
             configuration (including velocities) or None, then the initial
             configuration is the gro-file.
         workdir : str
-            Absolute or relative path to an exisiting directory to use as
+            Absolute or relative path to an existing directory to use as
             working directory.
         deffnm : str
             The name (prefix) to use for all files.
@@ -538,13 +543,14 @@ class GmxEngine(MDEngine):
         # NOTE: we only check for checkpoint files and trajectory parts as gmx
         #       will move everything and only the checkpoint and trajs let us
         #       trip and get the part numbering wrong
-        trajs_with_same_deffnm = get_all_traj_parts(
+        trajs_with_same_deffnm = await get_all_traj_parts(
                                             folder=self.workdir,
                                             deffnm=deffnm,
                                             traj_type=self.output_traj_type,
-                                                    )
+                                                          )
         if (len(trajs_with_same_deffnm) > 0
-                or (os.path.isfile(cpt_fname) and self._simulation_part == 0)):
+                or (await aiofiles.ospath.isfile(cpt_fname)
+                    and self._simulation_part == 0)):
             raise ValueError(f"There are files in workdir ({self.workdir}) "
                              + f"with the same deffnm ({deffnm}). Use "
                              + "`prepare_from_files()` method to continue an "
@@ -566,7 +572,7 @@ class GmxEngine(MDEngine):
         await self._run_grompp(workdir=self.workdir, deffnm=self._deffnm,
                                trr_in=trr_in, tpr_out=tpr_out,
                                mdp_obj=self._mdp)
-        if not os.path.isfile(self._tpr):
+        if not await aiofiles.ospath.isfile(self._tpr):
             # better be save than sorry :)
             raise RuntimeError("Something went wrong generating the tpr."
                                + f"{self._tpr} does not seem to be a file.")
@@ -580,8 +586,11 @@ class GmxEngine(MDEngine):
     async def _run_grompp(self, workdir, deffnm, trr_in, tpr_out, mdp_obj):
         # NOTE: file paths from workdir and deffnm
         mdp_in = os.path.join(workdir, deffnm + ".mdp")
-        # write the mdp file
-        mdp_obj.write(mdp_in)
+        # write the mdp file (always overwriting existing mdps)
+        # I (hejung) think this is what we want as the prepare methods check
+        # for leftover files with the same deffnm, so if only the mdp is there
+        # we can (and want to) just ovewrite it without raising an err
+        mdp_obj.write(mdp_in, overwrite=True)
         mdp_out = os.path.join(workdir, deffnm + "_mdout.mdp")
         cmd_str = self._grompp_cmd(mdp_in=mdp_in, tpr_out=tpr_out,
                                    trr_in=trr_in, mdp_out=mdp_out)
@@ -634,8 +643,9 @@ class GmxEngine(MDEngine):
             The name (prefix) to use for all files.
         """
         self.workdir = workdir
-        previous_trajs = get_all_traj_parts(self.workdir, deffnm=deffnm,
-                                            traj_type=self.output_traj_type)
+        previous_trajs = await get_all_traj_parts(self.workdir, deffnm=deffnm,
+                                                  traj_type=self.output_traj_type,
+                                                  )
         last_trajname = os.path.split(previous_trajs[-1].trajectory_files[0])[-1]
         last_partnum = int(last_trajname.lstrip(f"{deffnm}.part")
                            .rstrip("." + self.output_traj_type.lower())
@@ -665,9 +675,6 @@ class GmxEngine(MDEngine):
     # NOTE: this enables us to reuse run and prepare methods in SlurmGmxEngine,
     # i.e. we only need to overwite the next 3 functions to write out the slurm
     # submission script, submit the job and allocate/release different resources
-    # NOTE: the kwargs enable us to pass e.g. local_mdrun to the slurm engine
-    #  to enable us to run the 0step MDs (velocity generation and constraints)
-    #  locally (on the login node or whereever the main code is running)
     async def _start_gmx_mdrun(self, cmd_str, workdir, **kwargs):
         proc = await asyncio.create_subprocess_exec(
                                             *shlex.split(cmd_str),
@@ -684,24 +691,12 @@ class GmxEngine(MDEngine):
         await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
         await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
 
-    async def _cleanup_gmx_mdrun(self, exit_code=0, **kwargs):
+    async def _cleanup_gmx_mdrun(self, **kwargs):
         # *always* called after any gmx_mdrun, use to release Semaphores and friends
-        # read stdout and stderr from gmx mdrun
-        stdout, stderr = await self._proc.communicate()
-        logger.debug(f"gmx mdrun stdout: {stdout.decode()}")
-        logger.debug(f"gmx mdrun stderr: {stderr.decode()}")
         # release the semaphore for the 3 file descriptors
         _SEMAPHORES["MAX_FILES_OPEN"].release()
         _SEMAPHORES["MAX_FILES_OPEN"].release()
         _SEMAPHORES["MAX_FILES_OPEN"].release()
-        if exit_code != 0:
-            raise EngineCrashedError(
-                    f"Non-zero (or no) exit code from mdrun (= {exit_code}).\n"
-                    + "\n--------\n"
-                    + f"stderr: \n--------\n {stderr.decode()}"
-                    + "\n--------\n"
-                    + f"stdout: \n--------\n {stdout.decode()}"
-                                     )
 
     async def run(self, nsteps=None, walltime=None, steps_per_part=False):
         """
@@ -752,29 +747,39 @@ class GmxEngine(MDEngine):
         cmd_str = self._mdrun_cmd(tpr=self._tpr, deffnm=self._deffnm,
                                   # TODO: use more/any other kwargs?
                                   maxh=walltime, nsteps=nsteps)
-        logger.info(f"{cmd_str}")
-        exit_code = None
+        logger.debug(f"{cmd_str}")
+        returncode = None
+        stderr = bytes()
+        stdout = bytes()
         await self._acquire_resources_gmx_mdrun()
         try:
             await self._start_gmx_mdrun(cmd_str=cmd_str, workdir=self.workdir)
             # self._proc is set by _start_gmx_mdrun!
-            exit_code = await self._proc.wait()
+            stdout, stderr = await self._proc.communicate()
+            returncode = self._proc.returncode
         except asyncio.CancelledError:
             self._proc.kill()
             raise  # reraise the error for encompassing coroutines
         else:
-            #if exit_code != 0:
-            #    raise EngineCrashedError("Non-zero exit code from mdrun."
-            #                             + f" Exit code was: {exit_code}.")
-            if exit_code == 0:
+            #logger.debug(f"gmx mdrun stdout: {stdout.decode()}")
+            #logger.debug(f"gmx mdrun stderr: {stderr.decode()}")
+            if returncode == 0:
                 self._frames_done += len(self.current_trajectory)
                 # dont care if we did a little more and only the checkpoint knows
                 # we will only find out with the next trajectory part anyways
                 self._steps_done = self.current_trajectory.last_step
                 self._time_done = self.current_trajectory.last_time
                 return self.current_trajectory
+            else:
+                raise EngineCrashedError(
+                    f"Non-zero (or no) exit code from mdrun (= {returncode}).\n"
+                    + "\n--------\n"
+                    + f"stderr: \n--------\n {stderr.decode()}"
+                    + "\n--------\n"
+                    + f"stdout: \n--------\n {stdout.decode()}"
+                                         )
         finally:
-            await self._cleanup_gmx_mdrun(exit_code=exit_code)
+            await self._cleanup_gmx_mdrun(workdir=self.workdir)
 
     async def run_steps(self, nsteps, steps_per_part=False):
         """
@@ -871,8 +876,11 @@ class SlurmGmxEngine(GmxEngine):
     # reimplement `_start_gmx_mdrun()`, `_acquire_resources_gmx_mdrun()` and
     # `_cleanup_gmx_mdrun()` to have a working SlurmGmxEngine
     # take submit script as str/file, use pythons .format to insert stuff!
-    # TODO: document what we insert! currently: mdrun_cmd, jobname
-    # TODO/FIXME: we should insert time if we know it!
+    # TODO: use SLURM also for grompp?! (would make stuff faster?)
+    #       I (hejung) think probably not by much because we already use
+    #       asyncios subprocess for grompp (i.e. do it asyncronous) and grompp
+    #       will most likely not take much resources on the login (local) node
+    # TODO/FIXME: we should insert time if we know it! This should be a SlurmProcess feature!
     #  (some qeue eligibility can depend on time requested so we should request
     #   the known minimum)
 
@@ -885,11 +893,6 @@ class SlurmGmxEngine(GmxEngine):
     #           so also probably not?!)
 
     _mdrun_executable = "gmx_mpi mdrun"  # MPI as default for clusters
-    # whether we run the 0step MDruns (velocity generation and constraints)
-    # without/sans slurm, i.e. locally (on the login node)
-    # TODO/FIXME: running sans slurm is not possible using gmx_mpi!
-    #             and we will probably also need the option to pass other mdrun_extra_args?!
-    constraints_md_sans_slurm = False
 
     def __init__(self, mdconfig, gro_file, top_file, sbatch_script, ndx_file=None,
                  **kwargs):
@@ -912,8 +915,6 @@ class SlurmGmxEngine(GmxEngine):
 
              - {mdrun_cmd} : Replaced by the command to run mdrun
 
-             - {jobname} : Replaced by the name of the job (usually the deffnm of the mdrun)
-
         ndx_file: str or None
             Optional, absolute or relative path to a gromacs index file.
 
@@ -933,92 +934,35 @@ class SlurmGmxEngine(GmxEngine):
                 sbatch_script = f.read()
         self.sbatch_script = sbatch_script
 
-    async def apply_constraints(self, conf_in, conf_out_name, wdir="."):
-        """
-        Apply constraints to given configuration.
-
-        Parameters
-        ----------
-        conf_in : asyncmd.Trajectory
-            A (one-frame) trajectory whose first frame we will constrain.
-        conf_out_name : str
-            Output path for the constrained configuration.
-        wdir : str, optional
-            Working directory for the constraint engine, by default ".",
-            a subfolder with random name will be created.
-
-        Returns
-        -------
-        Trajectory
-            The constrained configuration.
-        """
-        return await self._0step_md(conf_in=conf_in,
-                                    conf_out_name=conf_out_name,
-                                    wdir=wdir,
-                                    constraints=True,
-                                    generate_velocities=False,
-                                    local_mdrun=self.constraints_md_sans_slurm)
-
-    async def generate_velocities(self, conf_in, conf_out_name, wdir=".",
-                                  constraints=True):
-        """
-        Generate random Maxwell-Boltzmann velocities for given configuration.
-
-        Parameters
-        ----------
-        conf_in : asyncmd.Trajectory
-            A (one-frame) trajectory whose first frame we will constrain.
-        conf_out_name : str
-            Output path for the constrained configuration.
-        wdir : str, optional
-            Working directory for the constraint engine, by default ".",
-            a subfolder with random name will be created.
-        constraints : bool, optional
-            Whether to also apply constraints, by default True.
-
-        Returns
-        -------
-        Trajectory
-            The configuration with random velocities and optionally constraints
-            enforced.
-        """
-        return await self._0step_md(conf_in=conf_in,
-                                    conf_out_name=conf_out_name,
-                                    wdir=wdir,
-                                    constraints=constraints,
-                                    generate_velocities=True,
-                                    local_mdrun=self.constraints_md_sans_slurm)
-
-    async def _start_gmx_mdrun(self, cmd_str, workdir,
-                               local_mdrun=False, deffnm=None, **kwargs):
-        if local_mdrun:
-            # run locally using supers start method
-            # (used for 0step MDs: gen-vel and constraints)
-            return await super()._start_gmx_mdrun(cmd_str=cmd_str,
-                                                  workdir=workdir)
-        # create a name from deffnm and partnum
-        if deffnm is not None:
-            name = deffnm + self._num_suffix(sim_part=1)
+    def _name_from_name_or_none(self, run_name: typing.Optional[str]) -> str:
+        if run_name is not None:
+            name = run_name
         else:
+            # create a name from deffnm and partnum
             name = self._deffnm + self._num_suffix(sim_part=self._simulation_part)
+        return name
+
+    async def _start_gmx_mdrun(self, cmd_str, workdir, run_name=None, **kwargs):
+        name = self._name_from_name_or_none(run_name=run_name)
         # substitute placeholders in submit script
-        script = self.sbatch_script.format(mdrun_cmd=cmd_str, jobname=name)
+        script = self.sbatch_script.format(mdrun_cmd=cmd_str)
         # write it out
         fname = os.path.join(workdir, name + ".slurm")
-        if os.path.exists(fname):
+        if await aiofiles.ospath.exists(fname):
             # TODO: should we raise an error?
             logger.error(f"Overwriting existing submission file ({fname}).")
         async with _SEMAPHORES["MAX_FILES_OPEN"]:
-            with open(fname, 'w') as f:
-                f.write(script)
-        self._proc = SlurmProcess(sbatch_script=fname, workdir=workdir)
-        await self._proc.submit()
+            async with aiofiles.open(fname, 'w') as f:
+                await f.write(script)
+        self._proc = await slurm.create_slurmprocess_submit(
+                                                jobname=name,
+                                                sbatch_script=fname,
+                                                workdir=workdir,
+                                                stdfiles_removal="success",
+                                                stdin=None,
+                                                            )
 
-    async def _acquire_resources_gmx_mdrun(self, local_mdrun=False, **kwargs):
-        if local_mdrun:
-            # running locally: use supers acquire method
-            # (used for 0step MDs: gen-vel and constraints)
-            return await super()._acquire_resources_gmx_mdrun()
+    async def _acquire_resources_gmx_mdrun(self, **kwargs):
         if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
             logger.debug(f"SLURM_MAX_JOB semaphore is {_SEMAPHORES['SLURM_MAX_JOB']}"
                          + " before acquiring.")
@@ -1026,13 +970,16 @@ class SlurmGmxEngine(GmxEngine):
         else:
             logger.debug("SLURM_MAX_JOB semaphore is None")
 
-    async def _cleanup_gmx_mdrun(self, local_mdrun=False, **kwargs):
-        if local_mdrun:
-            # running locally: use supers cleanup method
-            # (used for 0step MDs: gen-vel and constraints)
-            return await super()._cleanup_gmx_mdrun()
+    async def _cleanup_gmx_mdrun(self, workdir, run_name=None, **kwargs):
         if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
             _SEMAPHORES["SLURM_MAX_JOB"].release()
+        # remove the sbatch script
+        name = self._name_from_name_or_none(run_name=run_name)
+        fname = os.path.join(workdir, name + ".slurm")
+        if await aiofiles.ospath.exists(fname):
+            # Note: the 0step MD removes the whole folder in which it runs
+            # (including the sbatch script)
+            await aiofiles.os.unlink(fname)
 
     # TODO: do we even need/want that?
     @property

@@ -20,7 +20,7 @@ from .gromacs import mdengine as gmx_engine
 from .gromacs import mdconfig as gmx_config
 
 
-def get_all_traj_parts(folder: str, deffnm: str, engine: MDEngine) -> "list[Trajectory]":
+async def get_all_traj_parts(folder: str, deffnm: str, engine: MDEngine) -> "list[Trajectory]":
     """
     List all trajectories in folder by given engine class with given deffnm.
 
@@ -45,9 +45,9 @@ def get_all_traj_parts(folder: str, deffnm: str, engine: MDEngine) -> "list[Traj
         Raised when the engine class is unknown.
     """
     if isinstance(engine, (gmx_engine.GmxEngine, gmx_engine.SlurmGmxEngine)):
-        return gmx_utils.get_all_traj_parts(folder=folder, deffnm=deffnm,
-                                            traj_type=engine.output_traj_type,
-                                            )
+        return await gmx_utils.get_all_traj_parts(folder=folder, deffnm=deffnm,
+                                                  traj_type=engine.output_traj_type,
+                                                  )
     else:
         raise ValueError(f"Engine {engine} is not a known MDEngine class."
                          + " Maybe someone just forgot to add the function?")

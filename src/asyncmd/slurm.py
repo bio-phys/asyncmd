@@ -16,6 +16,8 @@ import os
 import time
 import shlex
 import asyncio
+import aiofiles
+import aiofiles.os
 import subprocess
 import collections
 import typing
@@ -100,8 +102,8 @@ class SlurmClusterMediator:
 
     sinfo_executable = "sinfo"
     sacct_executable = "sacct"
-    # wait for at least 10 s between two sacct calls
-    min_time_between_sacct_calls = 10
+    # wait for at least 5 s between two sacct calls
+    min_time_between_sacct_calls = 5
     # NOTE: We track the number of failed/successfull jobs associated with each
     #       node and use this information to decide if a node is broken
     # number of 'suspected fail' counts that a node needs to accumulate for us
@@ -177,8 +179,6 @@ class SlurmClusterMediator:
             The SLURM jobid of the job to monitor.
         """
         if jobid not in self._jobids:
-            self._jobids.append(jobid)
-            self._jobids_sacct.append(jobid)
             # we use a dict with defaults to make sure that we get a 'PENDING'
             # for new jobs because this will make us check again in a bit
             # (sometimes there is a lag between submission and the appearance
@@ -188,10 +188,13 @@ class SlurmClusterMediator:
                                     "parsed_exitcode": None,
                                     "nodelist": [],
                                     }
+            # add the jobid to the sacct calls only **after** we set the defaults
+            self._jobids.append(jobid)
+            self._jobids_sacct.append(jobid)
             logger.debug(f"Registered job with id {jobid} for sacct monitoring.")
         else:
-            logger.warning(f"Job with id {jobid} already registered for "
-                           + "monitoring. Not adding it again.")
+            logger.info(f"Job with id {jobid} already registered for "
+                        + "monitoring. Not adding it again.")
 
     def monitor_remove_job(self, jobid: str) -> None:
         """
@@ -211,7 +214,7 @@ class SlurmClusterMediator:
                 pass  # already not actively monitored anymore
             logger.debug(f"Removed job with id {jobid} from sacct monitoring.")
         else:
-            logger.warning(f"Not monitoring job with id {jobid}, not removing.")
+            logger.info(f"Not monitoring job with id {jobid}, not removing.")
 
     async def get_info_for_job(self, jobid: str) -> dict:
         """
@@ -482,7 +485,7 @@ class SlurmProcess:
                        + " with the appropriate arguments.")
     # we can not simply wait for the subprocess, since slurm exits directly
     # so we will sleep for this long between checks if slurm-job completed
-    sleep_time = 30  # TODO: heuristic? dynamically adapt?
+    sleep_time = 20  # TODO: heuristic? dynamically adapt?
     # NOTE: no options to set/pass extra_args for sbatch:
     #       the only command line options for sbatch we allow will be contolled
     #       by us since cmd line options for sbatch take precendece over every-
@@ -492,7 +495,8 @@ class SlurmProcess:
     sbatch_executable = "sbatch"
     scancel_executable = "scancel"
 
-    def __init__(self, sbatch_script: str, workdir: str, **kwargs) -> None:
+    def __init__(self, jobname: str, sbatch_script: str, workdir: str,
+                 stdfiles_removal: str = "success", **kwargs) -> None:
         """
         Initialize a `SlurmProcess`.
 
@@ -501,10 +505,20 @@ class SlurmProcess:
 
         Parameters
         ----------
+        jobname : str
+            SLURM jobname (``--job-name``).
         sbatch_script : str
             Absolute or relative path to a SLURM submission script.
         workdir : str
             Absolute or relative path to use as working directory.
+        stdfiles_removal : str
+            Whether to remove the stdout, stderr (and possibly stdin) files.
+            Possible values are:
+
+             - "success": remove on sucessful completion, i.e. zero returncode)
+             - "no": never remove
+             - "yes"/"always": remove on job completion independent of
+               returncode and also when using :meth:`terminate`
 
         Raises
         ------
@@ -530,10 +544,30 @@ class SlurmProcess:
         # this either checks for our defaults or whatever we just set via kwargs
         ensure_executable_available(self.sbatch_executable)
         ensure_executable_available(self.scancel_executable)
+        self.jobname = jobname
+        # TODO/FIXME: do we want sbatch_script to be relative to wdir?
+        #             (currently it is relative to current dir when creating
+        #              the slurmprocess)
         self.sbatch_script = os.path.abspath(sbatch_script)
+        # TODO: default to current dir when creating?
         self.workdir = os.path.abspath(workdir)
+        self.stdfiles_removal = stdfiles_removal
         self._jobid = None
         self._jobinfo = {}  # dict with jobinfo cached from slurm cluster mediator
+        self._stdout_data = None
+        self._stderr_data = None
+
+    @property
+    def stdfiles_removal(self) -> str:
+        return self._stdfiles_removal
+
+    @stdfiles_removal.setter
+    def stdfiles_removal(self, val: str) -> None:
+        allowed_vals = ["success", "no", "yes", "always"]
+        if val.lower() not in allowed_vals:
+            raise ValueError(f"remove_stdfiles must be one of {allowed_vals}, "
+                             + f"but was {val.lower()}.")
+        self._stdfiles_removal = val.lower()
 
     @property
     def slurm_cluster_mediator(self) -> SlurmClusterMediator:
@@ -544,9 +578,18 @@ class SlurmProcess:
         else:
             return self._slurm_cluster_mediator
 
-    async def submit(self) -> None:
+    async def submit(self, stdin: typing.Optional[str] = None) -> None:
         """
         Submit the job via sbatch.
+
+        Parameters
+        ----------
+        stdin : str or None
+            If given it is interpreted as a file to which we connect the batch
+            scripts stdin via sbatchs ``--input`` option. This enables sending
+            data to the processes stdin via :meth:`communicate`.
+            Note that if it is desired to send data to the process the process
+            has to be submited with stdin.
 
         Raises
         ------
@@ -558,6 +601,19 @@ class SlurmProcess:
         if self._jobid is not None:
             raise RuntimeError(f"Already monitoring job with id {self._jobid}.")
         sbatch_cmd = f"{self.sbatch_executable}"
+        sbatch_cmd += f" --job-name={self.jobname}"
+        # set working directory for batch script to workdir
+        sbatch_cmd += f" --chdir={self.workdir}"
+        # FIXME/TODO: does this work for job-arrays?
+        #             (probably not, but do we care?)
+        sbatch_cmd += f" --output=./{self._stdout_name(use_slurm_symbols=True)}"
+        sbatch_cmd += f" --error=./{self._stderr_name(use_slurm_symbols=True)}"
+        # keep a ref to the stdin value, we need it in communicate
+        self._stdin = stdin
+        if stdin is not None:
+            # TODO: do we need to check if the file exists or that the location
+            #       is writeable?
+            sbatch_cmd += f" --input=./{stdin}"
         # I (hejung) think we dont need the semaphore here
         #async with _SEMAPHORES["SLURM_CLUSTER_MEDIATOR"]:
         broken_nodes = self.slurm_cluster_mediator.broken_nodes
@@ -600,7 +656,10 @@ class SlurmProcess:
                 err = True
         if err:
             raise SlurmSubmissionError("Could not submit SLURM job."
-                                       + f" sbatch returned {sbatch_return}.")
+                                       + f" Exit code was: {sbatch_return} \n"
+                                       + f"sbatch stdout: {stdout.decode()} \n"
+                                       + f"sbatch stderr: {stderr.decode()} \n"
+                                       )
         logger.info(f"Submited SLURM job with jobid {jobid}.")
         self._jobid = jobid
         # I (hejung) think we dont need the semaphore for non-async calls like here(?)
@@ -628,6 +687,68 @@ class SlurmProcess:
             return None
         return self._jobinfo.get("parsed_exitcode", None)
 
+    def _stdout_name(self, use_slurm_symbols: bool = False) -> str:
+        name = f"{self.jobname}.out."
+        if use_slurm_symbols:
+            name += "%j"
+        elif self.slurm_jobid is not None:
+            name += f"{self.slurm_jobid}"
+        else:
+            raise RuntimeError("Can not construct stdout filename without jobid.")
+        return name
+
+    def _stderr_name(self, use_slurm_symbols: bool = False) -> str:
+        name = f"{self.jobname}.err."
+        if use_slurm_symbols:
+            name += "%j"
+        elif self.slurm_jobid is not None:
+            name += f"{self.slurm_jobid}"
+        else:
+            raise RuntimeError("Can not construct stderr filename without jobid.")
+        return name
+
+    def _remove_stdfiles_sync(self) -> None:
+        fnames = [self._stdin] if self._stdin is not None else []
+        fnames += [self._stdout_name(use_slurm_symbols=False),
+                   self._stderr_name(use_slurm_symbols=False),
+                   ]
+        for f in fnames:
+            fp = os.path.join(self.workdir, f)
+            if os.path.isfile(fp):
+                os.remove(fp)
+
+    async def _remove_stdfiles_async(self) -> None:
+        fnames = [self._stdin] if self._stdin is not None else []
+        fnames += [self._stdout_name(use_slurm_symbols=False),
+                   self._stderr_name(use_slurm_symbols=False),
+                   ]
+        for f in fnames:
+            fp = os.path.join(self.workdir, f)
+            if await aiofiles.os.path.isfile(fp):
+                # TODO: should we warn if the files is not there?
+                await aiofiles.os.remove(fp)
+
+    async def _read_stdfiles(self) -> tuple[bytes, bytes]:
+        if self._stdout_data is not None and self._stderr_data is not None:
+            # return cached values if we already read the files previously
+            return self._stdout_data, self._stderr_data
+        # we read them in binary mode to get bytes objects back, this way they
+        # behave like the bytes objects returned by asyncio.subprocess
+        async with aiofiles.open(
+            os.path.join(self.workdir, self._stdout_name(use_slurm_symbols=False)),
+            "rb"
+                                 ) as f:
+            stdout = await f.read()
+        async with aiofiles.open(
+            os.path.join(self.workdir, self._stderr_name(use_slurm_symbols=False)),
+            "rb"
+                                 ) as f:
+            stderr = await f.read()
+        # cache the content
+        self._stdout_data = stdout
+        self._stderr_data = stderr
+        return stdout, stderr
+
     async def _update_sacct_jobinfo(self) -> None:
         # I (hejung) think we dont need the SLURM_CLUSTER_MEDIATOR semaphore at all?!
         # i.e. I dont think we need it here as the cluster mediator limits
@@ -644,6 +765,11 @@ class SlurmProcess:
         -------
         int
             returncode of the wrapped SLURM job
+
+        Raises
+        ------
+        RuntimeError
+            If the job has never been submitted.
         """
         if self._jobid is None:
             # make sure we can only wait after submitting, otherwise we would
@@ -655,18 +781,73 @@ class SlurmProcess:
             await self._update_sacct_jobinfo()  # update local cached jobinfo
         #async with _SEMAPHORES["SLURM_CLUSTER_MEDIATOR"]:
         self.slurm_cluster_mediator.monitor_remove_job(jobid=self.slurm_jobid)
+        if (((self.returncode == 0) and (self._stdfiles_removal == "success"))
+                or self._stdfiles_removal == "yes"
+                or self._stdfiles_removal == "always"):
+            # read them in and cache them so we can still call communicate()
+            # to get the data later
+            stdout, stderr = await self._read_stdfiles()
+            await self._remove_stdfiles_async()
         return self.returncode
 
-    async def communicate(self, input=None):
-        # TODO: write this (if we need it)
-        #       [at least the reading from stdout, stderr should be doable
-        #        if we know the slurm output files for that]
-        # NOTE: make sure we deregister the job from monitoring when it is done
-        raise NotImplementedError
+    async def communicate(self, input: typing.Optional[bytes] = None) -> tuple[bytes, bytes]:
+        """
+        Interact with process. Optionally send data to the process.
+        Wait for the process to finish, then read from stdout and stderr (files)
+        and return the data.
+
+        Parameters
+        ----------
+        input : bytes or None, optional
+            The input data to send to the process, by default None.
+            Note that you an only send data to processes created/submited with
+            stdin set.
+
+        Returns
+        -------
+        tuple[bytes, bytes]
+            (stdout, stderr)
+
+        Raises
+        ------
+        RuntimeError
+            If the job has never been submitted.
+        ValueError
+            If stdin is not None but the process was created without stdin set.
+        """
+        # order as in asyncio.subprocess, there it is:
+        #   1.) write to stdin (optional)
+        #   2.) read until EOF is reached
+        #   3.) wait for the proc to finish
+        # Note that we wait first because we can only start reading the
+        # stdfiles when the job has at least started, so we just wait for it
+        # and read the files at the end completely
+        if self._jobid is None:
+            # make sure we can only wait after submitting, otherwise we would
+            # wait indefinitively if we call wait() before submit()
+            raise RuntimeError("Can only wait for submitted SLURM jobs with "
+                               + "known jobid. Did you ever submit the job?")
+        if input is not None:
+            if self._stdin is None:
+                # make sure we have a stdin file if we have input to write
+                raise ValueError("Can only send input to a SlurmProcess "
+                                 + "created/submited with stdin (file) given.")
+            # write the given input to stdin file
+            async with aiofiles.open(os.path.join(self.workdir, f"{self._stdin}"),
+                                     "wb",
+                                     ) as f:
+                await f.write(input)
+        # NOTE: wait makes sure we deregister the job from monitoring and also
+        #       removes the stdfiles as/if requested
+        returncode = await self.wait()
+        stdout, stderr = await self._read_stdfiles()
+        return stdout, stderr
 
     def send_signal(self, signal):
         # TODO: write this! (if we actually need it?)
         #       [should be doable via scancel, which can send signals to jobs]
+        #       [could maybe also work using scontrol
+        #        (which makes the state change know to slumr demon)]
         raise NotImplementedError
 
     def terminate(self) -> None:
@@ -678,7 +859,7 @@ class SlurmProcess:
         SlurmCancelationError
             If scancel has non-zero returncode.
         RuntimeError
-            If no jobid is known, e.g. becasue the job was never submitted.
+            If no jobid is known, e.g. because the job was never submitted.
         """
         if self._jobid is not None:
             scancel_cmd = f"{self.scancel_executable} {self._jobid}"
@@ -697,6 +878,9 @@ class SlurmProcess:
                          + f"scancel returned {scancel_out}.")
             # remove the job from the monitoring
             self.slurm_cluster_mediator.monitor_remove_job(jobid=self._jobid)
+            if self._stdfiles_removal == "yes" or self._stdfiles_removal == "always":
+                # and remove stdfiles as/if requested
+                self._remove_stdfiles_sync()
         else:
             # we probably never submitted the job?
             raise RuntimeError("self.jobid is not set, can not cancel a job "
@@ -705,6 +889,55 @@ class SlurmProcess:
     def kill(self) -> None:
         """Alias for :meth:`terminate`."""
         self.terminate()
+
+
+async def create_slurmprocess_submit(jobname: str,
+                                     sbatch_script: str,
+                                     workdir: str,
+                                     stdfiles_removal: str = "success",
+                                     stdin: typing.Optional[str] = None,
+                                     **kwargs,
+                                     ):
+    """
+    Create and submit a SlurmProcess.
+
+    All arguments are directly passed trough to :meth:`SlurmProcess.__init__`
+    and :meth:`SlurmProcess.submit`.
+
+    Parameters
+    ----------
+    jobname : str
+        SLURM jobname (``--job-name``).
+    sbatch_script : str
+        Absolute or relative path to a SLURM submission script.
+    workdir : str
+        Absolute or relative path to use as working directory.
+    stdfiles_removal : str
+        Whether to remove the stdout, stderr (and possibly stdin) files.
+        Possible values are:
+
+         - "success": remove on sucessful completion, i.e. zero returncode)
+         - "no": never remove
+         - "yes"/"always": remove on job completion independent of
+           returncode and also when using :meth:`terminate`
+
+    stdin : str or None
+        If given it is interpreted as a file to which we connect the batch
+        scripts stdin via sbatchs ``--input`` option. This enables sending
+        data to the processes stdin via :meth:`communicate`.
+        Note that if it is desired to send data to the process the process
+        has to be submited with stdin.
+
+    Returns
+    -------
+    SlurmProcess
+        The submitted slurm process instance.
+    """
+    proc = SlurmProcess(jobname=jobname, sbatch_script=sbatch_script,
+                        workdir=workdir, stdfiles_removal=stdfiles_removal,
+                        **kwargs)
+    await proc.submit(stdin=stdin)
+    return proc
 
 
 def set_slurm_settings(sinfo_executable: str = "sinfo",
