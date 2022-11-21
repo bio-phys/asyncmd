@@ -13,7 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import pytest
-from unittest.mock import AsyncMock
 
 
 from asyncmd.gromacs import MDP
@@ -21,7 +20,7 @@ from asyncmd.gromacs import MDP
 
 class Test_MDP:
     # NOTE: we are not testing any of the FLOAT,INT,STR params (yet)!
-    def setup(self):
+    def setup_method(self):
         # just an empty file
         empty_mdp_file = "tests/test_data/gromacs/empty.mdp"
         self.empty_mdp = MDP(original_file=empty_mdp_file)

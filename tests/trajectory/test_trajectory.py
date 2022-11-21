@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock
 
 import asyncmd
 from asyncmd import Trajectory
-from asyncmd.config import _GLOBALS
+from asyncmd.config import _GLOBALS  # noqa: F401
 from asyncmd.trajectory.trajectory import (TrajectoryFunctionValueCacheMEMORY,
                                            TrajectoryFunctionValueCacheNPZ,
                                            TrajectoryFunctionValueCacheH5PY,
@@ -34,7 +34,7 @@ from asyncmd.trajectory.functionwrapper import TrajectoryFunctionWrapper
 class TBase:
     # base class all trajectory.py tests
     # contains general purpose data generation/setup functions
-    def setup(self):
+    def setup_method(self):
         # define functions for data generation and bind them to the test class
         self.ran_gen = np.random.default_rng()
         ii64 = np.iinfo(np.int64)
@@ -63,8 +63,8 @@ class TBase:
 
 
 class Test_Trajectory(TBase):
-    def setup(self):
-        super().setup()
+    def setup_method(self):
+        super().setup_method()
 
     @pytest.mark.parametrize(["traj_file", "struct_file", "truth"],
                              [("tests/test_data/trajectory/ala_traj.trr",
@@ -214,8 +214,8 @@ class Test_Trajectory(TBase):
                                 "__ne__": True,
                                 }
                                ),
-                               # same for lists of trajs
-                               # two times the same traj with the same struct
+                              # same for lists of trajs
+                              # two times the same traj with the same struct
                               ((["tests/test_data/trajectory/ala_traj.trr",
                                  "tests/test_data/trajectory/ala_traj.trr"],
                                 ["tests/test_data/trajectory/ala_traj.trr",
@@ -506,8 +506,8 @@ class Test_Trajectory(TBase):
 
 
 class Test_TrajectoryFunctionValueCache(TBase):
-    def setup(self):
-        super().setup()
+    def setup_method(self):
+        super().setup_method()
 
     @pytest.mark.parametrize("cache_class",
                              [TrajectoryFunctionValueCacheNPZ,

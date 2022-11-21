@@ -200,7 +200,7 @@ class DummyLineBasedMDConfig(LineBasedMDConfig):
 
 
 class Test_LineBasedMDConfig:
-    def setup(self):
+    def setup_method(self):
         def compare_mdconf_vals_to_beauty(mdconf, beauty):
             # make sure that we do not have any extra keys!
             assert len(mdconf) == len(beauty)
