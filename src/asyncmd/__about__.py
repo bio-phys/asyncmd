@@ -63,7 +63,7 @@ __author_email__ = "hendrik.andre.jung@googlemail.com"
 __license__ = "GNU General Public License v3 or later (GPLv3+)"
 __copyright__ = "2022 {:s}".format(__author__)
 # sort out if we have a git (commit) version
-base_version = "0.1.0.rc1"
+base_version = "0.2.0.rc1"
 git_version = _get_git_version()
 if git_version is None:
     # no git installed
