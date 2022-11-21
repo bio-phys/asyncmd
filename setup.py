@@ -86,7 +86,7 @@ setup(
         long_description_content_type="text/markdown",
         packages=PACKAGES,
         package_dir={"": "src"},
-        python_requires=">=3.6",
+        python_requires=">=3.9",
         zip_safe=False,
         classifiers=CLASSIFIERS,
         setup_requires=SETUP_REQUIRES,
