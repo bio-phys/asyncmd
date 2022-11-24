@@ -81,3 +81,41 @@ def nstout_from_mdconfig(mdconfig: MDConfig, output_traj_type: str) -> int:
     else:
         raise ValueError(f"mdconfig {mdconfig} is not a known MDConfig class."
                          + " Maybe someone just forgot to add the function?")
+
+
+def ensure_mdconfig_options(mdconfig: MDConfig, genvel: str = "no",
+                            continuation: str = "yes") -> MDConfig:
+    """
+    Ensure that some commonly used mdconfig options have the given values.
+
+    NOTE: Modifies the `MDConfig` inplace and returns it.
+
+    Parameters
+    ----------
+    mdconfig : MDConfig
+        Config object for which values should be ensured.
+    genvel : str, optional
+        Whether to generate velocities from a Maxwell-Boltzmann distribution
+        ("yes" or "no"), by default "no".
+    continuation : str, optional
+        Whether to apply constraints to the initial configuration
+        ("yes" or "no"), by default "yes"
+
+    Returns
+    -------
+    MDConfig
+        Reference to input config object with values for options as given.
+
+    Raises
+    ------
+    ValueError
+        If the MDConfig belongs to an unknown subclass not dispatcheable to any
+        specific engine submodule.
+    """
+    if isinstance(mdconfig, gmx_config.MDP):
+        return gmx_utils.ensure_mdp_options(mdp=mdconfig, genvel=genvel,
+                                            continuation=continuation,
+                                            )
+    else:
+        raise ValueError(f"mdconfig {mdconfig} is not a known MDConfig class."
+                         + " Maybe someone just forgot to add the function?")

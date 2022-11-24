@@ -171,9 +171,9 @@ def ensure_mdp_options(mdp: MDP, genvel: str = "no", continuation: str = "yes") 
         logger.info(f"Setting 'gen-vel = {genvel}' in mdp.")
         mdp["gen-vel"] = genvel
     else:
-        if genvel_test[0] != genvel:
+        if genvel_test != genvel:
             logger.warning(f"Setting 'gen-vel = {genvel}' in mdp "
-                           + f"(was '{genvel_test[0]}').")
+                           + f"(was '{genvel_test}').")
             mdp["gen-vel"] = genvel
     try:
         # TODO/FIXME: this could also be 'unconstrained-start'!
@@ -185,9 +185,9 @@ def ensure_mdp_options(mdp: MDP, genvel: str = "no", continuation: str = "yes") 
         logger.info(f"Setting 'continuation = {continuation}' in mdp.")
         mdp["continuation"] = continuation
     else:
-        if continuation_test[0] != continuation:
+        if continuation_test != continuation:
             logger.warning(f"Setting 'continuation = {continuation}' in mdp "
-                           + f"(was '{continuation_test[0]}').")
+                           + f"(was '{continuation_test}').")
             mdp["continuation"] = continuation
 
     return mdp
