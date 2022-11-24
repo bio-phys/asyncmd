@@ -311,7 +311,21 @@ class LineBasedMDConfig(MDConfig):
         return self._config.__len__()
 
     def __repr__(self) -> str:
-        return self._config.__repr__()
+        return str({"changed": self._changed,
+                    "original_file": self.original_file,
+                    "content": self._config.__repr__(),
+                    }
+                   )
+
+    def __str__(self) -> str:
+        repr_str = (f"{type(self)} has been changed since parsing: "
+                    + f"{self._changed}\n"
+                    )
+        repr_str += "Current content:\n"
+        repr_str += "----------------\n"
+        for key, val in self.items():
+            repr_str += f"{key} : {val}\n"
+        return repr_str
 
     @property
     def original_file(self) -> str:
