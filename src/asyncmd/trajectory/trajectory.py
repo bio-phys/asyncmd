@@ -315,16 +315,42 @@ class Trajectory:
         self._len = len(u.trajectory)
         # ...the first integration step and time
         ts = u.trajectory[0]
-        # FIXME/NOTE: works only(?) for trr and xtc
+        # FIXME/NOTE: next line works only(?) for trr and xtc
         self._first_step = ts.data["step"]
-        self._first_time = ts.data["time"]
-        # ...the time diff between subsequent frames
-        self._dt = ts.data["dt"]
+        self._first_time = ts.time
+        time_offset = ts.data.get("time_offset", 0)  # need offset below
+        # ...the time diff between subsequent **frames** (not steps)
+        self._dt = ts.dt
         # ...the last integration step and time
         ts = u.trajectory[-1]
-        # FIXME/NOTE: works only(?) for trr and xtc
+        # FIXME/NOTE: next line works only(?) for trr and xtc
         self._last_step = ts.data["step"]
-        self._last_time = ts.data["time"]
+        self._last_time = ts.time
+        # check/correct for wraparounds in the integration step numbers
+        # NOTE: stricly spoken we should not assume wraparound behavior,
+        #       but it seems reasonable for the stepnum,
+        #       see e.g. https://www.airs.com/blog/archives/120
+        delta_s = self._last_step - self._first_step
+        delta_t = self._last_time - self._first_time
+        # NOTE: should we round or floor? I (hejung) think round is what we
+        #       want, it will get us to the nearest int, which is good if
+        #       we e.g. have 0.99999999999 instead of 1
+        if delta_s != 0:
+            if delta_s > 0:
+                # both (last and first) wrapped around the same number of times
+                integrator_dt = delta_t / delta_s
+            else:  # delta_s < 0
+                # last wrapped one time more than first
+                integrator_dt = delta_t / (delta_s + 2**32)
+            first_step = round((self._first_time - time_offset) / integrator_dt)
+            last_step = round((self._last_time - time_offset) / integrator_dt)
+            self._first_step = first_step
+            self._last_step = last_step
+        else:  # delta_s == 0
+            # no way of finding the integrator_dt so we just use last and first
+            # steps as read from the underlying traj
+            logger.info("Can not correct for potential wraparound of the "
+                        + f"integration step because {self} has only one frame.")
 
     def __len__(self) -> int:
         """
