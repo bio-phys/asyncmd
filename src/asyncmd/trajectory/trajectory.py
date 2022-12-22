@@ -326,6 +326,15 @@ class Trajectory:
         # FIXME/NOTE: next line works only(?) for trr and xtc
         self._last_step = ts.data["step"]
         self._last_time = ts.time
+        # make sure first and last time have the same offset, if they
+        # do not our calculation below will be wrong!
+        # Also it probably means someone mixed trajectory parts
+        # from different engine runs, i.e. not good anyway and we warn :)
+        if ts.data.get("time_offset", 0) != time_offset:
+            logger.warning(f"Time offset of the first and last time in {self}"
+                           + " do not match. Not correcting for potential "
+                           + "wraparound of the integration step.")
+            return  # bail out!
         # check/correct for wraparounds in the integration step numbers
         # NOTE: stricly spoken we should not assume wraparound behavior,
         #       but it seems reasonable for the stepnum,
@@ -336,12 +345,18 @@ class Trajectory:
         #       want, it will get us to the nearest int, which is good if
         #       we e.g. have 0.99999999999 instead of 1
         if delta_s != 0:
+            # Note: times are in pico second
+            # we round integrator_dt to precision 0.000001 ps = 0.001 fs = 1 as
+            # we do this to avoid accumulating floating point inaccuracies when
+            # dividing the times by integrator_dt, this should be reasonably
+            # save for normal MD settings where integrator_dt should be on the
+            # order of 1-10 fs
             if delta_s > 0:
                 # both (last and first) wrapped around the same number of times
-                integrator_dt = delta_t / delta_s
+                integrator_dt = round(delta_t / delta_s, ndigits=6)
             else:  # delta_s < 0
                 # last wrapped one time more than first
-                integrator_dt = delta_t / (delta_s + 2**32)
+                integrator_dt = round(delta_t / (delta_s + 2**32), ndigits=6)
             first_step = round((self._first_time - time_offset) / integrator_dt)
             last_step = round((self._last_time - time_offset) / integrator_dt)
             self._first_step = first_step
