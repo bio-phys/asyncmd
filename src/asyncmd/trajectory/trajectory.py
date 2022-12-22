@@ -335,8 +335,13 @@ class Trajectory:
                            + " do not match. Not correcting for potential "
                            + "wraparound of the integration step.")
             return  # bail out!
+        if self.trajectory_files[0].lower().endswith((".xtc", ".trr")):
+            # bail out if traj is not an XTC or TRR
+            logger.info(f"{self} is not of type XTC or TRR. Not applying "
+                        + "wraparound fix.")
+            return
         # check/correct for wraparounds in the integration step numbers
-        # NOTE: stricly spoken we should not assume wraparound behavior,
+        # NOTE: strictly spoken we should not assume wraparound behavior,
         #       but it seems reasonable for the stepnum,
         #       see e.g. https://www.airs.com/blog/archives/120
         delta_s = self._last_step - self._first_step
