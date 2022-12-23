@@ -315,19 +315,24 @@ class Trajectory:
         self._len = len(u.trajectory)
         # ...the first integration step and time
         ts = u.trajectory[0]
-        # FIXME/NOTE: next line works only(?) for trr and xtc
-        self._first_step = ts.data["step"]
+        # FIXME: using None here means we will try to repopulate the properties
+        #        every time we access step property for a traj-format which
+        #        does not have step data!
+        # TODO: which traj formats have step data set in MDAnalysis?
+        #       XTC and TRR have it for sure (with the wraparound issue)
+        self._first_step = ts.data.get("step", None)
         self._first_time = ts.time
         time_offset = ts.data.get("time_offset", 0)  # need offset below
         # ...the time diff between subsequent **frames** (not steps)
         self._dt = ts.dt
         # ...the last integration step and time
         ts = u.trajectory[-1]
-        # FIXME/NOTE: next line works only(?) for trr and xtc
-        self._last_step = ts.data["step"]
+        # TODO: which traj formats have step data set in MDAnalysis?
+        #       XTC and TRR have it for sure (with the wraparound issue)
+        self._last_step = ts.data.get("step", None)
         self._last_time = ts.time
         # make sure first and last time have the same offset, if they
-        # do not our calculation below will be wrong!
+        # do not our calculation to fix the step wraparound will be wrong!
         # Also it probably means someone mixed trajectory parts
         # from different engine runs, i.e. not good anyway and we warn :)
         if ts.data.get("time_offset", 0) != time_offset:
@@ -336,32 +341,56 @@ class Trajectory:
                            + "wraparound of the integration step.")
             return  # bail out!
         if self.trajectory_files[0].lower().endswith((".xtc", ".trr")):
+            self._fix_trr_xtc_step_wraparound(time_offset=time_offset,
+                                              universe=u)
+        else:
             # bail out if traj is not an XTC or TRR
             logger.info(f"{self} is not of type XTC or TRR. Not applying "
                         + "wraparound fix.")
-            return
+
+    def _fix_trr_xtc_step_wraparound(self, time_offset: float,
+                                     universe: mda.Universe) -> None:
         # check/correct for wraparounds in the integration step numbers
         # NOTE: strictly spoken we should not assume wraparound behavior,
         #       but it seems reasonable for the stepnum,
         #       see e.g. https://www.airs.com/blog/archives/120
+        # all times are in pico second (as this is MDAnalysis unit of time)
+        # we round integrator_dt and delta_t to precision of
+        # 0.000001 ps = 0.001 fs = 1 as
+        # we do this to avoid accumulating floating point inaccuracies when
+        # dividing the times by integrator_dt, this should be reasonably
+        # save for normal MD settings where integrator_dt should be on the
+        # order of 1-10 fs
         delta_s = self._last_step - self._first_step
-        delta_t = self._last_time - self._first_time
-        # NOTE: should we round or floor? I (hejung) think round is what we
-        #       want, it will get us to the nearest int, which is good if
-        #       we e.g. have 0.99999999999 instead of 1
+        delta_t = round(self._last_time - self._first_time, ndigits=6)
+        # first make sure traj is continous (i.e. not a concatenation where we
+        #  carried over the time and step data from the original trajs)
+        n_frames = len(universe.trajectory)
+        n_max_samples = 100  # use at most 100 frames to see if it is continous
+        if n_frames > n_max_samples:
+            skip = n_frames // n_max_samples
+        else:
+            skip = 1
+        step_nums = [ts.data["step"] for ts in universe.trajectory[::skip]]
+        step_diffs = np.diff(step_nums)
+        if not (np.all(step_diffs == skip) or np.all(step_diffs == -skip)):
+            # bail out because traj is not continous in time
+            logger.debug(f"{self} is not from one continous propagation, i.e."
+                         + " the step difference between subsequent steps is "
+                         + "not constant. Not applying TRR/XTC step wraparound"
+                         + " fix and using step as read from the underlying"
+                         + " trajectory.")
+        # now the actual fix
         if delta_s != 0:
-            # Note: times are in pico second
-            # we round integrator_dt to precision 0.000001 ps = 0.001 fs = 1 as
-            # we do this to avoid accumulating floating point inaccuracies when
-            # dividing the times by integrator_dt, this should be reasonably
-            # save for normal MD settings where integrator_dt should be on the
-            # order of 1-10 fs
             if delta_s > 0:
                 # both (last and first) wrapped around the same number of times
                 integrator_dt = round(delta_t / delta_s, ndigits=6)
             else:  # delta_s < 0
                 # last wrapped one time more than first
                 integrator_dt = round(delta_t / (delta_s + 2**32), ndigits=6)
+            # NOTE: should we round or floor? I (hejung) think round is what we
+            #       want, it will get us to the nearest int, which is good if
+            #       we e.g. have 0.99999999999 instead of 1
             first_step = round((self._first_time - time_offset) / integrator_dt)
             last_step = round((self._last_time - time_offset) / integrator_dt)
             self._first_step = first_step
