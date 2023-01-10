@@ -55,7 +55,8 @@ class Trajectory:
     concatenated trajectory.
     """
 
-    def __init__(self, trajectory_files: typing.Union[list[str],str], structure_file: str,
+    def __init__(self, trajectory_files: typing.Union[list[str], str],
+                 structure_file: str,
                  nstout: typing.Optional[int] = None,
                  cache_type: typing.Optional[str] = None,
                  **kwargs):
@@ -331,16 +332,17 @@ class Trajectory:
         #       XTC and TRR have it for sure (with the wraparound issue)
         self._last_step = ts.data.get("step", None)
         self._last_time = ts.time
-        # make sure first and last time have the same offset, if they
-        # do not our calculation to fix the step wraparound will be wrong!
-        # Also it probably means someone mixed trajectory parts
-        # from different engine runs, i.e. not good anyway and we warn :)
-        if ts.data.get("time_offset", 0) != time_offset:
-            logger.warning(f"Time offset of the first and last time in {self}"
-                           + " do not match. Not correcting for potential "
-                           + "wraparound of the integration step.")
-            return  # bail out!
-        if self.trajectory_files[0].lower().endswith((".xtc", ".trr")):
+        if all([t.lower().endswith((".xtc", ".trr"))
+                for t in self.trajectory_files]):
+            # make sure first and last time have the same offset, if they
+            # do not our calculation to fix the step wraparound will be off
+            if ts.data.get("time_offset", 0) != time_offset:
+                logger.warning("Time offset of the first and last time in "
+                               + f"{self} do not match. Not correcting for"
+                               + " potential wraparound of the integration"
+                               + "step."
+                               )
+                return  # bail out!
             self._fix_trr_xtc_step_wraparound(time_offset=time_offset,
                                               universe=u)
         else:
@@ -380,6 +382,7 @@ class Trajectory:
                          + "not constant. Not applying TRR/XTC step wraparound"
                          + " fix and using step as read from the underlying"
                          + " trajectory.")
+            return
         # now the actual fix
         if delta_s != 0:
             if delta_s > 0:
