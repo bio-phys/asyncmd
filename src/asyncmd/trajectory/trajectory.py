@@ -375,9 +375,15 @@ class Trajectory:
             skip = 1
         step_nums = [ts.data["step"] for ts in universe.trajectory[::skip]]
         step_diffs = np.diff(step_nums)
-        if not (np.all(step_diffs == skip) or np.all(step_diffs == -skip)):
-            # bail out because traj is not continous in time
-            logger.debug(f"{self} is not from one continous propagation, i.e."
+        first_diff = step_diffs[0]
+        if first_diff < 0:
+            # we possibly wrapped around at the first step
+            first_diff += 2**32
+        for diff in step_diffs[1:]:
+            if diff != first_diff:
+                # bail out because traj is not continous in time
+                logger.debug(
+                         f"{self} is not from one continous propagation, i.e."
                          + " the step difference between subsequent steps is "
                          + "not constant. Not applying TRR/XTC step wraparound"
                          + " fix and using step as read from the underlying"
