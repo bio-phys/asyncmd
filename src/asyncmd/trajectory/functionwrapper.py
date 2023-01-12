@@ -409,6 +409,8 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         # first construct the path/name for the numpy npy file in which we expect
         # the results to be written
         tra_dir, tra_name = os.path.split(traj.trajectory_files[0])
+        if len(traj.trajectory_files) > 1:
+            tra_name += f"_len{len(traj.trajectory_files)}multipart"
         hash_part = str(traj.trajectory_hash)[:5]
         # put in the hash (calculated over all traj parts for multipart)
         # to make sure trajectories with the same first part but different
