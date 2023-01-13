@@ -466,6 +466,7 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             returncode = slurm_proc.returncode
         except asyncio.CancelledError:
             slurm_proc.kill()
+            # TODO/FIXME: remove slurm sbatch file!
             raise  # reraise for encompassing coroutines
         else:
             if returncode != 0:
