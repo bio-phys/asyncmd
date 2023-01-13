@@ -478,7 +478,6 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                             + f" stderr was: {stderr.decode()}."
                             + f" and stdout was: {stdout.decode()}"
                                     )
-            os.remove(sbatch_fname)
             if self.load_results_func is None:
                 # we do not have '.npy' ending in results_file,
                 # numpy.save() adds it if it is not there, so we need it here
