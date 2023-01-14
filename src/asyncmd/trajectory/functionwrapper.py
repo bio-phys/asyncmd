@@ -20,6 +20,8 @@ import inspect
 import logging
 import hashlib
 import functools
+import aiofiles
+import aiofiles.os
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
@@ -445,8 +447,8 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             # TODO: should we raise an error?
             logger.error(f"Overwriting exisiting submission file ({sbatch_fname}).")
         async with _SEMAPHORES["MAX_FILES_OPEN"]:
-            with open(sbatch_fname, 'w') as f:
-                f.write(script)
+            async with aiofiles.open(sbatch_fname, 'w') as f:
+                await f.write(script)
         # and submit it
         if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
             await _SEMAPHORES["SLURM_MAX_JOB"].acquire()
@@ -466,8 +468,16 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             returncode = slurm_proc.returncode
         except asyncio.CancelledError:
             slurm_proc.kill()
-            # TODO/FIXME: remove slurm sbatch file!
-            raise  # reraise for encompassing coroutines
+            # clean up the sbatch file
+            await aiofiles.os.remove(sbatch_fname)
+            # clean up potentialy written result file
+            fname = (result_file + ".npy" if self.load_results_func is None
+                     else result_file)
+            try:
+                await aiofiles.os.remove(fname)
+            except FileNotFoundError:
+                pass
+            raise  # reraise CancelledError for encompassing coroutines
         else:
             if returncode != 0:
                 raise RuntimeError(
@@ -483,11 +493,11 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                 # we do not have '.npy' ending in results_file,
                 # numpy.save() adds it if it is not there, so we need it here
                 vals = np.load(result_file + ".npy")
-                os.remove(result_file + ".npy")
+                await aiofiles.os.remove(result_file + ".npy")
             else:
                 # use custom loading function from user
                 vals = self.load_results_func(result_file)
-                os.remove(result_file)
+                await aiofiles.os.remove(result_file)
             return vals
         finally:
             if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
