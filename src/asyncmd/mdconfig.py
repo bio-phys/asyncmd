@@ -374,7 +374,7 @@ class LineBasedMDConfig(MDConfig):
             #       newline chars for us :)
             parsed = {}
             for line in f:
-                line_parsed = self._parse_line(line)
+                line_parsed = self._parse_line(line.rstrip("\n"))
                 # check for duplicate options, we warn but take the last one
                 for key in line_parsed:
                     try:

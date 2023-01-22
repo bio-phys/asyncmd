@@ -607,11 +607,11 @@ class GmxEngine(MDEngine):
                                                 cwd=workdir,
                                                                )
             stdout, stderr = await grompp_proc.communicate()
-            logger.debug(f"grompp stdout: {stdout.decode()}.")
-            # gromacs likes to talk on stderr ;)
-            logger.debug(f"grompp stderr: {stderr.decode()}.")
             return_code = grompp_proc.returncode
             logger.info(f"grompp command returned {return_code}.")
+            logger.debug(f"grompp stdout:\n{stdout.decode()}")
+            # gromacs likes to talk on stderr ;)
+            logger.debug(f"grompp stderr:\n{stderr.decode()}")
             if return_code != 0:
                 # this assumes POSIX
                 raise RuntimeError("grompp had non-zero return code "

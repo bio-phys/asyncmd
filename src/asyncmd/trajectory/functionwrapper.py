@@ -20,6 +20,8 @@ import inspect
 import logging
 import hashlib
 import functools
+import aiofiles
+import aiofiles.os
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
@@ -409,6 +411,8 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         # first construct the path/name for the numpy npy file in which we expect
         # the results to be written
         tra_dir, tra_name = os.path.split(traj.trajectory_files[0])
+        if len(traj.trajectory_files) > 1:
+            tra_name += f"_len{len(traj.trajectory_files)}multipart"
         hash_part = str(traj.trajectory_hash)[:5]
         # put in the hash (calculated over all traj parts for multipart)
         # to make sure trajectories with the same first part but different
@@ -443,8 +447,8 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             # TODO: should we raise an error?
             logger.error(f"Overwriting exisiting submission file ({sbatch_fname}).")
         async with _SEMAPHORES["MAX_FILES_OPEN"]:
-            with open(sbatch_fname, 'w') as f:
-                f.write(script)
+            async with aiofiles.open(sbatch_fname, 'w') as f:
+                await f.write(script)
         # and submit it
         if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
             await _SEMAPHORES["SLURM_MAX_JOB"].acquire()
@@ -464,7 +468,16 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             returncode = slurm_proc.returncode
         except asyncio.CancelledError:
             slurm_proc.kill()
-            raise  # reraise for encompassing coroutines
+            # clean up the sbatch file
+            await aiofiles.os.remove(sbatch_fname)
+            # clean up potentialy written result file
+            fname = (result_file + ".npy" if self.load_results_func is None
+                     else result_file)
+            try:
+                await aiofiles.os.remove(fname)
+            except FileNotFoundError:
+                pass
+            raise  # reraise CancelledError for encompassing coroutines
         else:
             if returncode != 0:
                 raise RuntimeError(
@@ -476,16 +489,15 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                             + f" stderr was: {stderr.decode()}."
                             + f" and stdout was: {stdout.decode()}"
                                     )
-            os.remove(sbatch_fname)
             if self.load_results_func is None:
                 # we do not have '.npy' ending in results_file,
                 # numpy.save() adds it if it is not there, so we need it here
                 vals = np.load(result_file + ".npy")
-                os.remove(result_file + ".npy")
+                await aiofiles.os.remove(result_file + ".npy")
             else:
                 # use custom loading function from user
                 vals = self.load_results_func(result_file)
-                os.remove(result_file)
+                await aiofiles.os.remove(result_file)
             return vals
         finally:
             if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
