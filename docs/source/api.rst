@@ -5,14 +5,24 @@ trajectory
 **********
 The :py:mod:`asyncmd.trajectory` module contains a
 :py:class:`asyncmd.Trajectory` class which is the return object for all MD
-engines. There are also a number of ``TrajectoryFunctionWrapper`` classes which
+engines. These objects enable easy access to a number properties of the
+underlying trajectory, like the length in frames or time, the intergration step
+and many more. Note :py:class:`asyncmd.Trajectory` are unique objects in the
+sense that every combination of underlying ``trajectory_files`` will give you the
+same object back even if you instantiate it multiple times, i.e. ``is`` will be
+``True`` for the two objects (in addition to ``==`` beeing ``True``).
+
+..
+   TODO: reference to the dev section where we explain the two hidden funcs
+   to forget traj objects
+
+There are also a number of ``TrajectoryFunctionWrapper`` classes which
 can be used to wrapp (python) functions or arbitrary executables for easy
 asyncronous application on :py:class:`asyncmd.Trajectory`, either submitted
-via slurm or ran locally.
-The benefit of these wrapped functions is that the calculated CV values will be
-cached automatically. The caching is even persistent over multiple reloads and
-invocations of the python interpreter. To this end the default caching
-mechanism creates hidden numpy npz files for every
+via slurm or ran locally. The benefit of the wrapped functions is that the
+calculated values will be cached automatically. The caching is even persistent
+over multiple reloads and invocations of the python interpreter. To this end
+the default caching mechanism creates hidden numpy npz files for every
 :py:class:`asyncmd.Trajectory` (named after the trajectory) in which the values
 are stored. Other caching mechanism are an in-memory cache and the option to
 store all cached values in a :py:class:`h5py.File` or :py:class:`h5py.Group`.
