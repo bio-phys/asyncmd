@@ -80,6 +80,12 @@ class MDEngine(abc.ABC):
         # NOTE: this should not be implemented as a property in subclasses
         #       as it must be available at the classlevel too
         #       so cls.output_traj_type must also be the string
+        #       If you want/need to check the values (i.e. you would like to
+        #       execute code like in a property) have a look at the descriptor
+        #       implementation in gromacs/mdengine.py which checks for allowed
+        #       values (at least when set on an instance) but is accesible from
+        #       the class level too, e.g. like a 'classproperty' (which is not
+        #        a thing in python)
         raise NotImplementedError
 
     # TODO/FIXME: remove this function?
