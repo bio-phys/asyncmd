@@ -117,7 +117,8 @@ class TrajectoryConcatenator:
         # if the file exists MDAnalysis will silently overwrite
         with mda.Writer(tra_out, n_atoms=u0.trajectory.n_atoms) as W:
             for ts in u0.trajectory[start0:stop0:step0]:
-                if self.invert_v_for_negative_step and step0 < 0:
+                if (self.invert_v_for_negative_step and step0 < 0
+                                                    and ts.has_velocities):
                     u0.atoms.velocities *= -1
                 W.write(u0.atoms)
                 if remove_double_frames:
@@ -134,7 +135,8 @@ class TrajectoryConcatenator:
                             # this is a no-op, as they are they same...
                             # last_time_seen = ts.data["time"]
                             continue  # skip this timestep/go to next iteration
-                    if self.invert_v_for_negative_step and step < 0:
+                    if (self.invert_v_for_negative_step and step < 0
+                                                        and ts.has_velocities):
                         u.atoms.velocities *= -1
                     W.write(u.atoms)
                     if remove_double_frames:

@@ -37,6 +37,52 @@ from ..tools import ensure_executable_available
 logger = logging.getLogger(__name__)
 
 
+class _descriptor_on_instance_and_class:
+    # a descriptor that makes the (default) value of the private attribute
+    # "_name" accessible as "name" on both the class and the instance level
+    # Accessing the default value works from the class-level, i.e. without
+    # instantiating the object, but note that setting on the class level
+    # overwrites the descriptor and does not call __set__
+    # Setting from an instance calls __set__ and therefore only sets
+    # the attribute for the given instance (and also runs our checks)
+    def __set_name__(self, owner, name):
+        self.public_name = name
+        self.private_name = "_" + name
+
+    def __get__(self, obj, objtype=None):
+        if obj is None:
+            # I (hejung) think if obj is None objtype will always be set
+            # to the class of the obj
+            obj = objtype
+        val = getattr(obj, self.private_name)
+        return val
+
+    def __set__(self, obj, val):
+        setattr(obj, self.private_name, val)
+
+
+class _descriptor_output_traj_type(_descriptor_on_instance_and_class):
+    # Check the output_traj_type for consistency before setting
+    def __set__(self, obj, val):
+        allowed_values = ["trr", "xtc"]
+        val = val.lower()
+        if val not in allowed_values:
+            raise ValueError("output_traj_type must be one of "
+                             + f"{allowed_values}, but was {val}."
+                             )
+        return super().__set__(obj, val)
+
+
+class _descriptor_check_executable(_descriptor_on_instance_and_class):
+    # check if a given value is a valid executable when setting it
+    # we use this to make sure gmx grompp and gmx mdrun are available as set
+    def __set__(self, obj, val):
+        # split because mdrun and grompp can be both subcommands of gmx
+        test_exe = val.split(" ")[0]
+        ensure_executable_available(test_exe)
+        return super().__set__(obj, val)
+
+
 # NOTE: with tra we usually mean trr, i.e. a full precision trajectory with velocities
 class GmxEngine(MDEngine):
     """
@@ -71,7 +117,9 @@ class GmxEngine(MDEngine):
 
     # local prepare and option to run a local gmx (mainly for testing)
     _grompp_executable = "gmx grompp"
+    grompp_executable = _descriptor_check_executable()
     _mdrun_executable = "gmx mdrun"
+    mdrun_executable = _descriptor_check_executable()
     # extra_args are expected to be str and will be appended to the end of the
     # respective commands after a separating space,
     # i.e. cmd = base_cmd + " " + extra_args
@@ -82,7 +130,8 @@ class GmxEngine(MDEngine):
     # NOTE: this will be the traj we count frames for and check the mdp, etc.
     #       However this does not mean that no other trajs will/can be written,
     #       we simply ignore them
-    output_traj_type = "trr"
+    _output_traj_type = "trr"
+    output_traj_type = _descriptor_output_traj_type()
 
     def __init__(self, mdconfig, gro_file, top_file, ndx_file=None, **kwargs):
         """
@@ -137,6 +186,10 @@ class GmxEngine(MDEngine):
         # available + executable
         self.mdrun_executable = self.mdrun_executable
         self.grompp_executable = self.grompp_executable
+        # same for output traj type, check if it is in allowed values and
+        # TODO: in the future we want to possibly check if that traj type is
+        # actually written with current mdp settings?
+        self.output_traj_type = self.output_traj_type
         self._workdir = None
         self._prepared = False
         # NOTE: frames_done and steps_done do not have an easy relation!
@@ -162,27 +215,6 @@ class GmxEngine(MDEngine):
             # cant pickle the process, + its probably dead when we unpickle :)
             state["_proc"] = None
         return state
-
-    @property
-    def grompp_executable(self):
-        return self._grompp_executable
-
-    @grompp_executable.setter
-    def grompp_executable(self, val):
-        # split because mdrun and grompp can be both subcommands of gmx
-        test_exe = val.split(" ")[0]
-        ensure_executable_available(test_exe)
-        self._grompp_executable = val
-
-    @property
-    def mdrun_executable(self):
-        return self._mdrun_executable
-
-    @mdrun_executable.setter
-    def mdrun_executable(self, val):
-        test_exe = val.split(" ")[0]
-        ensure_executable_available(test_exe)
-        self._mdrun_executable = val
 
     @property
     def current_trajectory(self):
@@ -250,7 +282,7 @@ class GmxEngine(MDEngine):
     @workdir.setter
     def workdir(self, value):
         if not os.path.isdir(value):
-            raise ValueError(f"Not a directory ({value}).")
+            raise TypeError(f"Not a directory ({value}).")
         value = os.path.abspath(value)
         self._workdir = value
 

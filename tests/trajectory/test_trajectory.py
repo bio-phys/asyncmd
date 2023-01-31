@@ -65,6 +65,7 @@ class TBase:
 class Test_Trajectory(TBase):
     def setup_method(self):
         super().setup_method()
+        asyncmd.trajectory._forget_all_trajectories()
 
     @pytest.mark.parametrize(["traj_file", "struct_file", "truth"],
                              [("tests/test_data/trajectory/ala_traj.trr",
@@ -284,6 +285,9 @@ class Test_Trajectory(TBase):
         # we use two equal trajs and then modfify one of them selectively
         # i.e. at single points (possibly with mocks) to make them uneqal
         def make_traj():
+            # need to forget all trajectories such that we actually get
+            # a new object for the same trajectory(_files)
+            asyncmd.trajectory._forget_all_trajectories()
             return Trajectory(
                     trajectory_files="tests/test_data/trajectory/ala_traj.trr",
                     structure_file="tests/test_data/trajectory/ala.tpr",
@@ -305,9 +309,6 @@ class Test_Trajectory(TBase):
         traj2._trajectory_files += ["test123"]
         assert_neq(traj1, traj2)
         traj2 = make_traj()  # get a new traj2
-        # modify length of the traj
-        traj2._len = 0
-        assert_neq(traj1, traj2)
         # modify hash
         traj2 = make_traj()  # get a new traj2
         traj2._traj_hash += 1

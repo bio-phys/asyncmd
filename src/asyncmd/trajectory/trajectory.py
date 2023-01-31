@@ -31,6 +31,54 @@ from .._config import _GLOBALS
 logger = logging.getLogger(__name__)
 
 
+# dictionary in which we keep track of trajectory objects
+# we use it to always return the *same* object for the same trajectory (by hash)
+# this makes it easy to ensure that we never calculate CV functions twice
+_TRAJECTORIES_BY_HASH = {}
+
+
+def _forget_all_trajectories() -> None:
+    """
+    Forget about the existence of all :class:`Trajectory` objects.
+
+    This will result in new :class:`Trajectory` objects beeing created even for
+    the same underlying trajectory_files. Usualy you do not want this as it
+    results in unecessary calculations if the same wrapped and cached function
+    is applied to both objects. This function exists as a hidden function as it
+    is used in the tests and it might be helpful under certain circumstances.
+    Use only if you know why you are using it!
+    """
+    global _TRAJECTORIES_BY_HASH
+    all_keys = set(_TRAJECTORIES_BY_HASH.keys())
+    for key in all_keys:
+        del _TRAJECTORIES_BY_HASH[key]
+
+
+def _forget_trajectory(traj_hash: int) -> None:
+    """
+    Forget about the existence of a given :class:`Trajectory` object.
+
+    This will result in new :class:`Trajectory` objects beeing created even for
+    the same underlying trajectory_files. Usualy you do not want this as it
+    results in unecessary calculations if the same wrapped and cached function
+    is applied to both objects. This function exists as a hidden function as it
+    is used when deleting a :class:`Trajectory` (i.e. calling its `__del__`
+    method) and it might be helpful under certain circumstances. Use only if
+    you know why you are using it!
+
+    Parameters
+    ----------
+    traj_hash : int
+        The hash of the :class:`Trajectory` to forget about.
+    """
+    global _TRAJECTORIES_BY_HASH
+    try:
+        del _TRAJECTORIES_BY_HASH[traj_hash]
+    except KeyError:
+        # not in there, do nothing
+        pass
+
+
 class Trajectory:
     """
     Represent a trajectory.
@@ -89,7 +137,6 @@ class Trajectory:
         # NOTE: we assume tra = trr and struct = tpr
         #       but we also expect that anything which works for mdanalysis as
         #       tra and struct should also work here as tra and struct
-
         # TODO: currently we do not use kwargs?!
         #dval = object()
         #for kwarg, value in kwargs.items():
@@ -103,47 +150,16 @@ class Trajectory:
         #                        + f"mismatching type ({type(value)}). "
         #                        + f" Default type is {type(cval)}."
         #                        )
-        if isinstance(trajectory_files, str):
-            trajectory_files = [trajectory_files]
-        self._trajectory_files = []
-        for traj_f in trajectory_files:
-            if os.path.isfile(traj_f):
-                self._trajectory_files += [os.path.abspath(traj_f)]
-            else:
-                raise FileNotFoundError(f"Trajectory file ({traj_f}) must be "
-                                        + "accessible.")
+        # TODO: already sanitized by __new__ when calculating the traj_hash
+        #       but we get the old (pre-sanitizing) value passed to __init__
+        #       (we could call init ourselfs in __new__? but that would mess
+        #        with pickling...?)
+        self._trajectory_files = self._sanitize_trajectory_files(trajectory_files)
         if os.path.isfile(structure_file):
             self._structure_file = os.path.abspath(structure_file)
         else:
-            raise FileNotFoundError(f"structure_file ({structure_file}) must be "
-                                    + "accessible.")
-        # calculate a hash over the first part of the traj file
-        # (we use it to make sure the cached CV values match the traj)
-        # note that we do not include the structure file on purpose because
-        # that allows for changing .gro <-> .tpr or similar
-        # (which we expect to not change the calculated CV values)
-        # TODO/FIXME?: What happens if we append to an existing traj?
-        #              I [hejung] think this will only change the end of
-        #              the traj, so we would need to remember the len/size
-        #              of the traj or additionally hash the end of it?!
-        # TODO: how much should we read?
-        #      (I [hejung] think the first and last 2.5 MB are enough for sure)
-        data = bytes()
-        for traj_f in self._trajectory_files:
-            with open(traj_f, "rb") as traj_file:
-                # read the first 2.5 MB of each file
-                data += traj_file.read(2560)
-                # and read the last 2.5 MB of each file
-                traj_file.seek(-2560, io.SEEK_END)
-                data += traj_file.read(2560)
-        # calculate one hash over all traj_files
-        self._traj_hash = int(hashlib.blake2b(data,
-                                              # digest size 8 bytes = 64 bit
-                                              # to make sure the hash fits into
-                                              # the npz as int64 and not object
-                                              digest_size=8).hexdigest(),
-                              base=16,
-                              )
+            raise FileNotFoundError(f"structure_file ({structure_file}) must "
+                                    + "be accessible.")
         # properties
         self.nstout = nstout  # use the setter to make basic sanity checks
         self._len = None
@@ -161,12 +177,85 @@ class Trajectory:
         # if yes we use the (possibly changed) global default when unpickling
         self._using_default_cache_type = True
         # use our property logic for checking the value
+        # (Note that self._trajectory_hash has already been set by __new__)
         self.cache_type = cache_type
         # Locking mechanism such that only one application of a specific
         # CV func can run at any given time on this trajectory
         self._semaphores_by_func_id = collections.defaultdict(
                                                     asyncio.BoundedSemaphore
                                                               )
+
+    def __new__(cls, trajectory_files, *args, **kwargs):
+        global _TRAJECTORIES_BY_HASH  # our global traj registry
+        trajectory_files = Trajectory._sanitize_trajectory_files(trajectory_files)
+        traj_hash = Trajectory._calc_traj_hash(trajectory_files)
+        try:
+            # see if we (i.e. a traj with the same hash) are already existing
+            other_traj = _TRAJECTORIES_BY_HASH[traj_hash]
+            # if yes return 'ourself'
+            return other_traj
+        except KeyError:
+            # not yet in there, so need to create us
+            # we just create cls so that we will be "created" by init and
+            # unpickled by setstate
+            obj = super().__new__(cls)
+            # but set self._traj_hash so we dont recalculate it
+            obj._traj_hash = traj_hash
+            _TRAJECTORIES_BY_HASH[traj_hash] = obj
+            return obj
+
+    #def __del__(self):
+        # TODO: running 'del traj' does not call this function,
+        #       it only decreases the reference count by one,
+        #       but since we still have the traj in the traj by hash dictionary
+        #       i.e. we still have a reference, it will not call __del__ which
+        #       is only called when the reference count reaches zero
+    #    _forget_trajectory(traj_hash=self.trajectory_hash)
+
+    @classmethod
+    def _sanitize_trajectory_files(cls, trajectory_files) -> list[str]:
+        if isinstance(trajectory_files, str):
+            trajectory_files = [trajectory_files]
+        traj_files_sanitized = [os.path.abspath(traj_f)
+                                for traj_f in trajectory_files]
+        #traj_files_sanitized = []
+        #for traj_f in trajectory_files:
+        #    if os.path.isfile(traj_f):
+        #        traj_files_sanitized += [os.path.abspath(traj_f)]
+        #    else:
+        #        raise FileNotFoundError(f"Trajectory file ({traj_f}) must be "
+        #                                + "accessible.")
+        return traj_files_sanitized
+
+    @classmethod
+    def _calc_traj_hash(cls, trajectory_files):
+        # calculate a hash over the first and last part of the traj files
+        # (we use it to make sure the cached CV values match the traj)
+        # note that we do not include the structure file on purpose because
+        # that allows for changing .gro <-> .tpr or similar
+        # (which we expect to not change the calculated CV values)
+        # TODO: should we hash the location of the file, i.e. the path?
+        #       currently two copies of the same file at different locations
+        #       will get the same hash, which might be confusing....?
+        # TODO: how much should we read?
+        #      (I [hejung] think the first and last 2.5 MB are enough for sure)
+        data = bytes()
+        for traj_f in trajectory_files:
+            with open(traj_f, "rb") as traj_file:
+                # read the first 2.5 MB of each file
+                data += traj_file.read(2560)
+                # and read the last 2.5 MB of each file
+                traj_file.seek(-2560, io.SEEK_END)
+                data += traj_file.read(2560)
+        # calculate one hash over all traj_files
+        traj_hash = int(hashlib.blake2b(data,
+                                        # digest size 8 bytes = 64 bit
+                                        # to make sure the hash fits into
+                                        # the npz as int64 and not object
+                                        digest_size=8).hexdigest(),
+                        base=16,
+                        )
+        return traj_hash
 
     @property
     def cache_type(self):
@@ -449,11 +538,6 @@ class Trajectory:
                                              other.trajectory_files):
             if traj_f_self != traj_f_other:
                 return False
-        if len(self) != len(other):
-            # since we only hash the beginning of the file(s) they might
-            # be the same start but different number of frames/end
-            # so we check if they have the same length
-            return False
         # NOTE: we allow the structure file to change
         #       this way we consider e.g. the same traj with a gro and with a
         #       tpr (or whatever) as structure files as equal
@@ -616,6 +700,8 @@ class Trajectory:
                 self._cache_content_to_new_cache(old_cache=self._h5py_cache,
                                                  new_cache=self._npz_cache,
                                                  )
+            # and set npz cache back to None since we have not been using it
+            self._npz_cache = None
         state["_h5py_cache"] = None
         state["_npz_cache"] = None
         state["_memory_cache"] = None
@@ -633,7 +719,8 @@ class Trajectory:
             # no h5py cache has been registered but it is set as default
             # (which is intended because it is the same behavior as when
             #  initializing a new trajectory in the same situation)
-            self.cache_type = None
+            self.cache_type = None  # this calls _setup_cache
+            return  # get out of here, no need to setup the cache twice
         if self.cache_type == "h5py":
             # make sure h5py cache is set before trying to unpickle with it
             try:
@@ -642,7 +729,7 @@ class Trajectory:
                 # this will (probably) fallback to npz but I (hejung) think it
                 # is nice if we use the possibly set global default?
                 # Note that this will not err but just emit the warning to log
-                # when we change the cache but it will err when the gloabal
+                # when we change the cache but it will err when the global
                 # default cache is set to h5py (as above)
                 logger.warning(f"Trying to unpickle {self} with cache_type "
                                + "'h5py' not possible without a registered "
@@ -650,9 +737,16 @@ class Trajectory:
                                + "See 'asyncmd.config.register_h5py_cache' and"
                                + " 'asyncmd.config.set_default_cache_type'."
                                )
-                self.cache_type = None
-        # and setup the cache
+                self.cache_type = None  # this calls _setup_cache
+                return  # get out of here, no need to setup the cache twice
+        # setup the cache for all cases where we are not using default cache
+        # (or had "h5py" but could not unpickle with "h5py" now [and are
+        #  therefore also using the default])
         self._setup_cache()
+
+    def __getnewargs_ex__(self):
+        # new needs the trajectory_files to be able to calculate the traj_hash
+        return ((), {"trajectory_files": self.trajectory_files})
 
 
 class TrajectoryFunctionValueCacheMEMORY(collections.abc.Mapping):
