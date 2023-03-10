@@ -1,7 +1,5 @@
 # asyncmd
 
-[![Build Status](https://drone.kotspeicher.de/api/badges/AIMMD/asyncmd/status.svg)](https://drone.kotspeicher.de/AIMMD/asyncmd)
-
 ## Synopsis
 
 asyncmd is a library to write **concurrent** code to run and analyze molecular dynamics simulations using pythons **async/await** synthax.
@@ -66,8 +64,10 @@ For an in-depth introduction see also the `examples` folder in this repository w
 
 ### pip install directly from the repository
 
+Please note that you need to have [git-lfs] (an open source git extension) setup to get all input files needed to run the notebooks in the `examples` folder. However, no [git-lfs] is needed to get a working version of the library.
+
 ```bash
-git clone https://gitea.kotspeicher.de/AIMMD/asyncmd.git
+git clone https://github.com/bio-phys/asyncmd.git
 cd asyncmd
 pip install .
 ```
@@ -88,7 +88,7 @@ Use ```pip install .\[docs\]``` to install the requirements needed to build the 
 Tests use [pytest]. To run them just install asycmd with the test requirements
 
 ```bash
-git clone https://gitea.kotspeicher.de/AIMMD/asyncmd.git
+git clone https://github.com/bio-phys/asyncmd.git
 cd asyncmd
 pip install .\[tests\]
 ```
@@ -104,7 +104,7 @@ pytest
 For the developer install I recommend:
 
 ```bash
-git clone https://gitea.kotspeicher.de/AIMMD/asyncmd.git
+git clone https://github.com/bio-phys/asyncmd.git
 cd asyncmd
 pip install -e .\[dev\]
 ```
@@ -129,6 +129,7 @@ asyncmd is under the terms of the GNU general public license version 3 or later,
 
 [coverage]: https://pypi.org/project/coverage/
 [flake8]: https://pypi.org/project/flake8/
+[git-lfs]: https://git-lfs.com/
 [pytest]: https://docs.pytest.org/en/latest/
 [pytest-cov]: https://pypi.org/project/pytest-cov/
 [SLURM]: https://slurm.schedmd.com/documentation.html

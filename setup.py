@@ -23,7 +23,7 @@ NAME = "asyncmd"
 PACKAGES = find_packages(where="src")
 KEYWORDS = ["molecular dynamics, high performance computing"]
 PROJECT_URLS = {
-  "Source Code": "https://gitea.kotspeicher.de/AIMMD/asyncmd",
+  "Source Code": "https://github.com/bio-phys/asyncmd",
 }
 CLASSIFIERS = [
   "Development Status :: 3 - Alpha"
