@@ -185,7 +185,11 @@ class Trajectory:
                                                     asyncio.BoundedSemaphore
                                                               )
 
-    def __new__(cls, trajectory_files, *args, **kwargs):
+    def __new__(cls, trajectory_files: typing.Union[list[str], str],
+                structure_file: str,
+                nstout: typing.Optional[int] = None,
+                cache_type: typing.Optional[str] = None,
+                **kwargs):
         global _TRAJECTORIES_BY_HASH  # our global traj registry
         trajectory_files = Trajectory._sanitize_trajectory_files(trajectory_files)
         traj_hash = Trajectory._calc_traj_hash(trajectory_files)
