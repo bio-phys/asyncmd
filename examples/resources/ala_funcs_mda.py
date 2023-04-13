@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """
-State functions for alanine dipetide.
-
-Needs to be separate module/import to be able to use multiprocessing from the notebooks.
+State und descriptor functions for capped alanine dipetide.
 """
 import argparse
 import numpy as np
@@ -11,12 +9,8 @@ from MDAnalysis.lib.distances import calc_bonds, calc_angles, calc_dihedrals
 
 
 def alpha_R(traj, skip=1):
-    # NOTE: use refresh_offsets=True such that we do not run into any trouble when
-    #       opening the same traj at the same time from two different processes/universes
-    #       to avoid reading a possibly corrupted/in the process of beeing created offsets
-    #       file we just rebuild all offsets
     u = mda.Universe(traj.structure_file, *traj.trajectory_files,
-                     refresh_offsets=True, tpr_resid_from_one=True)
+                     tpr_resid_from_one=True)
     psi_ag = u.select_atoms("resname ALA and name N")
     psi_ag += u.select_atoms("resname ALA and name CA")
     psi_ag += u.select_atoms("resname ALA and name C")
@@ -41,7 +35,7 @@ def alpha_R(traj, skip=1):
 
 def C7_eq(traj, skip=1):
     u = mda.Universe(traj.structure_file, *traj.trajectory_files,
-                     refresh_offsets=True, tpr_resid_from_one=True)
+                     tpr_resid_from_one=True)
     psi_ag = u.select_atoms("resname ALA and name N")
     psi_ag += u.select_atoms("resname ALA and name CA")
     psi_ag += u.select_atoms("resname ALA and name C")
@@ -62,6 +56,41 @@ def C7_eq(traj, skip=1):
     deg = 180/np.pi
     state[(phi <= 0) & ((120/deg <= psi) | (-160/deg >= psi))] = True
     return state
+
+
+def descriptor_func_psi_phi(traj, skip=1, return_sin_cos=False):
+    """
+    Calculate psi and phi angle internal coordiantes.
+
+    Parameters
+    ----------
+    traj : asyncmd.Trajectory
+        Input trajectory.
+    skip : int, optional
+        stride for trajectory iteration, by default 1
+    return_sin_cos : bool, optional
+        whether to return 1 + 0.5*sin/cos for each angle,
+        i.e. 4 coords per frame instead of 2., by default False
+
+    Returns
+    -------
+    np.ndarray
+        psi, phi values for trajectory, shape=(n_frames,2/4)
+    """
+    u = mda.Universe(traj.structure_file, *traj.trajectory_files,
+                     refresh_offsets=True, tpr_resid_from_one=True)
+    psi_ag = u.select_atoms("index 6 or index 8 or index 14 or index 16")
+    phi_ag = u.select_atoms("index 4 or index 6 or index 8 or index 14")
+    # empty arrays to fill
+    phi = np.empty((len(u.trajectory[::skip]), 1), dtype=np.float64)
+    psi = np.empty((len(u.trajectory[::skip]), 1), dtype=np.float64)
+    for f, ts in enumerate(u.trajectory[::skip]):
+        phi[f, 0] = calc_dihedrals(*(at.position for at in phi_ag), box=ts.dimensions)
+        psi[f, 0] = calc_dihedrals(*(at.position for at in psi_ag), box=ts.dimensions)
+
+    if return_sin_cos:
+        return 1 + 0.5*np.concatenate([np.sin(psi), np.cos(psi), np.sin(phi), np.cos(phi)], axis=1)
+    return np.concatenate((psi, phi), axis=1)
 
 
 def generate_atomgroups_for_ic(molecule):
@@ -117,23 +146,6 @@ def descriptor_func_ic(traj, molecule_selection="protein", skip=1, use_SI=True):
         bond_vals /= 10.
 
     return np.concatenate((bond_vals, angle_vals, dihedrals_out), axis=1)
-
-
-def descriptor_func_psi_phi(traj, skip=1):
-    """Only psi and phi angle as internal coords. Actually cos and sin for both of them."""
-    u = mda.Universe(traj.structure_file, *traj.trajectory_files,
-                     refresh_offsets=True, tpr_resid_from_one=True)
-    psi_ag = u.select_atoms("index 6 or index 8 or index 14 or index 16")
-    phi_ag = u.select_atoms("index 4 or index 6 or index 8 or index 14")
-    # empty arrays to fill
-    phi = np.empty((len(u.trajectory[::skip]), 1), dtype=np.float64)
-    psi = np.empty((len(u.trajectory[::skip]), 1), dtype=np.float64)
-    for f, ts in enumerate(u.trajectory[::skip]):
-        phi[f, 0] = calc_dihedrals(*(at.position for at in phi_ag), box=ts.dimensions)
-        psi[f, 0] = calc_dihedrals(*(at.position for at in psi_ag), box=ts.dimensions)
-
-    return np.concatenate((psi, phi), axis=1)
-    #return 1 + 0.5*np.concatenate([np.sin(psi), np.cos(psi), np.sin(phi), np.cos(phi)], axis=1)
 
 
 if __name__ == "__main__":
