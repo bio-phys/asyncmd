@@ -679,9 +679,7 @@ class GmxEngine(MDEngine):
                                                   traj_type=self.output_traj_type,
                                                   )
         last_trajname = os.path.split(previous_trajs[-1].trajectory_files[0])[-1]
-        last_partnum = int(last_trajname.lstrip(f"{deffnm}.part")
-                           .rstrip("." + self.output_traj_type.lower())
-                           )
+        last_partnum = int(last_trajname[len(deffnm) + 5:len(deffnm) + 9])
         if last_partnum != len(previous_trajs):
             logger.warn("Not all previous trajectory parts seem to be present "
                         + "in the current workdir. Assuming the highest part "

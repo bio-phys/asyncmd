@@ -136,7 +136,7 @@ async def get_all_file_parts(folder: str, deffnm: str, file_ending: str) -> "lis
     filtered = [f for f in content
                 if (f.endswith(file_ending) and f.startswith(f"{deffnm}.part"))
                 ]
-    partnums = [int(f.lstrip(f"{deffnm}.part").rstrip(file_ending))
+    partnums = [int(f[len(deffnm) + 5:len(deffnm) + 9])  # get the 4 number digits
                 for f in filtered]
     partnums.sort()
     parts = [os.path.join(folder, f"{deffnm}{partnum_suffix(num)}{file_ending}")
