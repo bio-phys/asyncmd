@@ -496,7 +496,9 @@ class SlurmProcess:
     scancel_executable = "scancel"
 
     def __init__(self, jobname: str, sbatch_script: str, workdir: str,
-                 stdfiles_removal: str = "success", **kwargs) -> None:
+                 time: typing.Optional[float] = None,
+                 stdfiles_removal: str = "success",
+                 **kwargs) -> None:
         """
         Initialize a `SlurmProcess`.
 
@@ -511,6 +513,9 @@ class SlurmProcess:
             Absolute or relative path to a SLURM submission script.
         workdir : str
             Absolute or relative path to use as working directory.
+        time : float or None
+            Timelimit for the job in hours. None will result in using the
+            default as either specified in the sbatch script or the partition.
         stdfiles_removal : str
             Whether to remove the stdout, stderr (and possibly stdin) files.
             Possible values are:
@@ -551,6 +556,7 @@ class SlurmProcess:
         self.sbatch_script = os.path.abspath(sbatch_script)
         # TODO: default to current dir when creating?
         self.workdir = os.path.abspath(workdir)
+        self.time = time
         self.stdfiles_removal = stdfiles_removal
         self._jobid = None
         self._jobinfo = {}  # dict with jobinfo cached from slurm cluster mediator
@@ -608,6 +614,12 @@ class SlurmProcess:
         #             (probably not, but do we care?)
         sbatch_cmd += f" --output=./{self._stdout_name(use_slurm_symbols=True)}"
         sbatch_cmd += f" --error=./{self._stderr_name(use_slurm_symbols=True)}"
+        if self.time is not None:
+            timelimit = self.time * 60
+            timelimit_min = round(timelimit)
+            timelimit_sec = round(60 * (timelimit - timelimit_min))
+            timelimit_str = f"{timelimit_min}:{timelimit_sec}"
+            sbatch_cmd += f" --time={timelimit_str}"
         # keep a ref to the stdin value, we need it in communicate
         self._stdin = stdin
         if stdin is not None:
@@ -894,6 +906,7 @@ class SlurmProcess:
 async def create_slurmprocess_submit(jobname: str,
                                      sbatch_script: str,
                                      workdir: str,
+                                     time: typing.Optional[float] = None,
                                      stdfiles_removal: str = "success",
                                      stdin: typing.Optional[str] = None,
                                      **kwargs,
@@ -912,6 +925,9 @@ async def create_slurmprocess_submit(jobname: str,
         Absolute or relative path to a SLURM submission script.
     workdir : str
         Absolute or relative path to use as working directory.
+    time : float or None
+        Timelimit for the job in hours. None will result in using the
+        default as either specified in the sbatch script or the partition.
     stdfiles_removal : str
         Whether to remove the stdout, stderr (and possibly stdin) files.
         Possible values are:
@@ -934,7 +950,8 @@ async def create_slurmprocess_submit(jobname: str,
         The submitted slurm process instance.
     """
     proc = SlurmProcess(jobname=jobname, sbatch_script=sbatch_script,
-                        workdir=workdir, stdfiles_removal=stdfiles_removal,
+                        workdir=workdir, time=time,
+                        stdfiles_removal=stdfiles_removal,
                         **kwargs)
     await proc.submit(stdin=stdin)
     return proc
