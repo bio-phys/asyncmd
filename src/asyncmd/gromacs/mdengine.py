@@ -755,6 +755,7 @@ class GmxEngine(MDEngine):
         if all(kwarg is None for kwarg in [nsteps, walltime]):
             raise ValueError("Neither steps nor walltime given.")
         if nsteps is not None:
+            nsteps = int(nsteps)
             if nsteps % self.nstout != 0:
                 raise ValueError(f"nsteps ({nsteps}) must be a multiple of "
                                  + f"nstout ({self.nstout}).")
