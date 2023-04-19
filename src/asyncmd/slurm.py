@@ -616,7 +616,7 @@ class SlurmProcess:
         sbatch_cmd += f" --error=./{self._stderr_name(use_slurm_symbols=True)}"
         if self.time is not None:
             timelimit = self.time * 60
-            timelimit_min = round(timelimit)
+            timelimit_min = int(timelimit)  # take only the full minutes
             timelimit_sec = round(60 * (timelimit - timelimit_min))
             timelimit_str = f"{timelimit_min}:{timelimit_sec}"
             sbatch_cmd += f" --time={timelimit_str}"
