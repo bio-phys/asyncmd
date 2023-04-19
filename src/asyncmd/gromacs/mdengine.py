@@ -494,6 +494,12 @@ class GmxEngine(MDEngine):
         try:
             await self._start_gmx_mdrun(cmd_str=cmd_str, workdir=swdir,
                                         run_name=run_name,
+                                        # TODO/FIXME: we hardcode that the runs
+                                        # can not be longer than 15 min here
+                                        # (but i think this should be fine for
+                                        #  randomizing velocities and/or
+                                        #  applying constraints?!)
+                                        walltime=0.25,
                                         )
             # self._proc is set by _start_gmx_mdrun!
             stdout, stderr = await self._proc.communicate()
@@ -755,6 +761,7 @@ class GmxEngine(MDEngine):
         if all(kwarg is None for kwarg in [nsteps, walltime]):
             raise ValueError("Neither steps nor walltime given.")
         if nsteps is not None:
+            nsteps = int(nsteps)
             if nsteps % self.nstout != 0:
                 raise ValueError(f"nsteps ({nsteps}) must be a multiple of "
                                  + f"nstout ({self.nstout}).")
@@ -783,7 +790,8 @@ class GmxEngine(MDEngine):
         stdout = bytes()
         await self._acquire_resources_gmx_mdrun()
         try:
-            await self._start_gmx_mdrun(cmd_str=cmd_str, workdir=self.workdir)
+            await self._start_gmx_mdrun(cmd_str=cmd_str, workdir=self.workdir,
+                                        walltime=walltime,)
             # self._proc is set by _start_gmx_mdrun!
             stdout, stderr = await self._proc.communicate()
             returncode = self._proc.returncode
@@ -972,7 +980,8 @@ class SlurmGmxEngine(GmxEngine):
             name = self._deffnm + self._num_suffix(sim_part=self._simulation_part)
         return name
 
-    async def _start_gmx_mdrun(self, cmd_str, workdir, run_name=None, **kwargs):
+    async def _start_gmx_mdrun(self, cmd_str, workdir, walltime=None,
+                               run_name=None, **kwargs):
         name = self._name_from_name_or_none(run_name=run_name)
         # substitute placeholders in submit script
         script = self.sbatch_script.format(mdrun_cmd=cmd_str)
@@ -988,6 +997,7 @@ class SlurmGmxEngine(GmxEngine):
                                                 jobname=name,
                                                 sbatch_script=fname,
                                                 workdir=workdir,
+                                                time=walltime,
                                                 stdfiles_removal="success",
                                                 stdin=None,
                                                             )

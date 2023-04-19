@@ -17,7 +17,9 @@ How to use the molecular dynamics engines in `asyncmd`. The subfolders are for t
 
 - `SlurmTrajectoryFunctionWrapper.ipynb`: Turn executables acting on molecular dynamics trajectories (represented as `asyncmd.Trajectory` objects) into async functions and automatically cache the results for repeated applications. Computation is submited via the SLURM queuing system.
 
-## `03_conditional_propagation_and_subtrajectory_extraction`
+## `03_trajectory_propagation_and_subtrajectory_extraction`
+
+- `InPartsTrajectoryPropagator.ipynb`: Run your simulation in parts of short(er) walltime for a given total number of integration steps. Useful when using slurm to make full use of backfilling and/or to run simulations that run longer than then time limit.
 
 - `ConditionalTrajectoryPropagator.ipynb`: Learn how to terminate your simulations automatically as soon as any of a list of predefined conditions are fullfilled, e.g. a state is reached, a mean converged or similar. This is especially useful when implementing more complex enhanced sampling schemes like transition path sampling. Also learn about `asyncmd.trajectory.FrameExtractor` classes and the `asyncmd.trajectory.TrajectoryConcatenator` class.
 

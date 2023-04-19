@@ -173,6 +173,230 @@ async def construct_TP_from_plus_and_minus_traj_segments(
     return path_traj
 
 
+class InPartsTrajectoryPropagator:
+    """
+    Propagate a trajectory in parts of walltime until given number of steps.
+
+    Useful to make full use of backfilling with short(ish) simulation jobs and
+    also tp run simulations that are longer than the timelimit.
+    """
+    def __init__(self, n_steps: int, engine_cls,
+                 engine_kwargs: dict, walltime_per_part: float):
+        """
+        Initialize a `InPartTrajectoryPropagator`.
+
+        Parameters
+        ----------
+        n_steps : int
+            Number of integration steps to do in total.
+        engine_cls : :class:`asyncmd.mdengine.MDEngine`
+            Class of the MD engine to use, **uninitialized!**
+        engine_kwargs : dict
+            Dictionary of key word arguments to initialize the MD engine.
+        walltime_per_part : float
+            Walltime per trajectory segment, in hours.
+        """
+        self.n_steps = n_steps
+        self.engine_cls = engine_cls
+        self.engine_kwargs = engine_kwargs
+        self.walltime_per_part = walltime_per_part
+
+    async def propagate_and_concatenate(self,
+                                        starting_configuration: Trajectory,
+                                        workdir: str,
+                                        deffnm: str,
+                                        tra_out: str,
+                                        overwrite: bool = False,
+                                        continuation: bool = False
+                                        ) -> tuple[Trajectory, int]:
+        """
+        Chain :meth:`propagate` and :meth:`cut_and_concatenate` methods.
+
+        Parameters
+        ----------
+        starting_configuration : :class:`asyncmd.Trajectory`
+            The configuration (including momenta) to start MD from.
+        workdir : str
+            Absolute or relative path to the working directory.
+        deffnm : str
+            MD engine deffnm for trajectory parts and other files.
+        tra_out : str
+            Absolute or relative path for the concatenated output trajectory.
+        overwrite : bool, optional
+            Whether the output trajectory should be overwritten if it exists,
+            by default False.
+        continuation : bool, optional
+            Whether we are continuing a previous MD run (with the same deffnm
+            and working directory), by default False.
+
+        Returns
+        -------
+        traj_out : :class:`asyncmd.Trajectory`
+            The concatenated output trajectory.
+        """
+        # this just chains propagate and cut_and_concatenate
+        trajs = await self.propagate(
+                                starting_configuration=starting_configuration,
+                                workdir=workdir,
+                                deffnm=deffnm,
+                                continuation=continuation
+                                     )
+        full_traj = await self.cut_and_concatenate(
+                                                trajs=trajs,
+                                                tra_out=tra_out,
+                                                overwrite=overwrite,
+                                                   )
+        return full_traj
+
+    async def propagate(self,
+                        starting_configuration: Trajectory,
+                        workdir: str,
+                        deffnm: str,
+                        continuation: bool = False,
+                        ) -> list[Trajectory]:
+        """
+        Propagate the trajectory until self.n_steps integration are done.
+
+        Return a list of trajecory segments and the first condition fullfilled.
+
+        Parameters
+        ----------
+        starting_configuration : :class:`asyncmd.Trajectory`
+            The configuration (including momenta) to start MD from.
+        workdir : str
+            Absolute or relative path to the working directory.
+        deffnm : str
+            MD engine deffnm for trajectory parts and other files.
+        continuation : bool, optional
+            Whether we are continuing a previous MD run (with the same deffnm
+            and working directory), by default False.
+            Note that when doing continuations and n_steps is lower than the
+            number of steps done already found in the directory, we still
+            return all trajectory parts (i.e. potentially too much).
+            :meth:`cut_and_concatenate` can return a trimmed subtrajectory.
+
+        Returns
+        -------
+        traj_segments : list[Trajectory]
+            List of trajectory (segements), ordered in time.
+        """
+        engine = self.engine_cls(**self.engine_kwargs)
+        if not continuation:
+            # no continuation, just prepare the engine from scratch
+            await engine.prepare(
+                        starting_configuration=starting_configuration,
+                        workdir=workdir,
+                        deffnm=deffnm,
+                                )
+            trajs = []
+            step_counter = 0
+        else:
+            # continuation: get all traj parts already done and continue from
+            # there, i.e. append to the last traj part found
+            trajs = await get_all_traj_parts(folder=workdir, deffnm=deffnm,
+                                             engine=engine,
+                                             )
+            step_counter = engine.steps_done
+            if step_counter >= self.n_steps:
+                # already longer than what we want to do, bail out
+                return trajs
+            await engine.prepare_from_files(workdir=workdir, deffnm=deffnm)
+
+        while (step_counter < self.n_steps):
+            traj = await engine.run(nsteps=self.n_steps,
+                                    walltime=self.walltime_per_part,
+                                    steps_per_part=False,
+                                    )
+            step_counter = engine.steps_done
+            trajs.append(traj)
+        return trajs
+
+    async def cut_and_concatenate(self,
+                                  trajs: list[Trajectory],
+                                  tra_out: str,
+                                  overwrite: bool = False,
+                                  ) -> tuple[Trajectory, int]:
+        """
+        Cut and concatenate the trajectory until it has length n_steps.
+
+        Take a list of trajectory segments and form one continous trajectory
+        containing n_steps integration steps. The expected input
+        is a list of trajectories, e.g. the output of the :meth:`propagate`
+        method.
+
+        Parameters
+        ----------
+        trajs : list[Trajectory]
+            Trajectory segments to cut and concatenate.
+        tra_out : str
+            Absolute or relative path for the concatenated output trajectory.
+        overwrite : bool, optional
+            Whether the output trajectory should be overwritten if it exists,
+            by default False.
+
+        Returns
+        -------
+        traj_out : :class:`asyncmd.Trajectory`
+            The concatenated output trajectory.
+
+        Raises
+        ------
+        ValueError
+            If the given trajectories are to short to create a trajectory
+            containing n_steps integration steps
+        """
+        # trajs is a list of trajectories, e.g. the return of propagate
+        # tra_out and overwrite are passed directly to the Concatenator
+        if self.n_steps > trajs[-1].last_step:
+            # not enough steps in trajectories
+            raise ValueError("The given trajectories are to short (< self.n_steps).")
+        elif self.n_steps == trajs[-1].last_step:
+            # all good, we just take all trajectory parts fully
+            slices = [(0, None, 1) for _ in range(len(trajs))]
+            last_part_idx = len(trajs) - 1
+        else:
+            logger.warning("Trajectories do not exactly contain n_steps integration steps."
+                           + " Using a heuristic to find to correct last frame to include,"
+                           + " this heuristic might fail if n_steps is not a multiple of"
+                           + " the trajectory output frequency.")
+            # need to find the subtrajectory that contains the correct number
+            # of integration steps
+            # first find the part in which we go over n_steps
+            last_part_idx = 0
+            while self.n_steps > trajs[last_part_idx].last_step:
+                last_part_idx += 1
+            # find out how much frames to take on last part
+            last_part_len_frames = len(trajs[last_part_idx])
+            last_part_len_steps = (trajs[last_part_idx].last_step
+                                   - trajs[last_part_idx].first_step)
+            steps_per_frame = last_part_len_steps / last_part_len_frames
+            frames_in_last_part = 0
+            while ((trajs[last_part_idx].first_step
+                    + frames_in_last_part * steps_per_frame) < self.n_steps):
+                # I guess we stay with the < (instead of <=) and rather have
+                # one frame too much?
+                frames_in_last_part += 1
+            # build slices
+            slices = [(0, None, 1) for _ in range(last_part_idx)]
+            slices += [(0, frames_in_last_part + 1, 1)]
+
+        # and concatenate
+        concat = functools.partial(TrajectoryConcatenator().concatenate,
+                                   trajs=trajs[:last_part_idx + 1],
+                                   slices=slices,
+                                   # take the structure file of the traj, as it
+                                   # comes from the engine directly
+                                   tra_out=tra_out, struct_out=None,
+                                   overwrite=overwrite)
+        loop = asyncio.get_running_loop()
+        async with _SEMAPHORES["MAX_PROCESS"]:
+            with ThreadPoolExecutor(max_workers=1,
+                                    thread_name_prefix="concat_thread",
+                                    ) as pool:
+                full_traj = await loop.run_in_executor(pool, concat)
+        return full_traj
+
+
 class ConditionalTrajectoryPropagator:
     """
     Propagate a trajectory until any of the given conditions is fullfilled.
@@ -223,7 +447,7 @@ class ConditionalTrajectoryPropagator:
             asyncronous application, but can be any callable that takes a
             :class:`asyncmd.Trajectory` and returns an array of True and False
             values (one value per frame).
-        engine_cls : type(asyncmd.mdengine.MDEngine)
+        engine_cls : :class:`asyncmd.mdengine.MDEngine`
             Class of the MD engine to use, **uninitialized!**
         engine_kwargs : dict
             Dictionary of key word arguments to initialize the MD engine.

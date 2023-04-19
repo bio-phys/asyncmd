@@ -17,6 +17,7 @@ from .functionwrapper import (PyTrajectoryFunctionWrapper,
                               )
 from .propagate import (ConditionalTrajectoryPropagator,
                         TrajectoryPropagatorUntilAnyState,
+                        InPartsTrajectoryPropagator,
                         construct_TP_from_plus_and_minus_traj_segments,
                         )
 from .trajectory import (_forget_trajectory,
