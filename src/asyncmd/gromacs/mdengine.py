@@ -495,11 +495,11 @@ class GmxEngine(MDEngine):
             await self._start_gmx_mdrun(cmd_str=cmd_str, workdir=swdir,
                                         run_name=run_name,
                                         # TODO/FIXME: we hardcode that the runs
-                                        # can not be longer than 30 min here
+                                        # can not be longer than 15 min here
                                         # (but i think this should be fine for
                                         #  randomizing velocities and/or
                                         #  applying constraints?!)
-                                        walltime=0.5,
+                                        walltime=0.25,
                                         )
             # self._proc is set by _start_gmx_mdrun!
             stdout, stderr = await self._proc.communicate()
