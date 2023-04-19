@@ -62,14 +62,17 @@ most probably easier to use and waht you want (it uses the
 
 .. py:currentmodule:: asyncmd
 
-Another notable part of the :py:mod:`asyncmd.trajectory` module is the
-:py:class:`asyncmd.trajectory.ConditionalTrajectoryPropagator` which
-can be used to propagate a trajectory until any of the given conditions is
-fulfilled. This is especially usefull for pathsampling and committor
-simulations (here the conditions would be the state functions), but can be used
-in general for any situation where the time integration should be stopped on
-given criteria (as opposed to after a fixed number of integratiopn steps or
-when a given walltime is reached).
+Another notable part of the :py:mod:`asyncmd.trajectory` module are the
+:py:class:`asyncmd.trajectory.InPartsTrajectoryPropagator` and
+:py:class:`asyncmd.trajectory.ConditionalTrajectoryPropagator`, which
+can both be used to propagate trajectories in chunks of a given walltime. While
+the former is used to propagate a trajectory until a given total number of
+integration steps, the later one can be used to propagate a trajectory until
+any of the given conditions is fulfilled. The later is especially usefull for
+pathsampling and committor simulations (here the conditions would be the state
+functions), but can be used in general for any situation where the time
+integration should be stopped on given criteria (as opposed to after a fixed
+number of integratiopn steps or when a given walltime is reached).
 There is also a handy function to create a transition, i.e. a trajectory that
 connects to (different) conditions from two conditional propagation runs ending
 in different conditions, the
@@ -117,8 +120,13 @@ FrameExtractors
    :special-members:
    :inherited-members:
 
-Conditional trajectory propagation
+Trajectory propagation
 ----------------------------------
+
+.. autoclass:: asyncmd.trajectory.InPartsTrajectoryPropagator
+   :members:
+   :special-members:
+   :inherited-members:
 
 .. autoclass:: asyncmd.trajectory.ConditionalTrajectoryPropagator
    :members:
