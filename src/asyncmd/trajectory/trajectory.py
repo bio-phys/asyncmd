@@ -750,7 +750,13 @@ class Trajectory:
 
     def __getnewargs_ex__(self):
         # new needs the trajectory_files to be able to calculate the traj_hash
-        return ((), {"trajectory_files": self.trajectory_files})
+        # and since we want __new__ to have the same call signature as __init__
+        # we also add all the init args here too
+        return ((), {"trajectory_files": self.trajectory_files,
+                     "structure_file": self.structure_file,
+                     "nstout": self.nstout,
+                     "cache_type": self.cache_type,
+                     })
 
 
 class TrajectoryFunctionValueCacheMEMORY(collections.abc.Mapping):
