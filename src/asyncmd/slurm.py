@@ -284,10 +284,22 @@ class SlurmClusterMediator:
                     continue
                 # parse returns (remove spaces, etc.) and put them in cache
                 jobid = jobid.strip()
-                if self._jobinfo[jobid]["state"] == state:
-                    # only process nodelist and update jobinfo when necessary
-                    # i.e. if the slurm_state changed
+                try:
+                    last_seen_state = self._jobinfo[jobid]["state"]
+                except KeyError:
+                    # this can happen if we remove the job from monitoring
+                    # after the sacct call but before parsing of sacct_return
+                    # (then the _jobinfo dict will not contain the job anymore
+                    #  and we get the KeyError from the first)
+                    logger.warning("Got sacct output for job not monitored "
+                                   + f"(anymore), jobid is {jobid}.")
+                    # go to the next jobid as we are not monitoring this one
                     continue
+                else:
+                    if last_seen_state == state:
+                        # we only process nodelist and update jobinfo when
+                        # necessary, i.e. if the slurm_state changed
+                        continue
                 nodelist = self._process_nodelist(nodelist=nodelist)
                 self._jobinfo[jobid]["nodelist"] = nodelist
                 self._jobinfo[jobid]["exitcode"] = exitcode
