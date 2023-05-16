@@ -237,9 +237,9 @@ class SlurmClusterMediator:
                 > self.min_time_between_sacct_calls)):
             # either we never called sacct or at least not in the recent past
             # so update cached jobinfo and save the new time
-            self._last_sacct_call = time.time()
             await self._update_cached_jobinfo()
-            logger.debug("Updating cached jobinfo.")
+            logger.debug("Updated cached jobinfo.")
+            self._last_sacct_call = time.time()
 
         return self._jobinfo[jobid].copy()
 
@@ -290,9 +290,12 @@ class SlurmClusterMediator:
                     # this can happen if we remove the job from monitoring
                     # after the sacct call but before parsing of sacct_return
                     # (then the _jobinfo dict will not contain the job anymore
-                    #  and we get the KeyError from the first)
+                    #  and we get the KeyError from the jobid)
                     logger.warning("Got sacct output for job not monitored "
-                                   + f"(anymore), jobid is {jobid}.")
+                                   + f"(anymore), jobid is {jobid}. \n"
+                                   + f"self._jobinfo={self._jobinfo} \n"
+                                   + f"self._jobids={self._jobids} \n"
+                                   + f"self._jobids_sacct={self._jobids_sacct}")
                     # go to the next jobid as we are not monitoring this one
                     continue
                 else:
