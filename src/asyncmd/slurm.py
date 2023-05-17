@@ -145,7 +145,11 @@ class SlurmClusterMediator:
         # return value
         # currently queried options are: state, exitcode and nodelist
         self._jobinfo = {}
-        self._last_sacct_call = None  # make sure we dont call sacct too often
+        self._last_sacct_call = 0  # make sure we dont call sacct too often
+        # make sure we can only call sacct once at a time
+        # (since there is only one ClusterMediator at a time we can create
+        #  the smephore here in __init__)
+        self._sacct_semaphore = asyncio.BoundedSemaphore(1)
 
     @property
     def broken_nodes(self) -> "list[str]":
@@ -232,14 +236,16 @@ class SlurmClusterMediator:
              the keys (str) are sacct format fields,
              the values are the (parsed) corresponding values.
         """
-        if (self._last_sacct_call is None
-            or (time.time() - self._last_sacct_call
-                > self.min_time_between_sacct_calls)):
-            # either we never called sacct or at least not in the recent past
-            # so update cached jobinfo and save the new time
-            self._last_sacct_call = time.time()
-            await self._update_cached_jobinfo()
-            logger.debug("Updating cached jobinfo.")
+        async with self._sacct_semaphore:
+            if (time.time() - self._last_sacct_call
+		 > self.min_time_between_sacct_calls):
+                # either we never called sacct or at least not in the recent past
+                # so update cached jobinfo and save the new time
+                await self._update_cached_jobinfo()
+                logger.debug("Updated cached jobinfo.")
+                # we update the time last, i.e. we count the time we need to
+                # parse the sacct output into the time-delay
+                self._last_sacct_call = time.time()
 
         return self._jobinfo[jobid].copy()
 
@@ -284,10 +290,21 @@ class SlurmClusterMediator:
                     continue
                 # parse returns (remove spaces, etc.) and put them in cache
                 jobid = jobid.strip()
-                if self._jobinfo[jobid]["state"] == state:
-                    # only process nodelist and update jobinfo when necessary
-                    # i.e. if the slurm_state changed
+                try:
+                    last_seen_state = self._jobinfo[jobid]["state"]
+                except KeyError:
+                    # this can happen if we remove the job from monitoring
+                    # after the sacct call but before parsing of sacct_return
+                    # (then the _jobinfo dict will not contain the job anymore
+                    #  and we get the KeyError from the jobid)
+                    # we go to the next jobid as we are not monitoring this one
+                    # TODO: do we want/need to log this?!
                     continue
+                else:
+                    if last_seen_state == state:
+                        # we only process nodelist and update jobinfo when
+                        # necessary, i.e. if the slurm_state changed
+                        continue
                 nodelist = self._process_nodelist(nodelist=nodelist)
                 self._jobinfo[jobid]["nodelist"] = nodelist
                 self._jobinfo[jobid]["exitcode"] = exitcode
@@ -485,7 +502,7 @@ class SlurmProcess:
                        + " with the appropriate arguments.")
     # we can not simply wait for the subprocess, since slurm exits directly
     # so we will sleep for this long between checks if slurm-job completed
-    sleep_time = 20  # TODO: heuristic? dynamically adapt?
+    sleep_time = 15  # TODO: heuristic? dynamically adapt?
     # NOTE: no options to set/pass extra_args for sbatch:
     #       the only command line options for sbatch we allow will be contolled
     #       by us since cmd line options for sbatch take precendece over every-
