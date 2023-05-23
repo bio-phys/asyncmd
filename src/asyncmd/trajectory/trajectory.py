@@ -238,13 +238,18 @@ class Trajectory:
         # note that we do not include the structure file on purpose because
         # that allows for changing .gro <-> .tpr or similar
         # (which we expect to not change the calculated CV values)
-        # TODO: should we hash the location of the file, i.e. the path?
-        #       currently two copies of the same file at different locations
-        #       will get the same hash, which might be confusing....?
+        # NOTE: We do however include the path(s) to the trajectory_files
+        #       as we can otherwise return a Trajectory object with different
+        #       trajectory_files than expected from __new__ when we create a
+        #       second Trajectory obj that has the same trajectory data, which
+        #       admitedtly is a corner case. However, as this would be very
+        #       confusing we happily pay the small price of potentially
+        #       calculating CV values slightly more often than necesary
         # TODO: how much should we read?
         #      (I [hejung] think the first and last 2.5 MB are enough for sure)
         data = bytes()
         for traj_f in trajectory_files:
+            data += traj_f.encode("utf-8")
             with open(traj_f, "rb") as traj_file:
                 # read the first 2.5 MB of each file
                 data += traj_file.read(2560)
