@@ -435,8 +435,6 @@ class LineBasedMDConfig(MDConfig):
                     # i.e. (probably) one of the float/int singleton options
                     line += f"{value}"
                 lines += [line]
-            # concatenate the lines (using the newline-char which is
-            # platform-dependent) and write out at once
-            # TODO/FIXME: use a universal newline char?! platform independent!
+            # concatenate the lines and write out at once
             with open(outfile, "w") as f:
                 f.write("\n".join(lines))
