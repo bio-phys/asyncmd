@@ -121,25 +121,57 @@ class MDP(LineBasedMDConfig):
     # TODO: Walls and everything below in the GMX manual
 
     def _parse_line(self, line):
-        parser = shlex.shlex(line, posix=True)
-        parser.commenters = ";"
-        parser.wordchars += "-./~"  # ./~ to not split floats and file paths
-        tokens = list(parser)
-        # gromacs mdp can have more than one token/value to the RHS of the '='
-        if len(tokens) == 0:
-            # (probably) a comment line
+        # NOTE: we need to do this so complicated, because gmx accepts
+        #       "key=value" i.e. without spaces, so we can not use shlex.shlex
+        #       for separating the key and value reliably although this will be
+        #        a corner case as most mdp files have "key = value" with spaces
+        # split only at first equal sign
+        splits_at_equal = line.split("=", maxsplit=1)
+        # split at first comment sign
+        splits_at_comment = line.split(";", maxsplit=1)
+        # now we have multiple options:
+        # 1. split only at '=' and not at ';' -> key=value line without comment
+        # 2. split only at ';' and not at '=' -> (probably) a comment line,
+        #                                        at least if the comment is the
+        #                                        first char, otherwise we need
+        #                                        an equal sign to be valid (?)
+        # 3. split at ';' and at '=' -> need to find out if the comment is
+        #                               before or after the equal sign
+        # 4. no splits at '=' and no splits at ';' -> weired line, probably
+        #                                             not a valid line(?)
+        if splits_at_comment[0] == "":
+            # option 2 (and 3 if the comment is before the equal sign)
+            # comment sign is the first letter, so the whole line is
+            # (most probably) a comment line
             logger.debug(f"mdp line parsed as comment: {line}")
             return {}
-        elif len(tokens) >= 3 and tokens[1] == "=":
-            # lines with content: make sure we correctly parsed the '='
-            # always return a list for values
-            return {self._key_char_replace(tokens[0]): tokens[2:]}
-        elif len(tokens) == 2 and tokens[1] == "=":
-            # lines with empty options, e.g. 'define = '
-            return {self._key_char_replace(tokens[0]): []}
-        else:
-            # no idea what happend here...best to let the user have a look :)
-            raise ValueError(f"Could not parse the following mdp line: {line}")
+        if ((len(splits_at_equal) == 2 and len(splits_at_comment) == 1)  # option 1
+            # or option 3 with equal sign before comment sign
+            or ((len(splits_at_equal) == 2 and len(splits_at_comment) == 2)
+                and (len(splits_at_comment[0]) > len(splits_at_equal[0])))):
+            key = splits_at_equal[0].strip()  # strip of the white space
+            # make sure the key is a single word, i.e. contains no spaces
+            # if it is not we will raise the error below
+            if key.split()[0] == key:
+                value_unparsed = splits_at_equal[1]
+                parser = shlex.shlex(value_unparsed,
+                                     posix=True, punctuation_chars=True)
+                parser.commenters = ";"
+                # puncutation_chars=True adds "~-./*?=" to wordchars
+                # such that we do not split floats and file paths and similar
+                tokens = list(parser)
+                # gromacs mdp can have 0-N tokens/values to the RHS of the '='
+                if len(tokens) == 0:
+                    # line with empty options, e.g. 'define = '
+                    return {self._key_char_replace(key): []}
+                # lines with content, we always return a list (and let our
+                #  type_dispatch sort out the singleton options and the typing)
+                return {self._key_char_replace(key): tokens}
+        # if we end up here we did not know how to parse properly, e.g.
+        # option 4 and option 3 with comment before equal but not at the
+        # first position of the line (i.e. not a full comment line)
+        # so no idea what happend here: best to let the user have a look :)
+        raise ValueError(f"Could not parse the following mdp line: {line}")
 
     def _key_char_replace(self, key):
         # make it possible to use CHARMM-GUI generated mdp-files, because
