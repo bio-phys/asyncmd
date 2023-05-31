@@ -434,12 +434,17 @@ class Trajectory:
                 for t in self.trajectory_files]):
             # make sure first and last time have the same offset, if they
             # do not our calculation to fix the step wraparound will be off
+            if self._len == 1:
+                # can not calculate dt if we only have one frame
+                logger.warning("%s has only one frame. Not correcting for "
+                               "potential wraparound of the integration step.",
+                               self)
+                return # bail out!
             if ts.data.get("time_offset", 0) != time_offset:
                 logger.warning("Time offset of the first and last time in "
-                               + f"{self} do not match. Not correcting for"
-                               + " potential wraparound of the integration"
-                               + "step."
-                               )
+                               "%s do not match. Not correcting for potential "
+                               "wraparound of the integration step.",
+                               self)
                 return  # bail out!
             self._fix_trr_xtc_step_wraparound(time_offset=time_offset,
                                               universe=u)
@@ -451,6 +456,7 @@ class Trajectory:
     def _fix_trr_xtc_step_wraparound(self, time_offset: float,
                                      universe: mda.Universe) -> None:
         # check/correct for wraparounds in the integration step numbers
+        # NOTE: fails if the trajectory has length = 1!
         # NOTE: strictly spoken we should not assume wraparound behavior,
         #       but it seems reasonable for the stepnum,
         #       see e.g. https://www.airs.com/blog/archives/120
