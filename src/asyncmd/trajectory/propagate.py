@@ -281,6 +281,25 @@ class InPartsTrajectoryPropagator:
             List of trajectory (segements), ordered in time.
         """
         engine = self.engine_cls(**self.engine_kwargs)
+        if continuation:
+            # continuation: get all traj parts already done and continue from
+            # there, i.e. append to the last traj part found
+            trajs = await get_all_traj_parts(folder=workdir, deffnm=deffnm,
+                                             engine=engine,
+                                             )
+            if len(trajs) > 0:
+                # can only continue if we find the previous trajs
+                step_counter = engine.steps_done
+                if step_counter >= self.n_steps:
+                    # already longer than what we want to do, bail out
+                    return trajs
+                await engine.prepare_from_files(workdir=workdir, deffnm=deffnm)
+            else:
+                # no previous trajs, prepare engine from scratch
+                continuation = False
+                logger.error("continuation=True, but we found no previous "
+                             "trajectories. Setting continuation=False and "
+                             "preparing the engine from scratch.")
         if not continuation:
             # no continuation, just prepare the engine from scratch
             await engine.prepare(
@@ -290,17 +309,6 @@ class InPartsTrajectoryPropagator:
                                 )
             trajs = []
             step_counter = 0
-        else:
-            # continuation: get all traj parts already done and continue from
-            # there, i.e. append to the last traj part found
-            trajs = await get_all_traj_parts(folder=workdir, deffnm=deffnm,
-                                             engine=engine,
-                                             )
-            step_counter = engine.steps_done
-            if step_counter >= self.n_steps:
-                # already longer than what we want to do, bail out
-                return trajs
-            await engine.prepare_from_files(workdir=workdir, deffnm=deffnm)
 
         while (step_counter < self.n_steps):
             traj = await engine.run(nsteps=self.n_steps,
@@ -638,6 +646,40 @@ class ConditionalTrajectoryPropagator:
 
         # starting configuration does not fullfill any condition, lets do MD
         engine = self.engine_cls(**self.engine_kwargs)
+        if continuation:
+            # continuation: get all traj parts already done and continue from
+            # there, i.e. append to the last traj part found
+            # NOTE: we assume that the condition functions could be different
+            # so get all traj parts and calculate the condition funcs on them
+            trajs = await get_all_traj_parts(folder=workdir, deffnm=deffnm,
+                                             engine=engine,
+                                             )
+            if len(trajs) > 0:
+                # can only calc CV values if we have trajectories prouced
+                cond_vals = await asyncio.gather(
+                            *(self._condition_vals_for_traj(t) for t in trajs)
+                                                 )
+                cond_vals = np.concatenate([np.asarray(s) for s in cond_vals],
+                                           axis=1)
+                # see if we already fullfill a condition on the existing traj parts
+                any_cond_fullfilled = np.any(cond_vals)
+                if any_cond_fullfilled:
+                    conds_fullfilled, frame_nums = np.where(cond_vals)
+                    # gets the frame with the lowest idx where any cond is True
+                    min_idx = np.argmin(frame_nums)
+                    first_condition_fullfilled = conds_fullfilled[min_idx]
+                    # already fullfill a condition, get out of here!
+                    return trajs, first_condition_fullfilled
+                # Did not fullfill any condition yet, so prepare the engine to
+                # continue the simulation until we reach any of the (new) conds
+                await engine.prepare_from_files(workdir=workdir, deffnm=deffnm)
+                step_counter = engine.steps_done
+            else:
+                # no trajectories, so we should prepare engine from scratch
+                continuation = False
+                logger.error("continuation=True, but we found no previous "
+                             "trajectories. Setting continuation=False and "
+                             "preparing the engine from scratch.")
         if not continuation:
             # no continuation, just prepare the engine from scratch
             await engine.prepare(
@@ -648,32 +690,6 @@ class ConditionalTrajectoryPropagator:
             any_cond_fullfilled = False
             trajs = []
             step_counter = 0
-        else:
-            # continuation: get all traj parts already done and continue from
-            # there, i.e. append to the last traj part found
-            # NOTE: we assume that the condition functions could be different
-            # so get all traj parts and calculate the condition funcs on them
-            trajs = await get_all_traj_parts(folder=workdir, deffnm=deffnm,
-                                             engine=engine,
-                                             )
-            cond_vals = await asyncio.gather(
-                            *(self._condition_vals_for_traj(t) for t in trajs)
-                                             )
-            cond_vals = np.concatenate([np.asarray(s) for s in cond_vals],
-                                       axis=1)
-            # see if we already fullfill a condition on the existing traj parts
-            any_cond_fullfilled = np.any(cond_vals)
-            if any_cond_fullfilled:
-                conds_fullfilled, frame_nums = np.where(cond_vals)
-                # gets the frame with the lowest idx where any cond is True
-                min_idx = np.argmin(frame_nums)
-                first_condition_fullfilled = conds_fullfilled[min_idx]
-                # already fullfill a condition, get out of here!
-                return trajs, first_condition_fullfilled
-                # Did not fullfill any condition yet, so prepare the engine to
-                # continue the simulation until we reach any of the (new) conds
-            await engine.prepare_from_files(workdir=workdir, deffnm=deffnm)
-            step_counter = engine.steps_done
 
         while ((not any_cond_fullfilled)
                 and (step_counter <= self.max_steps)):
