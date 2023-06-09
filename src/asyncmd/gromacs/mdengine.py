@@ -612,8 +612,8 @@ class GmxEngine(MDEngine):
                                mdp_obj=self._mdp)
         if not await aiofiles.ospath.isfile(self._tpr):
             # better be save than sorry :)
-            raise RuntimeError("Something went wrong generating the tpr."
-                               + f"{self._tpr} does not seem to be a file.")
+            raise RuntimeError("Something went wrong generating the tpr. "
+                               f"{self._tpr} does not seem to be a file.")
         # make sure we can not mistake a previous Popen for current mdrun
         self._proc = None
         self._frames_done = 0  # (re-)set how many frames we did
@@ -634,8 +634,8 @@ class GmxEngine(MDEngine):
                                    trr_in=trr_in, mdp_out=mdp_out)
         logger.debug(f"About to execute command: {cmd_str}")
         # 3 file descriptors: stdin, stdout, stderr
-        await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
-        await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
+        # NOTE: The max open files semaphores counts for 3 open files, so we
+        #       only need it once
         await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
         try:
             grompp_proc = await asyncio.create_subprocess_exec(
@@ -659,10 +659,11 @@ class GmxEngine(MDEngine):
                                    + "\n--------\n"
                                    + f"stdout: \n--------\n {stdout.decode()}"
                                    )
+        except asyncio.CancelledError as e:
+            grompp_proc.kill()  # kill grompp
+            raise e from None  # and reraise the cancelation
         finally:
-            # release the semaphore(s)
-            _SEMAPHORES["MAX_FILES_OPEN"].release()
-            _SEMAPHORES["MAX_FILES_OPEN"].release()
+            # release the semaphore
             _SEMAPHORES["MAX_FILES_OPEN"].release()
 
     async def prepare_from_files(self, workdir: str, deffnm: str):
@@ -721,17 +722,14 @@ class GmxEngine(MDEngine):
         self._proc = proc
 
     async def _acquire_resources_gmx_mdrun(self, **kwargs):
-        # *always* called before any gmx_mdrun, use to get Semaphores for resources
+        # *always* called before any gmx_mdrun, used to reserve resources
         # for local gmx we need 3 file descriptors: stdin, stdout, stderr
-        await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
-        await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
+        # (one max files semaphore counts for 3 open files)
         await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
 
     async def _cleanup_gmx_mdrun(self, **kwargs):
-        # *always* called after any gmx_mdrun, use to release Semaphores and friends
+        # *always* called after any gmx_mdrun, use to release resources
         # release the semaphore for the 3 file descriptors
-        _SEMAPHORES["MAX_FILES_OPEN"].release()
-        _SEMAPHORES["MAX_FILES_OPEN"].release()
         _SEMAPHORES["MAX_FILES_OPEN"].release()
 
     async def run(self, nsteps=None, walltime=None, steps_per_part=False):
@@ -988,8 +986,11 @@ class SlurmGmxEngine(GmxEngine):
         # write it out
         fname = os.path.join(workdir, name + ".slurm")
         if await aiofiles.ospath.exists(fname):
-            # TODO: should we raise an error?
-            logger.error(f"Overwriting existing submission file ({fname}).")
+            # Note: we dont raise an error because we want to be able to rerun
+            #       a canceled/crashed run in the same directory without the
+            #       need to remove files
+            logger.error("Overwriting existing submission file (%s).",
+                         fname)
         async with _SEMAPHORES["MAX_FILES_OPEN"]:
             async with aiofiles.open(fname, 'w') as f:
                 await f.write(script)
@@ -1004,8 +1005,8 @@ class SlurmGmxEngine(GmxEngine):
 
     async def _acquire_resources_gmx_mdrun(self, **kwargs):
         if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
-            logger.debug(f"SLURM_MAX_JOB semaphore is {_SEMAPHORES['SLURM_MAX_JOB']}"
-                         + " before acquiring.")
+            logger.debug("SLURM_MAX_JOB semaphore is %s before acquiring.",
+                         _SEMAPHORES['SLURM_MAX_JOB'])
             await _SEMAPHORES["SLURM_MAX_JOB"].acquire()
         else:
             logger.debug("SLURM_MAX_JOB semaphore is None")

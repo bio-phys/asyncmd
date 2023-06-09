@@ -257,8 +257,7 @@ class SlurmClusterMediator:
         sacct_cmd += " -o jobid,state,exitcode,nodelist"
         sacct_cmd += " --parsable2"  # separate with |
         # 3 file descriptors: stdin,stdout,stderr
-        await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
-        await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
+        # (note that one semaphore counts for 3 files!)
         await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
         try:
             sacct_proc = await asyncio.subprocess.create_subprocess_exec(
@@ -269,10 +268,11 @@ class SlurmClusterMediator:
                                                                           )
             stdout, stderr = await sacct_proc.communicate()
             sacct_return = stdout.decode()
+        except asyncio.CancelledError as e:
+            sacct_proc.kill()
+            raise e from None
         finally:
             # and put the three back into the semaphore
-            _SEMAPHORES["MAX_FILES_OPEN"].release()
-            _SEMAPHORES["MAX_FILES_OPEN"].release()
             _SEMAPHORES["MAX_FILES_OPEN"].release()
         # only jobid (and possibly clustername) returned, semikolon to separate
         logger.debug(f"sacct returned {sacct_return}.")
@@ -649,10 +649,9 @@ class SlurmProcess:
         if len(broken_nodes) > 0:
             sbatch_cmd += f" --exclude={','.join(broken_nodes)}"
         sbatch_cmd += f" --parsable {self.sbatch_script}"
-        logger.debug(f"About to execute sbatch_cmd {sbatch_cmd}.")
+        logger.debug("About to execute sbatch_cmd %s.", sbatch_cmd)
         # 3 file descriptors: stdin,stdout,stderr
-        await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
-        await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
+        # Note: one semaphore counts for 3 open files!
         await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
         try:
             sbatch_proc = await asyncio.subprocess.create_subprocess_exec(
@@ -664,14 +663,14 @@ class SlurmProcess:
                                                                           )
             stdout, stderr = await sbatch_proc.communicate()
             sbatch_return = stdout.decode()
+        except asyncio.CancelledError as e:
+            sbatch_proc.kill()
+            raise e from None
         finally:
-            # and put the three back into the semaphore
-            _SEMAPHORES["MAX_FILES_OPEN"].release()
-            _SEMAPHORES["MAX_FILES_OPEN"].release()
             _SEMAPHORES["MAX_FILES_OPEN"].release()
         # only jobid (and possibly clustername) returned, semikolon to separate
-        logger.debug(f"sbatch returned stdout: {sbatch_return}, "
-                     + f"stderr: {stderr.decode()}.")
+        logger.debug("sbatch returned stdout: %s,  {sbatch_return}, stderr: %s.",
+                     sbatch_return, stderr.decode())
         jobid = sbatch_return.split(";")[0].strip()
         # make sure jobid is an int/ can be cast as one
         err = False
@@ -763,16 +762,19 @@ class SlurmProcess:
             return self._stdout_data, self._stderr_data
         # we read them in binary mode to get bytes objects back, this way they
         # behave like the bytes objects returned by asyncio.subprocess
-        async with aiofiles.open(
-            os.path.join(self.workdir, self._stdout_name(use_slurm_symbols=False)),
-            "rb"
-                                 ) as f:
-            stdout = await f.read()
-        async with aiofiles.open(
-            os.path.join(self.workdir, self._stderr_name(use_slurm_symbols=False)),
-            "rb"
-                                 ) as f:
-            stderr = await f.read()
+        async with _SEMAPHORES["MAX_FILES_OPEN"]:
+            async with aiofiles.open(
+                    os.path.join(self.workdir,
+                                 self._stdout_name(use_slurm_symbols=False)),
+                    "rb"
+                                     ) as f:
+                stdout = await f.read()
+            async with aiofiles.open(
+                    os.path.join(self.workdir,
+                                 self._stderr_name(use_slurm_symbols=False)),
+                    "rb"
+                                     ) as f:
+                stderr = await f.read()
         # cache the content
         self._stdout_data = stdout
         self._stderr_data = stderr
@@ -862,10 +864,12 @@ class SlurmProcess:
                 raise ValueError("Can only send input to a SlurmProcess "
                                  + "created/submited with stdin (file) given.")
             # write the given input to stdin file
-            async with aiofiles.open(os.path.join(self.workdir, f"{self._stdin}"),
-                                     "wb",
-                                     ) as f:
-                await f.write(input)
+            async with _SEMAPHORES["MAX_FILES_OPEN"]:
+                async with aiofiles.open(os.path.join(self.workdir,
+                                                      f"{self._stdin}"),
+                                         "wb",
+                                         ) as f:
+                    await f.write(input)
         # NOTE: wait makes sure we deregister the job from monitoring and also
         #       removes the stdfiles as/if requested
         returncode = await self.wait()
