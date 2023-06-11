@@ -118,7 +118,25 @@ class MDP(LineBasedMDConfig):
                               "continuation", "unconstrained-start",
                               "morse",
                               ]
-    # TODO: Walls and everything below in the GMX manual
+    # Walls
+    _INT_SINGLETON_PARAMS += ["nwall"]
+    _STR_SINGLETON_PARAMS += ["wall-atomtype", "wall-type"]
+    _FLOAT_SINGLETON_PARAMS += ["wall-r-linpot", "wall-density",
+                                "wall-ewald-zfac"]
+    # COM Pulling
+    _STR_SINGLETON_PARAMS += ["pull", "pull-print-com", "pull-print-ref-value",
+                              "pull-print-components",
+                              "pull-pbc-ref-prev-step-com",
+                              "pull-xout-average", "pull-fout-average",
+                              ]
+    _FLOAT_SINGLETON_PARAMS += ["pull-cylinder-r", "pull-constr-tol",]
+    _INT_SINGLETON_PARAMS += ["pull-nstxout", "pull-nstfout", "pull-ngroups",
+                              "pull-ncoords"]
+    # TODO: COM-Pulling: how to best do everything with a number in the param
+    #       name?! We would like to add e.g. "pull-group1-name" only once but
+    #       would be nice if "pull-group2-name" etc are treated exactly the
+    #       same...
+    # TODO: AWH adaptive biasing and everything below in the GMX manual
 
     def _parse_line(self, line):
         # NOTE: we need to do this so complicated, because gmx accepts
