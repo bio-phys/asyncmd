@@ -628,7 +628,8 @@ class GmxEngine(MDEngine):
         # I (hejung) think this is what we want as the prepare methods check
         # for leftover files with the same deffnm, so if only the mdp is there
         # we can (and want to) just ovewrite it without raising an err
-        mdp_obj.write(mdp_in, overwrite=True)
+        async with _SEMAPHORES["MAX_FILES_OPEN"]:
+            mdp_obj.write(mdp_in, overwrite=True)
         mdp_out = os.path.join(workdir, deffnm + "_mdout.mdp")
         cmd_str = self._grompp_cmd(mdp_in=mdp_in, tpr_out=tpr_out,
                                    trr_in=trr_in, mdp_out=mdp_out)
@@ -694,7 +695,8 @@ class GmxEngine(MDEngine):
                         + "continuing anyway."
                         )
         # load the 'old' mdp_in
-        self._mdp = MDP(os.path.join(self.workdir, f"{deffnm}.mdp"))
+        async with _SEMAPHORES["MAX_FILES_OPEN"]:
+            self._mdp = MDP(os.path.join(self.workdir, f"{deffnm}.mdp"))
         self._deffnm = deffnm
         # Note that we dont need to explicitly check for the tpr existing,
         # if it does not exist we will err when getting the traj lengths

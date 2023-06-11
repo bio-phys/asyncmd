@@ -238,7 +238,7 @@ class SlurmClusterMediator:
         """
         async with self._sacct_semaphore:
             if (time.time() - self._last_sacct_call
-		 > self.min_time_between_sacct_calls):
+                    > self.min_time_between_sacct_calls):
                 # either we never called sacct or at least not in the recent past
                 # so update cached jobinfo and save the new time
                 await self._update_cached_jobinfo()
@@ -643,8 +643,7 @@ class SlurmProcess:
             # TODO: do we need to check if the file exists or that the location
             #       is writeable?
             sbatch_cmd += f" --input=./{stdin}"
-        # I (hejung) think we dont need the semaphore here
-        #async with _SEMAPHORES["SLURM_CLUSTER_MEDIATOR"]:
+        # get the list of nodes we dont want to run on
         broken_nodes = self.slurm_cluster_mediator.broken_nodes
         if len(broken_nodes) > 0:
             sbatch_cmd += f" --exclude={','.join(broken_nodes)}"
@@ -669,7 +668,7 @@ class SlurmProcess:
         finally:
             _SEMAPHORES["MAX_FILES_OPEN"].release()
         # only jobid (and possibly clustername) returned, semikolon to separate
-        logger.debug("sbatch returned stdout: %s,  {sbatch_return}, stderr: %s.",
+        logger.debug("sbatch returned stdout: %s, stderr: %s.",
                      sbatch_return, stderr.decode())
         jobid = sbatch_return.split(";")[0].strip()
         # make sure jobid is an int/ can be cast as one
@@ -688,10 +687,8 @@ class SlurmProcess:
                                        + f"sbatch stdout: {stdout.decode()} \n"
                                        + f"sbatch stderr: {stderr.decode()} \n"
                                        )
-        logger.info(f"Submited SLURM job with jobid {jobid}.")
+        logger.info("Submited SLURM job with jobid %s.", jobid)
         self._jobid = jobid
-        # I (hejung) think we dont need the semaphore for non-async calls like here(?)
-        #async with _SEMAPHORES["SLURM_CLUSTER_MEDIATOR"]:
         self.slurm_cluster_mediator.monitor_register_job(jobid=jobid)
         # get jobinfo (these will probably just be the defaults but at
         #  least this is a dict with the rigth keys...)
@@ -781,11 +778,9 @@ class SlurmProcess:
         return stdout, stderr
 
     async def _update_sacct_jobinfo(self) -> None:
-        # I (hejung) think we dont need the SLURM_CLUSTER_MEDIATOR semaphore at all?!
-        # i.e. I dont think we need it here as the cluster mediator limits
-        # the call frequency for sacct updates and is the same for all
-        # SlurmProcess instances
-        #async with _SEMAPHORES["SLURM_CLUSTER_MEDIATOR"]:
+        # Note that the cluster mediator limits the call frequency for sacct
+        # updates and is the same for all SlurmProcess instances, so we dont
+        # need to take care of limiting from slurm process side
         self._jobinfo = await self.slurm_cluster_mediator.get_info_for_job(jobid=self.slurm_jobid)
 
     async def wait(self) -> int:
@@ -810,7 +805,6 @@ class SlurmProcess:
         while self.returncode is None:
             await asyncio.sleep(self.sleep_time)
             await self._update_sacct_jobinfo()  # update local cached jobinfo
-        #async with _SEMAPHORES["SLURM_CLUSTER_MEDIATOR"]:
         self.slurm_cluster_mediator.monitor_remove_job(jobid=self.slurm_jobid)
         if (((self.returncode == 0) and (self._stdfiles_removal == "success"))
                 or self._stdfiles_removal == "yes"
@@ -911,7 +905,8 @@ class SlurmProcess:
                          + f"scancel returned {scancel_out}.")
             # remove the job from the monitoring
             self.slurm_cluster_mediator.monitor_remove_job(jobid=self._jobid)
-            if self._stdfiles_removal == "yes" or self._stdfiles_removal == "always":
+            if (self._stdfiles_removal == "yes"
+                    or self._stdfiles_removal == "always"):
                 # and remove stdfiles as/if requested
                 self._remove_stdfiles_sync()
         else:
