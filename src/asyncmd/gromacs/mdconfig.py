@@ -132,11 +132,68 @@ class MDP(LineBasedMDConfig):
     _FLOAT_SINGLETON_PARAMS += ["pull-cylinder-r", "pull-constr-tol",]
     _INT_SINGLETON_PARAMS += ["pull-nstxout", "pull-nstfout", "pull-ngroups",
                               "pull-ncoords"]
-    # TODO: COM-Pulling: how to best do everything with a number in the param
-    #       name?! We would like to add e.g. "pull-group1-name" only once but
-    #       would be nice if "pull-group2-name" etc are treated exactly the
-    #       same...
-    # TODO: AWH adaptive biasing and everything below in the GMX manual
+    # Note: gromacs has a maximum of 256 groups, see e.g.
+    # https://manual.gromacs.org/current/reference-manual/algorithms/group-concept.html
+    # I (hejung) did not find a maximum for the number of pull coordinates,
+    # but we go with 512 here for now (assuming at most two coords per group)
+    _STR_SINGLETON_PARAMS += (
+            [f"pull-group{n}-name" for n in range(1, 257)]
+            + [f"pull-coord{n}-type" for n in range(1, 513)]
+            + [f"pull-coord{n}-potential-provider" for n in range(1, 513)]
+            + [f"pull-coord{n}-geometry" for n in range(1, 513)]
+            + [f" pull-coord{n}-start" for n in range(1, 513)]
+                              )
+    _FLOAT_SINGLETON_PARAMS += (
+            [f"pull-coord{n}-init" for n in range(1, 513)]
+            + [f"pull-coord{n}-rate" for n in range(1, 513)]
+            + [f"pull-coord{n}-k" for n in range(1, 513)]
+            + [f"pull-coord{n}-kB" for n in range(1, 513)]
+                                )
+    _FLOAT_PARAMS += (
+            [f"pull-group{n}-weights" for n in range(1, 257)]
+            + [f"pull-coord{n}-origin" for n in range(1, 513)]
+            + [f"pull-coord{n}-vec" for n in range(1, 513)]
+                      )
+    _INT_SINGLETON_PARAMS += [f"pull-group{n}-pbcatom" for n in range(1, 257)]
+    _INT_PARAMS += [f"pull-coord{n}-groups" for n in range(1, 513)]
+    # AWH adaptive biasing
+    # Note we assume a maximum number of 20 awh coordinates, each consisting of
+    # a maximum of 4 (pull coordinate) dimensions
+    _STR_SINGLETON_PARAMS += (
+            ["awh", "awh-potential", "awh-share-multisim"]
+            + [f"awh{n}-growth" for n in range(1, 21)]
+            + [f"awh{n}-equilibrate-histogram" for n in range(1, 21)]
+            + [f"awh{n}-target" for n in range(1, 21)]
+            + [f"awh{n}-user-data" for n in range(1, 21)]
+            + [f"awh{n}-dim{d}-coord-provider"
+               for n in range(1, 21) for d in range(1, 5)]
+                              )
+    _INT_SINGLETON_PARAMS += (
+            ["awh-seed", "awh-nstout", "awh-nstsample", "awh-nsamples-update",
+             "awh-nbias"]
+            + [f"awh{n}-share-group" for n in range(1, 21)]
+            + [f"awh{n}-ndim" for n in range(1, 21)]
+            + [f"awh{n}-dim{d}-coord-index"
+               for n in range(1, 21) for d in range(1, 5)]
+                              )
+    _FLOAT_SINGLETON_PARAMS += (
+            [f"awh{n}-error-init" for n in range(1, 21)]
+            + [f"awh{n}-target-beta-scaling" for n in range(1, 21)]
+            + [f"awh{n}-target-cutoff" for n in range(1, 21)]
+            + [f"awh{n}-dim{d}-force-constant"
+               for n in range(1, 21) for d in range(1, 5)]
+            + [f"awh{n}-dim{d}-start"
+               for n in range(1, 21) for d in range(1, 5)]
+            + [f"awh{n}-dim{d}-end"
+               for n in range(1, 21) for d in range(1, 5)]
+            + [f"awh{n}-dim{d}-period"
+               for n in range(1, 21) for d in range(1, 5)]
+            + [f"awh{n}-dim{d}-diffusion"
+               for n in range(1, 21) for d in range(1, 5)]
+            + [f"awh{n}-dim{d}-cover-diameter"
+               for n in range(1, 21) for d in range(1, 5)]
+                                )
+    # TODO: Enforced rotation and everything below in the GMX manual
 
     def _parse_line(self, line):
         # NOTE: we need to do this so complicated, because gmx accepts
