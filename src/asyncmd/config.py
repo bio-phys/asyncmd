@@ -96,15 +96,27 @@ def set_max_files_open(num: typing.Optional[int] = None, margin: int = 30):
         num = rlim_soft
     elif num > rlim_soft:
         logger.warning("Passed a wanted number of open files that is larger "
-                       + f"than the system resource limit ({num} > {rlim_soft}"
-                       + f"). Will be using {rlim_soft} instead."
+                       "than the systems soft resource limit (%d > %d). "
+                       "Will be using num=%d instead. To set a higher number "
+                       "increase your systems limit on the number of open "
+                       "files and call this function again.",
+                       num, rlim_soft, rlim_soft,
                        )
         num = rlim_soft
     if num - margin <= 0:
         raise ValueError("num must be larger than margin."
-                         + f"Was num={num}, margin={margin}."
+                         f"Was num={num}, margin={margin}."
                          )
-    _SEMAPHORES["MAX_FILES_OPEN"] = asyncio.BoundedSemaphore(num - margin)
+    # NOTE: Each MAX_FILES_OPEN semaphore counts for 3 open files!
+    #       The reason is that we open 3 files at the same time for each
+    #       subprocess (stdin, stdout, stderr), but semaphores can only be
+    #       decreased (awaited) once at a time. The problem with just awaiting
+    #       it three times in a row is that we can get deadlocked by getting
+    #       1-2 semaphores and waiting for the next (last) semaphore in all
+    #       threads. The problem is that this semaphore will never be freed
+    #       without any process getting a semaphore...
+    semaval = int((num - margin) / 3)
+    _SEMAPHORES["MAX_FILES_OPEN"] = asyncio.BoundedSemaphore(semaval)
 
 
 set_max_files_open()

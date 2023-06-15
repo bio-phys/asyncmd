@@ -663,9 +663,10 @@ class Trajectory:
                                                     cache=self._memory_cache,
                                                              )
             # if we get until here we have no cache!
-            logger.warning(f"No cache associated with {self}. Returning "
-                           + "calculated function values anyway but no caching"
-                           + "can/will be performed!"
+            logger.warning("No cache associated with %s. Returning calculated "
+                           "function values anyway but no caching can/will be "
+                           "performed!",
+                           self,
                            )
             return await wrapped_func.get_values_for_trajectory(self)
 

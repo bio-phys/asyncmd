@@ -44,7 +44,7 @@ class MDP(LineBasedMDConfig):
     _KEY_VALUE_SEPARATOR = " = "
     _INTER_VALUE_CHAR = " "
     # MDP param types, sorted into groups/by headings as in the gromacs manual
-    # https://manual.gromacs.org/documentation/5.1/user-guide/mdp-options.html
+    # https://manual.gromacs.org/documentation/current/user-guide/mdp-options.html
     _FLOAT_PARAMS = []
     _FLOAT_SINGLETON_PARAMS = []
     _INT_PARAMS = []
@@ -116,9 +116,168 @@ class MDP(LineBasedMDConfig):
     _STR_SINGLETON_PARAMS += ["constraints", "constraint-algorithm",
                               # the next two are referencing the same option
                               "continuation", "unconstrained-start",
-                              "morse",
-                              ]
-    # TODO: Walls and everything below in the GMX manual
+                              "morse"]
+    # Walls
+    _INT_SINGLETON_PARAMS += ["nwall"]
+    _STR_SINGLETON_PARAMS += ["wall-atomtype", "wall-type"]
+    _FLOAT_SINGLETON_PARAMS += ["wall-r-linpot", "wall-density",
+                                "wall-ewald-zfac"]
+    # COM Pulling
+    _STR_SINGLETON_PARAMS += ["pull", "pull-print-com", "pull-print-ref-value",
+                              "pull-print-components",
+                              "pull-pbc-ref-prev-step-com",
+                              "pull-xout-average", "pull-fout-average"]
+    _FLOAT_SINGLETON_PARAMS += ["pull-cylinder-r", "pull-constr-tol"]
+    _INT_SINGLETON_PARAMS += ["pull-nstxout", "pull-nstfout", "pull-ngroups",
+                              "pull-ncoords"]
+    # Note: gromacs has a maximum of 256 groups, see e.g.
+    # https://manual.gromacs.org/current/reference-manual/algorithms/group-concept.html
+    # I (hejung) did not find a maximum for the number of pull coordinates,
+    # but we go with 512 here for now (assuming at most two coords per group)
+    _STR_SINGLETON_PARAMS += (
+            [f"pull-group{n}-name" for n in range(1, 257)]
+            + [f"pull-coord{n}-type" for n in range(1, 513)]
+            + [f"pull-coord{n}-potential-provider" for n in range(1, 513)]
+            + [f"pull-coord{n}-geometry" for n in range(1, 513)]
+            + [f" pull-coord{n}-start" for n in range(1, 513)]
+                              )
+    _FLOAT_SINGLETON_PARAMS += (
+            [f"pull-coord{n}-init" for n in range(1, 513)]
+            + [f"pull-coord{n}-rate" for n in range(1, 513)]
+            + [f"pull-coord{n}-k" for n in range(1, 513)]
+            + [f"pull-coord{n}-kB" for n in range(1, 513)]
+                                )
+    _FLOAT_PARAMS += (
+            [f"pull-group{n}-weights" for n in range(1, 257)]
+            + [f"pull-coord{n}-origin" for n in range(1, 513)]
+            + [f"pull-coord{n}-vec" for n in range(1, 513)]
+                      )
+    _INT_SINGLETON_PARAMS += [f"pull-group{n}-pbcatom" for n in range(1, 257)]
+    _INT_PARAMS += [f"pull-coord{n}-groups" for n in range(1, 513)]
+    # AWH adaptive biasing
+    # Note we assume a maximum number of 20 awh coordinates, each consisting of
+    # a maximum of 4 (pull coordinate) dimensions
+    _STR_SINGLETON_PARAMS += (
+            ["awh", "awh-potential", "awh-share-multisim"]
+            + [f"awh{n}-growth" for n in range(1, 21)]
+            + [f"awh{n}-equilibrate-histogram" for n in range(1, 21)]
+            + [f"awh{n}-target" for n in range(1, 21)]
+            + [f"awh{n}-user-data" for n in range(1, 21)]
+            + [f"awh{n}-dim{d}-coord-provider"
+               for n in range(1, 21) for d in range(1, 5)]
+                              )
+    _INT_SINGLETON_PARAMS += (
+            ["awh-seed", "awh-nstout", "awh-nstsample", "awh-nsamples-update",
+             "awh-nbias"]
+            + [f"awh{n}-share-group" for n in range(1, 21)]
+            + [f"awh{n}-ndim" for n in range(1, 21)]
+            + [f"awh{n}-dim{d}-coord-index"
+               for n in range(1, 21) for d in range(1, 5)]
+                              )
+    _FLOAT_SINGLETON_PARAMS += (
+            [f"awh{n}-error-init" for n in range(1, 21)]
+            + [f"awh{n}-target-beta-scaling" for n in range(1, 21)]
+            + [f"awh{n}-target-cutoff" for n in range(1, 21)]
+            + [f"awh{n}-dim{d}-force-constant"
+               for n in range(1, 21) for d in range(1, 5)]
+            + [f"awh{n}-dim{d}-start"
+               for n in range(1, 21) for d in range(1, 5)]
+            + [f"awh{n}-dim{d}-end"
+               for n in range(1, 21) for d in range(1, 5)]
+            + [f"awh{n}-dim{d}-period"
+               for n in range(1, 21) for d in range(1, 5)]
+            + [f"awh{n}-dim{d}-diffusion"
+               for n in range(1, 21) for d in range(1, 5)]
+            + [f"awh{n}-dim{d}-cover-diameter"
+               for n in range(1, 21) for d in range(1, 5)]
+                                )
+    # Enforced rotation
+    # Note: rotation groups are zero indexed, we assume a maximum of 30
+    _STR_SINGLETON_PARAMS += (["rotation"]
+                              + [f"rot-group{n}" for n in range(30)]
+                              + [f"rot-type{n}" for n in range(30)]
+                              + [f"rot-massw{n}" for n in range(30)]
+                              + [f"rot-fit-method{n}" for n in range(30)]
+                              )
+    _INT_SINGLETON_PARAMS += ["rot-ngroups", "rot-nstrout", "rot-nstsout"]
+    _FLOAT_SINGLETON_PARAMS += ([f"rot-rate{n}" for n in range(30)]
+                                + [f"rot-k{n}" for n in range(30)]
+                                + [f"rot-slab-dist{n}" for n in range(30)]
+                                + [f"rot-min-gauss{n}" for n in range(30)]
+                                + [f"rot-eps{n}" for n in range(30)]
+                                + [f"rot-potfit-step{n}" for n in range(30)]
+                                )
+    _FLOAT_PARAMS += ([f"rot-vec{n}" for n in range(30)]
+                      + [f"rot-pivot{n}" for n in range(30)]
+                      )
+    # NMR refinement
+    _STR_SINGLETON_PARAMS += ["disre", "disre-weighting", "disre-mixed",
+                              "orire", "orire-fitgrp"]
+    _FLOAT_SINGLETON_PARAMS += ["disre-fc", "disre-tau", "orire-fc",
+                                "orire-tau"]
+    _INT_SINGLETON_PARAMS += ["nstdisreout", "nstorireout"]
+    # Free energy calculations
+    _STR_SINGLETON_PARAMS += ["free-energy", "expanded", "sc-coul",
+                              "couple-moltype", "couple-lambda0",
+                              "couple-lambda1", "couple-intramol",
+                              "dhdl-derivatives", "dhdl-print-energy",
+                              "separate-dhdl-file"]
+    _FLOAT_SINGLETON_PARAMS += ["init-lambda", "delta-lambda", "sc-alpha",
+                                "sc-sigma", "dh-hist-spacing"]
+    _INT_SINGLETON_PARAMS += ["init-lambda-state", "calc-lambda-neighbors",
+                              "sc-r-power", "sc-power", "nstdhdl",
+                              "dh-hist-size"]
+    _FLOAT_PARAMS += ["fep-lambdas", "coul-lambdas", "vdw-lambdas",
+                      "bonded-lambdas", "restraint-lambdas", "mass-lambdas",
+                      "temperature-lambdas"]
+    # Expanded Ensemble calculations
+    _INT_SINGLETON_PARAMS += ["nstexpanded", "lmc-seed", "lmc-repeats",
+                              "lmc-gibbsdelta", "lmc-forced-nstart",
+                              "nst-transition-matrix", "mininum-var-min"]
+    _STR_SINGLETON_PARAMS += ["lmc-stats", "lmc-mc-move", "wl-oneovert",
+                              "symmetrized-transition-matrix",
+                              "lmc-weights-equil", "simulated-tempering",
+                              "simulated-tempering-scaling"]
+    _FLOAT_SINGLETON_PARAMS += ["mc-temperature", "wl-ratio", "wl-scale",
+                                "init-wl-delta", "sim-temp-low",
+                                "sim-temp-high"]
+    _FLOAT_PARAMS += ["init-lambda-weights"]
+    # Non-equilibrium MD
+    _FLOAT_SINGLETON_PARAMS += ["accelerate", "cos-acceleration"]
+    _FLOAT_PARAMS += ["deform"]
+    # Electric fields
+    _FLOAT_PARAMS += ["electric-field-x", "electric-field-y",
+                      "electric-field-z"]
+    # Mixed quantum/classical molecular dynamics
+    _STR_SINGLETON_PARAMS += ["QMMM", "QMMMscheme", "QMmethod", "QMbasis",
+                              "SH"]
+    _INT_SINGLETON_PARAMS += ["QMcharge", "QMmult", "CASorbitals",
+                              "CASelectrons"]
+    # Implicit solvent
+    _STR_SINGLETON_PARAMS += ["implicit-solvent", "gb-algorithm",
+                              "sa-algorithm"]
+    _INT_SINGLETON_PARAMS += ["nstgbradii"]
+    _FLOAT_SINGLETON_PARAMS += ["rgbradii", "gb-epsilon-solvent",
+                                "gb-saltconc", "gb-obc-alpha", "gb-obc-beta",
+                                "gb-obc-gamma", "gb-dielectric-offset",
+                                "sa-surface-tension"]
+    # Computational Electrophysiology
+    # Note: we assume a maximum of 10 controlled ion types
+    _STR_SINGLETON_PARAMS += (["swapcoords", "split-group0", "split-group1",
+                               "massw-split0", "massw-split1", "solvent-group"]
+                              + [f"iontype{n}-name" for n in range(10)]
+                              )
+    _INT_SINGLETON_PARAMS += (["swap-frequency", "coupl-steps", "iontypes",
+                               "threshold"]
+                              + [f"iontype{n}-in-A" for n in range(10)]
+                              + [f"iontype{n}-in-B" for n in range(10)]
+                              )
+    _FLOAT_SINGLETON_PARAMS += ["bulk-offsetA", "bulk-offsetB", "cyl0-r",
+                                "cyl0-up", "cyl0-down", "cyl1-r", "cyl1-up",
+                                "cyl1-down"]
+    # User defined thingies
+    _INT_SINGLETON_PARAMS += [f"userint{n}" for n in range(1, 5)]
+    _FLOAT_SINGLETON_PARAMS += [f"userreal{n}" for n in range(1, 5)]
 
     def _parse_line(self, line):
         # NOTE: we need to do this so complicated, because gmx accepts

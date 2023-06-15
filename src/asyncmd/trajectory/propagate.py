@@ -165,11 +165,12 @@ async def construct_TP_from_plus_and_minus_traj_segments(
                                struct_out=struct_out,
                                overwrite=overwrite)
     loop = asyncio.get_running_loop()
-    async with _SEMAPHORES["MAX_PROCESS"]:
-        with ThreadPoolExecutor(max_workers=1,
-                                thread_name_prefix="concat_thread",
-                                ) as pool:
-            path_traj = await loop.run_in_executor(pool, concat)
+    async with _SEMAPHORES["MAX_FILES_OPEN"]:
+        async with _SEMAPHORES["MAX_PROCESS"]:
+            with ThreadPoolExecutor(max_workers=1,
+                                    thread_name_prefix="concat_thread",
+                                    ) as pool:
+                path_traj = await loop.run_in_executor(pool, concat)
     return path_traj
 
 
@@ -397,11 +398,12 @@ class InPartsTrajectoryPropagator:
                                    tra_out=tra_out, struct_out=None,
                                    overwrite=overwrite)
         loop = asyncio.get_running_loop()
-        async with _SEMAPHORES["MAX_PROCESS"]:
-            with ThreadPoolExecutor(max_workers=1,
-                                    thread_name_prefix="concat_thread",
-                                    ) as pool:
-                full_traj = await loop.run_in_executor(pool, concat)
+        async with _SEMAPHORES["MAX_FILES_OPEN"]:
+            async with _SEMAPHORES["MAX_PROCESS"]:
+                with ThreadPoolExecutor(max_workers=1,
+                                        thread_name_prefix="concat_thread",
+                                        ) as pool:
+                    full_traj = await loop.run_in_executor(pool, concat)
         return full_traj
 
 
@@ -789,11 +791,12 @@ class ConditionalTrajectoryPropagator:
                                    tra_out=tra_out, struct_out=None,
                                    overwrite=overwrite)
         loop = asyncio.get_running_loop()
-        async with _SEMAPHORES["MAX_PROCESS"]:
-            with ThreadPoolExecutor(max_workers=1,
-                                    thread_name_prefix="concat_thread",
-                                    ) as pool:
-                full_traj = await loop.run_in_executor(pool, concat)
+        async with _SEMAPHORES["MAX_FILES_OPEN"]:
+            async with _SEMAPHORES["MAX_PROCESS"]:
+                with ThreadPoolExecutor(max_workers=1,
+                                        thread_name_prefix="concat_thread",
+                                        ) as pool:
+                    full_traj = await loop.run_in_executor(pool, concat)
         return full_traj, first_condition_fullfilled
 
     async def _condition_vals_for_traj(self, traj):
