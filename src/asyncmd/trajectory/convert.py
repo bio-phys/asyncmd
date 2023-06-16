@@ -15,15 +15,29 @@
 import os
 import abc
 import typing
+import asyncio
 import logging
+import functools
 import numpy as np
 import MDAnalysis as mda
 from scipy import constants
+from concurrent.futures import ThreadPoolExecutor
 
+from .._config import _SEMAPHORES
 from .trajectory import Trajectory
 
 
 logger = logging.getLogger(__name__)
+
+
+def _is_documented_by(original):
+    """
+    Decorator to copy the docstring of a given method to the decorated method.
+    """
+    def wrapper(target):
+        target.__doc__ = original.__doc__
+        return target
+    return wrapper
 
 
 class TrajectoryConcatenator:
@@ -145,6 +159,28 @@ class TrajectoryConcatenator:
         # return (file paths to) the finished trajectory
         return Trajectory(tra_out, struct_out)
 
+    @_is_documented_by(concatenate)
+    async def concatenate_async(self, trajs: "list[Trajectory]",
+                                slices: "list[tuple]", tra_out: str,
+                                struct_out: typing.Optional[str] = None,
+                                overwrite: bool = False,
+                                remove_double_frames: bool = True) -> Trajectory:
+        concat_fx = functools.partial(self.concatenate,
+                                      trajs=trajs,
+                                      slices=slices,
+                                      tra_out=tra_out,
+                                      struct_out=struct_out,
+                                      overwrite=overwrite,
+                                      remove_double_frames=remove_double_frames,
+                                      )
+        loop = asyncio.get_running_loop()
+        async with _SEMAPHORES["MAX_FILES_OPEN"]:
+            async with _SEMAPHORES["MAX_PROCESS"]:
+                with ThreadPoolExecutor(max_workers=1,
+                                        thread_name_prefix="concat_thread",
+                                        ) as pool:
+                    return await loop.run_in_executor(pool, concat_fx)
+
 
 class FrameExtractor(abc.ABC):
     """
@@ -239,6 +275,24 @@ class FrameExtractor(abc.ABC):
             self.apply_modification(u, ts)
             W.write(u.atoms)
         return Trajectory(trajectory_files=outfile, structure_file=struct_out)
+
+    @_is_documented_by(extract)
+    async def extract_async(self, outfile, traj_in: Trajectory, idx: int,
+                            struct_out=None, overwrite: bool = False) -> Trajectory:
+        extract_fx = functools.partial(self.extract,
+                                       outfile=outfile,
+                                       traj_in=traj_in,
+                                       idx=idx,
+                                       struct_out=struct_out,
+                                       overwrite=overwrite,
+                                       )
+        loop = asyncio.get_running_loop()
+        async with _SEMAPHORES["MAX_FILES_OPEN"]:
+            async with _SEMAPHORES["MAX_PROCESS"]:
+                with ThreadPoolExecutor(max_workers=1,
+                                        thread_name_prefix="concat_thread",
+                                        ) as pool:
+                    return await loop.run_in_executor(pool, extract_fx)
 
 
 class NoModificationFrameExtractor(FrameExtractor):

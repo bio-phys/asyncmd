@@ -158,19 +158,13 @@ async def construct_TP_from_plus_and_minus_traj_segments(
         slices += [(1, _first_frame_in_plus + 1, 1)]
         trajs += [plus_trajs[last_part_idx]]
     # finally produce the concatenated path
-    concat = functools.partial(TrajectoryConcatenator().concatenate,
-                               trajs=trajs,
-                               slices=slices,
-                               tra_out=tra_out,
-                               struct_out=struct_out,
-                               overwrite=overwrite)
-    loop = asyncio.get_running_loop()
-    async with _SEMAPHORES["MAX_FILES_OPEN"]:
-        async with _SEMAPHORES["MAX_PROCESS"]:
-            with ThreadPoolExecutor(max_workers=1,
-                                    thread_name_prefix="concat_thread",
-                                    ) as pool:
-                path_traj = await loop.run_in_executor(pool, concat)
+    path_traj = await TrajectoryConcatenator().concatenate_async(
+                                                    trajs=trajs,
+                                                    slices=slices,
+                                                    tra_out=tra_out,
+                                                    struct_out=struct_out,
+                                                    overwrite=overwrite,
+                                                                 )
     return path_traj
 
 
@@ -356,6 +350,10 @@ class InPartsTrajectoryPropagator:
         """
         # trajs is a list of trajectories, e.g. the return of propagate
         # tra_out and overwrite are passed directly to the Concatenator
+        if len(trajs) == 0:
+            # no trajectories to concatenate, happens e.g. if self.n_steps=0
+            # we return None (TODO: is this what we want?)
+            return None
         if self.n_steps > trajs[-1].last_step:
             # not enough steps in trajectories
             raise ValueError("The given trajectories are to short (< self.n_steps).")
@@ -390,20 +388,14 @@ class InPartsTrajectoryPropagator:
             slices += [(0, frames_in_last_part + 1, 1)]
 
         # and concatenate
-        concat = functools.partial(TrajectoryConcatenator().concatenate,
+        full_traj = await TrajectoryConcatenator().concatenate_async(
                                    trajs=trajs[:last_part_idx + 1],
                                    slices=slices,
                                    # take the structure file of the traj, as it
                                    # comes from the engine directly
                                    tra_out=tra_out, struct_out=None,
-                                   overwrite=overwrite)
-        loop = asyncio.get_running_loop()
-        async with _SEMAPHORES["MAX_FILES_OPEN"]:
-            async with _SEMAPHORES["MAX_PROCESS"]:
-                with ThreadPoolExecutor(max_workers=1,
-                                        thread_name_prefix="concat_thread",
-                                        ) as pool:
-                    full_traj = await loop.run_in_executor(pool, concat)
+                                   overwrite=overwrite,
+                                                                     )
         return full_traj
 
 
@@ -783,20 +775,14 @@ class ConditionalTrajectoryPropagator:
         # and the last part until including first_frame_in_cond
         slices += [(0, _first_frame_in_cond + 1, 1)]
         # we fill in all args as kwargs because there are so many
-        concat = functools.partial(TrajectoryConcatenator().concatenate,
+        full_traj = await TrajectoryConcatenator().concatenate_async(
                                    trajs=trajs[:last_part_idx + 1],
                                    slices=slices,
                                    # take the structure file of the traj, as it
                                    # comes from the engine directly
                                    tra_out=tra_out, struct_out=None,
-                                   overwrite=overwrite)
-        loop = asyncio.get_running_loop()
-        async with _SEMAPHORES["MAX_FILES_OPEN"]:
-            async with _SEMAPHORES["MAX_PROCESS"]:
-                with ThreadPoolExecutor(max_workers=1,
-                                        thread_name_prefix="concat_thread",
-                                        ) as pool:
-                    full_traj = await loop.run_in_executor(pool, concat)
+                                   overwrite=overwrite,
+                                                                     )
         return full_traj, first_condition_fullfilled
 
     async def _condition_vals_for_traj(self, traj):
