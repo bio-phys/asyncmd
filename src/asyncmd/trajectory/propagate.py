@@ -15,12 +15,9 @@
 import asyncio
 import inspect
 import logging
-import functools
 import typing
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor
 
-from .._config import _SEMAPHORES
 from .trajectory import Trajectory
 from .functionwrapper import TrajectoryFunctionWrapper
 from .convert import TrajectoryConcatenator
