@@ -12,7 +12,10 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+import os
 import asyncio
+import aiofiles
+import aiofiles.os
 import inspect
 import logging
 import typing
@@ -21,7 +24,8 @@ import numpy as np
 from .trajectory import Trajectory
 from .functionwrapper import TrajectoryFunctionWrapper
 from .convert import TrajectoryConcatenator
-from ..utils import get_all_traj_parts, nstout_from_mdconfig
+from ..utils import (get_all_traj_parts, get_all_file_parts,
+                     nstout_from_mdconfig)
 
 
 logger = logging.getLogger(__name__)
@@ -165,17 +169,75 @@ async def construct_TP_from_plus_and_minus_traj_segments(
     return path_traj
 
 
-class InPartsTrajectoryPropagator:
+class _TrajectoryPropagator:
+    # (private) superclass for InPartsTrajectoryPropagator and
+    # ConditionalTrajectoryPropagator,
+    # here we keep the common functions shared between them
+    async def remove_parts(self, workdir: str, deffnm: str,
+                           file_endings_to_remove: list[str] = ["trajectories",
+                                                                "log"],
+                           ) -> None:
+        """
+        Remove all `$deffnm.part$num.$file_ending` files for given file_endings
+
+        Can be useful to clean the `workdir` from temporary files if e.g. only
+        the concatenate trajectory is of interesst (like in TPS).
+
+        Parameters
+        ----------
+        workdir : str
+            The directory to clean.
+        deffnm : str
+            The `deffnm` that the files we clean must have.
+        file_endings_to_remove : list[str], optional
+            The strings in the list `file_endings_to_remove` indicate which
+            file endings to remove.
+            E.g. `file_endings_to_remove=["trajectories", "log"]` will result
+            in removal of trajectory parts and the log files. If you add "edr"
+            to the list we would also remove the edr files,
+            by default ["trajectories", "log"]
+        """
+        if "trajectories" in file_endings_to_remove:
+            # replace "trajectories" with the actual output traj type
+            try:
+                traj_type = self.engine_kwargs["output_traj_type"]
+            except KeyError:
+                # not in there so it will be the engine default
+                traj_type = self.engine_cls.output_traj_type
+            file_endings_to_remove.remove("trajectories")
+            file_endings_to_remove += [traj_type]
+        # now find and remove the files
+        for ending in file_endings_to_remove:
+            parts_to_remove = await get_all_file_parts(
+                                                folder=workdir,
+                                                deffnm=deffnm,
+                                                file_ending=ending.lower(),
+                                                       )
+            # make sure we dont miss anything because we have different
+            # capitalization
+            if len(parts_to_remove) == 0:
+                parts_to_remove = await get_all_file_parts(
+                                                    folder=workdir,
+                                                    deffnm=deffnm,
+                                                    file_ending=ending.upper(),
+                                                           )
+            await asyncio.gather(*(aiofiles.os.unlink(os.path.join(workdir, f))
+                                   for f in parts_to_remove)
+                                 )
+
+
+class InPartsTrajectoryPropagator(_TrajectoryPropagator):
     """
     Propagate a trajectory in parts of walltime until given number of steps.
 
     Useful to make full use of backfilling with short(ish) simulation jobs and
-    also tp run simulations that are longer than the timelimit.
+    also to run simulations that are longer than the timelimit.
     """
     def __init__(self, n_steps: int, engine_cls,
-                 engine_kwargs: dict, walltime_per_part: float):
+                 engine_kwargs: dict, walltime_per_part: float,
+                 ) -> None:
         """
-        Initialize a `InPartTrajectoryPropagator`.
+        Initialize an `InPartTrajectoryPropagator`.
 
         Parameters
         ----------
@@ -315,7 +377,7 @@ class InPartsTrajectoryPropagator:
                                   trajs: list[Trajectory],
                                   tra_out: str,
                                   overwrite: bool = False,
-                                  ) -> tuple[Trajectory, int]:
+                                  ) -> Trajectory:
         """
         Cut and concatenate the trajectory until it has length n_steps.
 
@@ -359,10 +421,11 @@ class InPartsTrajectoryPropagator:
             slices = [(0, None, 1) for _ in range(len(trajs))]
             last_part_idx = len(trajs) - 1
         else:
-            logger.warning("Trajectories do not exactly contain n_steps integration steps."
-                           + " Using a heuristic to find to correct last frame to include,"
-                           + " this heuristic might fail if n_steps is not a multiple of"
-                           + " the trajectory output frequency.")
+            logger.warning("Trajectories do not exactly contain n_steps "
+                           "integration steps. Using a heuristic to find the "
+                           "correct last frame to include, note that this "
+                           "heuristic might fail if n_steps is not a multiple "
+                           "of the trajectory output frequency.")
             # need to find the subtrajectory that contains the correct number
             # of integration steps
             # first find the part in which we go over n_steps
@@ -396,7 +459,7 @@ class InPartsTrajectoryPropagator:
         return full_traj
 
 
-class ConditionalTrajectoryPropagator:
+class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
     """
     Propagate a trajectory until any of the given conditions is fullfilled.
 
