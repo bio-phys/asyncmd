@@ -408,8 +408,7 @@ class Trajectory:
         Populate cached properties from the underlying trajectory.
         """
         # create/open a mdanalysis universe to get...
-        u = mda.Universe(self.structure_file, *self.trajectory_files,
-                         tpr_resid_from_one=True)
+        u = mda.Universe(self.structure_file, *self.trajectory_files)
         # ...the number of frames
         self._len = len(u.trajectory)
         # ...the first integration step and time
@@ -421,7 +420,6 @@ class Trajectory:
         #       XTC and TRR have it for sure (with the wraparound issue)
         self._first_step = ts.data.get("step", None)
         self._first_time = ts.time
-        time_offset = ts.data.get("time_offset", 0)  # need offset below
         # ...the time diff between subsequent **frames** (not steps)
         self._dt = ts.dt
         # ...the last integration step and time
@@ -432,29 +430,15 @@ class Trajectory:
         self._last_time = ts.time
         if all([t.lower().endswith((".xtc", ".trr"))
                 for t in self.trajectory_files]):
-            # make sure first and last time have the same offset, if they
-            # do not our calculation to fix the step wraparound will be off
-            if self._len == 1:
-                # can not calculate dt if we only have one frame
-                logger.warning("%s has only one frame. Not correcting for "
-                               "potential wraparound of the integration step.",
-                               self)
-                return # bail out!
-            if ts.data.get("time_offset", 0) != time_offset:
-                logger.warning("Time offset of the first and last time in "
-                               "%s do not match. Not correcting for potential "
-                               "wraparound of the integration step.",
-                               self)
-                return  # bail out!
-            self._fix_trr_xtc_step_wraparound(time_offset=time_offset,
-                                              universe=u)
+            self._fix_trr_xtc_step_wraparound(universe=u)
         else:
             # bail out if traj is not an XTC or TRR
             logger.info(f"{self} is not of type XTC or TRR. Not applying "
                         + "wraparound fix.")
+        # make sure the trajectory is closed by MDAnalysis
+        u.trajectory.close()
 
-    def _fix_trr_xtc_step_wraparound(self, time_offset: float,
-                                     universe: mda.Universe) -> None:
+    def _fix_trr_xtc_step_wraparound(self, universe: mda.Universe) -> None:
         # check/correct for wraparounds in the integration step numbers
         # NOTE: fails if the trajectory has length = 1!
         # NOTE: strictly spoken we should not assume wraparound behavior,
@@ -467,6 +451,24 @@ class Trajectory:
         # dividing the times by integrator_dt, this should be reasonably
         # save for normal MD settings where integrator_dt should be on the
         # order of 1-10 fs
+        if self._len == 1:
+            # bail out if the trajectory has length=1
+            # as we can not calculate dt if we only have one frame
+            logger.info("%s has only one frame. Can not correct for "
+                        "potential wraparound of the integration step.",
+                        self)
+            return  # bail out
+        # get the time offset for first and last frame, they need to match for
+        # our wraparound fix to work
+        ts = universe.trajectory[0]
+        time_offset = ts.data.get("time_offset", 0)
+        ts = universe.trajectory[-1]
+        if ts.data.get("time_offset", 0) != time_offset:
+            logger.info("Time offset of the first and last time in "
+                        "%s do not match. Not correcting for potential "
+                        "wraparound of the integration step.",
+                        self)
+            return  # bail out
         delta_s = self._last_step - self._first_step
         delta_t = round(self._last_time - self._first_time, ndigits=6)
         # first make sure traj is continous (i.e. not a concatenation where we
@@ -486,12 +488,12 @@ class Trajectory:
         for diff in step_diffs[1:]:
             if diff != first_diff:
                 # bail out because traj is not continous in time
-                logger.debug(
-                         f"{self} is not from one continous propagation, i.e."
-                         + " the step difference between subsequent steps is "
-                         + "not constant. Not applying TRR/XTC step wraparound"
-                         + " fix and using step as read from the underlying"
-                         + " trajectory.")
+                logger.debug("%s is not from one continous propagation, i.e. "
+                             "the step difference between subsequent steps is "
+                             "not constant. Not applying TRR/XTC step "
+                             "wraparound fix and using step as read from the "
+                             "underlying trajectory.",
+                             self)
             return
         # now the actual fix
         if delta_s != 0:
@@ -509,10 +511,12 @@ class Trajectory:
             self._first_step = first_step
             self._last_step = last_step
         else:  # delta_s == 0
-            # no way of finding the integrator_dt so we just use last and first
-            # steps as read from the underlying traj
-            logger.info("Can not correct for potential wraparound of the "
-                        + f"integration step because {self} has only one frame.")
+            # can only end up here if we have more than one frame in trajectory
+            # **and** the first and last frame have the same integration step
+            # which should be very rare and we can not correct anyway as the
+            # trajectory can not be from a continous propagation, so we can not
+            # end up here at all?
+            raise RuntimeError("This should not be possible?!")
 
     def __len__(self) -> int:
         """

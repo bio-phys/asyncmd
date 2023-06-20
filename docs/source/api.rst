@@ -57,8 +57,13 @@ specify the frames to use in the concatenated output trajectory. Note that this
 class gives you all customizability at the cost of complexity, if you just want
 to construct a transition from trajectry segments the
 :py:func:`asyncmd.trajectory.construct_TP_from_plus_and_minus_traj_segments` is
-most probably easier to use and waht you want (it uses the
+most probably easier to use and what you want (it uses the
 :py:class:`TrajectoryConcatenator` under the hood anyway).
+
+Note that both the `FrameExtractor`s and the `TrajectoryConcatenator` have an
+async version of their functions doing the work (`extract` and `concatenate`
+respectively). The awaitable versions do exactly the same as their sync
+counterparts, just that they do so in a seperate thread.
 
 .. py:currentmodule:: asyncmd
 
