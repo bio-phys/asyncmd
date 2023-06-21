@@ -495,15 +495,22 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             if self.load_results_func is None:
                 # we do not have '.npy' ending in results_file,
                 # numpy.save() adds it if it is not there, so we need it here
-                async with _SEMAPHORES["MAX_FILES_OPEN"]:
-                    vals = np.load(result_file + ".npy")
-                await aiofiles.os.remove(result_file + ".npy")
+                func = np.load
+                arg = result_file + ".npy"
             else:
                 # use custom loading function from user
-                # TODO: use the MAX_FILES_OPEN semaphore for the user func too?
-                #       assuming that they need to read to get the vals...?
-                vals = self.load_results_func(result_file)
-                await aiofiles.os.remove(result_file)
+                func = self.load_results_func
+                arg = result_file
+            # use a separate thread to load so we dont block with the io
+            loop = asyncio.get_running_loop()
+            async with _SEMAPHORES["MAX_FILES_OPEN"]:
+                async with _SEMAPHORES["MAX_PROCESS"]:
+                    with ThreadPoolExecutor(
+                                max_workers=1,
+                                thread_name_prefix="SlurmTrajFunc_load_thread",
+                                            ) as pool:
+                        vals = await loop.run_in_executor(pool, func, arg)
+                    await aiofiles.os.remove(result_file + ".npy")
             return vals
         finally:
             if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
