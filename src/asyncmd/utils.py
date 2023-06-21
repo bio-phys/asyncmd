@@ -53,6 +53,33 @@ async def get_all_traj_parts(folder: str, deffnm: str, engine: MDEngine) -> "lis
                          + " Maybe someone just forgot to add the function?")
 
 
+async def get_all_file_parts(folder: str, deffnm: str, file_ending: str,
+                             ) -> "list[str]":
+    """
+    Find and return all files with given ending produced by a `MDEngine`.
+
+    NOTE: This returns only the parts that exist in ascending order.
+
+    Parameters
+    ----------
+    folder : str
+        Path to a folder to search for trajectory parts.
+    deffnm : str
+        deffnm (prefix of filenames) used in the simulation.
+    file_ending : str
+        File ending of the requested filetype (with or without preceeding ".").
+
+    Returns
+    -------
+    list[str]
+        Ordered list of filepaths for files with given ending.
+    """
+    # TODO: we just use the function from the gromacs engines for now, i.e. we
+    #       assume that the filename scheme will be the same for other engines
+    return await gmx_utils.get_all_file_parts(folder=folder, deffnm=deffnm,
+                                              file_ending=file_ending)
+
+
 def nstout_from_mdconfig(mdconfig: MDConfig, output_traj_type: str) -> int:
     """
     Return output step for given mdconfig and output_traj_type.

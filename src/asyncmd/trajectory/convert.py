@@ -15,15 +15,29 @@
 import os
 import abc
 import typing
+import asyncio
 import logging
+import functools
 import numpy as np
 import MDAnalysis as mda
 from scipy import constants
+from concurrent.futures import ThreadPoolExecutor
 
+from .._config import _SEMAPHORES
 from .trajectory import Trajectory
 
 
 logger = logging.getLogger(__name__)
+
+
+def _is_documented_by(original):
+    """
+    Decorator to copy the docstring of a given method to the decorated method.
+    """
+    def wrapper(target):
+        target.__doc__ = original.__doc__
+        return target
+    return wrapper
 
 
 class TrajectoryConcatenator:
@@ -111,23 +125,23 @@ class TrajectoryConcatenator:
                                     )
 
         # special treatment for traj0 because we need n_atoms for the writer
-        u0 = mda.Universe(trajs[0].structure_file, *trajs[0].trajectory_files,
-                          tpr_resid_from_one=True)
+        u0 = mda.Universe(trajs[0].structure_file, *trajs[0].trajectory_files)
         start0, stop0, step0 = slices[0]
         # if the file exists MDAnalysis will silently overwrite
         with mda.Writer(tra_out, n_atoms=u0.trajectory.n_atoms) as W:
             for ts in u0.trajectory[start0:stop0:step0]:
                 if (self.invert_v_for_negative_step and step0 < 0
-                                                    and ts.has_velocities):
+                        and ts.has_velocities):
                     u0.atoms.velocities *= -1
                 W.write(u0.atoms)
                 if remove_double_frames:
                     # remember the last timestamp, so we can take it out
                     last_time_seen = ts.data["time"]
-            del u0  # should free up memory and does no harm?!
+            # make sure MDAnalysis closes the underlying trajectory file
+            u0.trajectory.close()
+            del u0  # and delete the universe just because we can
             for traj, sl in zip(trajs[1:], slices[1:]):
-                u = mda.Universe(traj.structure_file, *traj.trajectory_files,
-                                 tpr_resid_from_one=True)
+                u = mda.Universe(traj.structure_file, *traj.trajectory_files)
                 start, stop, step = sl
                 for ts in u.trajectory[start:stop:step]:
                     if remove_double_frames:
@@ -136,14 +150,38 @@ class TrajectoryConcatenator:
                             # last_time_seen = ts.data["time"]
                             continue  # skip this timestep/go to next iteration
                     if (self.invert_v_for_negative_step and step < 0
-                                                        and ts.has_velocities):
+                            and ts.has_velocities):
                         u.atoms.velocities *= -1
                     W.write(u.atoms)
                     if remove_double_frames:
                         last_time_seen = ts.data["time"]
+                # again close the trajectory file and delete universe
+                u.trajectory.close()
                 del u
         # return (file paths to) the finished trajectory
         return Trajectory(tra_out, struct_out)
+
+    @_is_documented_by(concatenate)
+    async def concatenate_async(self, trajs: "list[Trajectory]",
+                                slices: "list[tuple]", tra_out: str,
+                                struct_out: typing.Optional[str] = None,
+                                overwrite: bool = False,
+                                remove_double_frames: bool = True) -> Trajectory:
+        concat_fx = functools.partial(self.concatenate,
+                                      trajs=trajs,
+                                      slices=slices,
+                                      tra_out=tra_out,
+                                      struct_out=struct_out,
+                                      overwrite=overwrite,
+                                      remove_double_frames=remove_double_frames,
+                                      )
+        loop = asyncio.get_running_loop()
+        async with _SEMAPHORES["MAX_FILES_OPEN"]:
+            async with _SEMAPHORES["MAX_PROCESS"]:
+                with ThreadPoolExecutor(max_workers=1,
+                                        thread_name_prefix="concat_thread",
+                                        ) as pool:
+                    return await loop.run_in_executor(pool, concat_fx)
 
 
 class FrameExtractor(abc.ABC):
@@ -232,13 +270,32 @@ class FrameExtractor(abc.ABC):
             raise FileNotFoundError("Output structure file must exist."
                                     + f"(given struct_out is {struct_out})."
                                     )
-        u = mda.Universe(traj_in.structure_file, *traj_in.trajectory_files,
-                         tpr_resid_from_one=True)
+        u = mda.Universe(traj_in.structure_file, *traj_in.trajectory_files)
         with mda.Writer(outfile, n_atoms=u.trajectory.n_atoms) as W:
             ts = u.trajectory[idx]
             self.apply_modification(u, ts)
             W.write(u.atoms)
+        # make sure MDAnalysis closes the underlying trajectory files
+        u.trajectory.close()
         return Trajectory(trajectory_files=outfile, structure_file=struct_out)
+
+    @_is_documented_by(extract)
+    async def extract_async(self, outfile, traj_in: Trajectory, idx: int,
+                            struct_out=None, overwrite: bool = False) -> Trajectory:
+        extract_fx = functools.partial(self.extract,
+                                       outfile=outfile,
+                                       traj_in=traj_in,
+                                       idx=idx,
+                                       struct_out=struct_out,
+                                       overwrite=overwrite,
+                                       )
+        loop = asyncio.get_running_loop()
+        async with _SEMAPHORES["MAX_FILES_OPEN"]:
+            async with _SEMAPHORES["MAX_PROCESS"]:
+                with ThreadPoolExecutor(max_workers=1,
+                                        thread_name_prefix="concat_thread",
+                                        ) as pool:
+                    return await loop.run_in_executor(pool, extract_fx)
 
 
 class NoModificationFrameExtractor(FrameExtractor):
