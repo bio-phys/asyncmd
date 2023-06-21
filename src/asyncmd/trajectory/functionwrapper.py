@@ -489,9 +489,7 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                             + f" stderr was: {stderr.decode()}."
                             + f" and stdout was: {stdout.decode()}"
                                     )
-            # clean up the sbatch file
-            await aiofiles.os.remove(sbatch_fname)
-            # and load the results
+            # load the results
             if self.load_results_func is None:
                 # we do not have '.npy' ending in results_file,
                 # numpy.save() adds it if it is not there, so we need it here
@@ -510,7 +508,10 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                                 thread_name_prefix="SlurmTrajFunc_load_thread",
                                             ) as pool:
                         vals = await loop.run_in_executor(pool, func, arg)
-                    await aiofiles.os.remove(result_file + ".npy")
+                # remove the results file
+                await aiofiles.os.remove(result_file + ".npy")
+                # and clean up the sbatch file
+                await aiofiles.os.remove(sbatch_fname)
             return vals
         finally:
             if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
