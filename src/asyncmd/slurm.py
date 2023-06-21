@@ -743,15 +743,17 @@ class SlurmProcess:
                 os.remove(fp)
 
     async def _remove_stdfiles_async(self) -> None:
+        async def remove_f_if_exist(f):
+            if await aiofiles.os.path.isfile(f):
+                # TODO: should we warn if the file is not there?
+                await aiofiles.os.remove(f)
+
         fnames = [self._stdin] if self._stdin is not None else []
         fnames += [self._stdout_name(use_slurm_symbols=False),
                    self._stderr_name(use_slurm_symbols=False),
                    ]
-        for f in fnames:
-            fp = os.path.join(self.workdir, f)
-            if await aiofiles.os.path.isfile(fp):
-                # TODO: should we warn if the files is not there?
-                await aiofiles.os.remove(fp)
+        await asyncio.gather(*(remove_f_if_exist(os.path.join(self.workdir, f))
+                               for f in fnames))
 
     async def _read_stdfiles(self) -> tuple[bytes, bytes]:
         if self._stdout_data is not None and self._stderr_data is not None:
