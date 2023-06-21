@@ -19,7 +19,7 @@ import numpy as np
 import asyncmd
 import asyncmd.gromacs as asyncgmx
 
-in_traj = asyncmd.Trajectory(trajectory_file="traj.trr", structure_file="conf.gro")
+in_traj = asyncmd.Trajectory(trajectory_files="traj.trr", structure_file="conf.gro")
 # get a random number generator and draw N random frames (with replacement)
 rng = np.default_rng()
 frame_idxs = rng.choice(len(in_traj), size=N)
@@ -41,10 +41,12 @@ engines = [asyncgmx.GmxEngine(mdp=mdp, gro_file="conf.gro", top_file="topol.top"
                               )
            for mdp in mdps]
 # extract starting configurations with MB-vels and save them to current directory
-start_confs = [extractor.extract(outfile=f"start_conf{i}.trr", traj_in=in_traj, idx=idx)
-               for i, idx in enumerate(frame_idxs)]
+start_confs = await asyncio.gather(*(extractor.extract_async(
+                                          outfile=f"start_conf{i}.trr",
+                                          traj_in=in_traj, idx=idx)
+                                     for i, idx in enumerate(frame_idxs)))
 # prepare the MD (for gromacs this is essentially a `grompp` call)
-await asyncio.gather(*(e.prepare(starting_configuration=,
+await asyncio.gather(*(e.prepare(starting_configuration=conf,
                                  workdir=".", deffnm=f"engine{i}")
                        for i, (conf, e) in enumerate(zip(start_confs, engines))
                        )
