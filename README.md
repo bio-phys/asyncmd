@@ -101,7 +101,11 @@ And then run the tests (against the installed version) as
 pytest
 ```
 
-## Developers
+## Contribute
+
+If you discover any issues or want to propose a new feature please feel free to open an [issue](https://github.com/bio-phys/asyncmd/issues) or a [pull request](https://github.com/bio-phys/asyncmd/pulls)!
+
+### Developer install
 
 For the developer install I recommend:
 
@@ -118,9 +122,9 @@ It will also install [coverage] and its [pytest-cov] plugin such that you have a
 pytest --cov=asyncmd --cov-report=html
 ```
 
-## Contributors
+### Contributors
 
-This project was originally conceived and started by Hendrik Jung in 2021/2022. For the current list of contributors please see the file ```__about__.py``` or check the string ```asyncmd.__author__```.
+This project was originally conceived and started by Hendrik Jung in 2021/2022. You can also see the file ```__about__.py``` or check the string ```asyncmd.__author__```. When you contribute code dont forget to add your name there to claim the credit for your work!
 
 ## License
 
