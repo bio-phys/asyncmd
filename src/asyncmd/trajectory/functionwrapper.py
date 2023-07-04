@@ -468,12 +468,12 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             returncode = slurm_proc.returncode
         except asyncio.CancelledError:
             slurm_proc.kill()
-            # clean up the sbatch file
-            await aiofiles.os.remove(sbatch_fname)
-            # clean up potentialy written result file
-            fname = (result_file + ".npy" if self.load_results_func is None
-                     else result_file)
             try:
+                # clean up the sbatch file
+                await aiofiles.os.remove(sbatch_fname)
+                # clean up potentialy written result file
+                fname = (result_file + ".npy" if self.load_results_func is None
+                         else result_file)
                 await aiofiles.os.remove(fname)
             except FileNotFoundError:
                 pass
@@ -493,12 +493,12 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             if self.load_results_func is None:
                 # we do not have '.npy' ending in results_file,
                 # numpy.save() adds it if it is not there, so we need it here
-                func = np.load
-                arg = result_file + ".npy"
+                load_func = np.load
+                fname_results = result_file + ".npy"
             else:
                 # use custom loading function from user
-                func = self.load_results_func
-                arg = result_file
+                load_func = self.load_results_func
+                fname_results = result_file
             # use a separate thread to load so we dont block with the io
             loop = asyncio.get_running_loop()
             async with _SEMAPHORES["MAX_FILES_OPEN"]:
@@ -507,11 +507,16 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                                 max_workers=1,
                                 thread_name_prefix="SlurmTrajFunc_load_thread",
                                             ) as pool:
-                        vals = await loop.run_in_executor(pool, func, arg)
-                # remove the results file
-                await aiofiles.os.remove(result_file + ".npy")
-                # and clean up the sbatch file
-                await aiofiles.os.remove(sbatch_fname)
+                        vals = await loop.run_in_executor(pool, load_func,
+                                                          fname_results)
+                try:
+                    # remove the results file
+                    await aiofiles.os.remove(fname_results)
+                    # and clean up the sbatch file
+                    await aiofiles.os.remove(sbatch_fname)
+                except FileNotFoundError:
+                    # TODO: warn?
+                    pass
             return vals
         finally:
             if _SEMAPHORES["SLURM_MAX_JOB"] is not None:

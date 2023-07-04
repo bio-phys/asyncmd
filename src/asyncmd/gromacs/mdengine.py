@@ -1019,10 +1019,12 @@ class SlurmGmxEngine(GmxEngine):
         # remove the sbatch script
         name = self._name_from_name_or_none(run_name=run_name)
         fname = os.path.join(workdir, name + ".slurm")
-        if await aiofiles.ospath.exists(fname):
+        try:
             # Note: the 0step MD removes the whole folder in which it runs
             # (including the sbatch script)
-            await aiofiles.os.unlink(fname)
+            await aiofiles.os.remove(fname)
+        except FileNotFoundError:
+            pass
 
     # TODO: do we even need/want that?
     @property

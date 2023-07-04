@@ -739,14 +739,18 @@ class SlurmProcess:
                    ]
         for f in fnames:
             fp = os.path.join(self.workdir, f)
-            if os.path.isfile(fp):
+            try:
                 os.remove(fp)
+            except FileNotFoundError:
+                pass
 
     async def _remove_stdfiles_async(self) -> None:
         async def remove_f_if_exist(f):
-            if await aiofiles.os.path.isfile(f):
-                # TODO: should we warn if the file is not there?
+            try:
                 await aiofiles.os.remove(f)
+            except FileNotFoundError:
+                # TODO: should we warn if the file is not there?
+                pass
 
         fnames = [self._stdin] if self._stdin is not None else []
         fnames += [self._stdout_name(use_slurm_symbols=False),
