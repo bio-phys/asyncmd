@@ -134,7 +134,10 @@ async def get_all_file_parts(folder: str, deffnm: str, file_ending: str) -> "lis
         file_ending = "." + file_ending
     content = await aiofiles.os.listdir(folder)
     filtered = [f for f in content
-                if (f.endswith(file_ending) and f.startswith(f"{deffnm}.part"))
+                if (f.startswith(f"{deffnm}.part")
+                    and f.endswith(file_ending)
+                    and (len(f) == len(deffnm) + 9 + len(file_ending))
+                    )
                 ]
     partnums = [int(f[len(deffnm) + 5:len(deffnm) + 9])  # get the 4 number digits
                 for f in filtered]
