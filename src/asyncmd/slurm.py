@@ -766,18 +766,26 @@ class SlurmProcess:
         # we read them in binary mode to get bytes objects back, this way they
         # behave like the bytes objects returned by asyncio.subprocess
         async with _SEMAPHORES["MAX_FILES_OPEN"]:
-            async with aiofiles.open(
-                    os.path.join(self.workdir,
-                                 self._stdout_name(use_slurm_symbols=False)),
-                    "rb"
-                                     ) as f:
-                stdout = await f.read()
-            async with aiofiles.open(
-                    os.path.join(self.workdir,
-                                 self._stderr_name(use_slurm_symbols=False)),
-                    "rb"
-                                     ) as f:
-                stderr = await f.read()
+            stdout_fname = os.path.join(
+                                    self.workdir,
+                                    self._stdout_name(use_slurm_symbols=False),
+                                        )
+            try:
+                async with aiofiles.open(stdout_fname,"rb") as f:
+                    stdout = await f.read()
+            except FileNotFoundError:
+                logger.warning("stdout file %s not found.", stdout_fname)
+                stdout = bytes()
+            stderr_fname = os.path.join(
+                                    self.workdir,
+                                    self._stderr_name(use_slurm_symbols=False),
+                                        )
+            try:
+                async with aiofiles.open(stderr_fname, "rb") as f:
+                    stderr = await f.read()
+            except FileNotFoundError:
+                logger.warning("stderr file %s not found.", stderr_fname)
+                stderr = bytes()
         # cache the content
         self._stdout_data = stdout
         self._stderr_data = stderr
