@@ -283,7 +283,7 @@ class GmxEngine(MDEngine):
     def workdir(self, value):
         if not os.path.isdir(value):
             raise TypeError(f"Not a directory ({value}).")
-        value = os.path.abspath(value)
+        value = os.path.relpath(value)
         self._workdir = value
 
     @property
@@ -294,7 +294,7 @@ class GmxEngine(MDEngine):
     def gro_file(self, val):
         if not os.path.isfile(val):
             raise FileNotFoundError(f"gro file not found: {val}")
-        val = os.path.abspath(val)
+        val = os.path.relpath(val)
         self._gro_file = val
 
     @property
@@ -305,7 +305,7 @@ class GmxEngine(MDEngine):
     def top_file(self, val):
         if not os.path.isfile(val):
             raise FileNotFoundError(f"top file not found: {val}")
-        val = os.path.abspath(val)
+        val = os.path.relpath(val)
         self._top_file = val
 
     @property
@@ -318,7 +318,7 @@ class GmxEngine(MDEngine):
             # GMX does not require an ndx file, so we accept None
             if not os.path.isfile(val):
                 raise FileNotFoundError(f"ndx file not found: {val}")
-            val = os.path.abspath(val)
+            val = os.path.relpath(val)
         # set it anyway (even if it is None)
         self._ndx_file = val
 
@@ -689,11 +689,11 @@ class GmxEngine(MDEngine):
         last_trajname = os.path.split(previous_trajs[-1].trajectory_files[0])[-1]
         last_partnum = int(last_trajname[len(deffnm) + 5:len(deffnm) + 9])
         if last_partnum != len(previous_trajs):
-            logger.warn("Not all previous trajectory parts seem to be present "
-                        + "in the current workdir. Assuming the highest part "
-                        + "number corresponds to the checkpoint file and "
-                        + "continuing anyway."
-                        )
+            logger.warning("Not all previous trajectory parts seem to be "
+                           + "present in the current workdir. Assuming the "
+                           + "highest part number corresponds to the "
+                           + "checkpoint file and continuing anyway."
+                           )
         # load the 'old' mdp_in
         async with _SEMAPHORES["MAX_FILES_OPEN"]:
             self._mdp = MDP(os.path.join(self.workdir, f"{deffnm}.mdp"))

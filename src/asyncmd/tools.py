@@ -38,10 +38,10 @@ def ensure_executable_available(executable: str) -> str:
     ValueError
         If the given name does not exist or can not be executed.
     """
-    if os.path.isfile(os.path.abspath(executable)):
+    if os.path.isfile(os.path.relpath(executable)):
         # see if it is a relative path starting from cwd
         # (or a full path starting with /)
-        executable = os.path.abspath(executable)
+        executable = os.path.relpath(executable)
         if not os.access(executable, os.X_OK):
             raise ValueError(f"{executable} must be executable.")
     elif shutil.which(executable) is not None:

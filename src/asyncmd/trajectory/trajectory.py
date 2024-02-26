@@ -156,7 +156,7 @@ class Trajectory:
         #        with pickling...?)
         self._trajectory_files = self._sanitize_trajectory_files(trajectory_files)
         if os.path.isfile(structure_file):
-            self._structure_file = os.path.abspath(structure_file)
+            self._structure_file = os.path.relpath(structure_file)
         else:
             raise FileNotFoundError(f"structure_file ({structure_file}) must "
                                     + "be accessible.")
@@ -220,12 +220,12 @@ class Trajectory:
     def _sanitize_trajectory_files(cls, trajectory_files) -> list[str]:
         if isinstance(trajectory_files, str):
             trajectory_files = [trajectory_files]
-        traj_files_sanitized = [os.path.abspath(traj_f)
+        traj_files_sanitized = [os.path.relpath(traj_f)
                                 for traj_f in trajectory_files]
         #traj_files_sanitized = []
         #for traj_f in trajectory_files:
         #    if os.path.isfile(traj_f):
-        #        traj_files_sanitized += [os.path.abspath(traj_f)]
+        #        traj_files_sanitized += [os.path.relpath(traj_f)]
         #    else:
         #        raise FileNotFoundError(f"Trajectory file ({traj_f}) must be "
         #                                + "accessible.")
@@ -576,12 +576,12 @@ class Trajectory:
 
     @property
     def structure_file(self) -> str:
-        """Return absolute path to the structure file."""
+        """Return relative path to the structure file."""
         return copy.copy(self._structure_file)
 
     @property
     def trajectory_files(self) -> str:
-        """Return absolute path to the trajectory files."""
+        """Return relative path to the trajectory files."""
         return copy.copy(self._trajectory_files)
 
     @property
@@ -892,14 +892,14 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
         Parameters
         ----------
         fname_trajs : list[str]
-            Absolute path to the trajectory for which we cache.
+            Path to the trajectory for which we cache.
         trajectory_hash : int
             Hash of the trajectory (files).
 
         Returns
         -------
         str
-            Absolute path to the cachefile associated with trajectory.
+            Path to the cachefile associated with trajectory.
         """
         head, tail = os.path.split(fname_trajs[0])
         hash_part = str(trajectory_hash)[:5]
