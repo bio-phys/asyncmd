@@ -246,16 +246,20 @@ class Trajectory:
         #       confusing we happily pay the small price of potentially
         #       calculating CV values slightly more often than necesary
         # TODO: how much should we read?
-        #      (I [hejung] think the first and last 2.5 MB are enough for sure)
+        #      (I [hejung] think the first and last .5 MB are enough)
         data = bytes()
         for traj_f in trajectory_files:
             data += traj_f.encode("utf-8")
+            fsize = os.stat(traj_f).st_size
+            if fsize == 0:
+                raise ValueError(f"Trajectory file {traj_f} is of size 0.")
             with open(traj_f, "rb") as traj_file:
-                # read the first 2.5 MB of each file
-                data += traj_file.read(2560)
-                # and read the last 2.5 MB of each file
-                traj_file.seek(-2560, io.SEEK_END)
-                data += traj_file.read(2560)
+                # read the first .5 MB of each file
+                data += traj_file.read(512)
+                # and read the last .5 MB of each file
+                # Note that the last .5 MB potentialy overlapp with the first
+                traj_file.seek(-512, io.SEEK_END)
+                data += traj_file.read(512)
         # calculate one hash over all traj_files
         traj_hash = int(hashlib.blake2b(data,
                                         # digest size 8 bytes = 64 bit
