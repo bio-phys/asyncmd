@@ -252,7 +252,8 @@ class GmxEngine(MDEngine):
                                          + f"{self._num_suffix(self._simulation_part)}"
                                          + f".{self.output_traj_type}")
                                                  ),
-                    structure_file=os.path.join(self.workdir, self._tpr),
+                    # NOTE: self._tpr already contains the path to workdir
+                    structure_file=self._tpr,
                     nstout=self.nstout,
                               )
             return traj
@@ -338,8 +339,7 @@ class GmxEngine(MDEngine):
             tinit = self._mdp["tinit"]
         except KeyError:
             tinit = 0.
-        finally:
-            return self._time_done - tinit
+        return self._time_done - tinit
 
     # TODO/FIXME: we assume that all output frequencies are multiples of the
     #             smallest when determing the number of frames etc
@@ -476,7 +476,7 @@ class GmxEngine(MDEngine):
         constraints_mdp["nsteps"] = 0
         await self._run_grompp(workdir=swdir, deffnm=run_name,
                                trr_in=conf_in.trajectory_files[0],
-                               tpr_out=f"{run_name}.tpr",
+                               tpr_out=os.path.join(swdir, f"{run_name}.tpr"),
                                mdp_obj=constraints_mdp)
         # TODO: this is a bit hacky, and should probably not be necessary?
         #       we keep a ref to the 'old' self._proc to reset it after we are
@@ -485,7 +485,9 @@ class GmxEngine(MDEngine):
         #       and it is probably not necessary since no engine should be able
         #       to be runing when/if we are able to call apply_constraints?
         old_proc_val = self._proc
-        cmd_str = self._mdrun_cmd(tpr=f"{run_name}.tpr", deffnm=run_name)
+        cmd_str = self._mdrun_cmd(tpr=os.path.join(swdir, f"{run_name}.tpr"),
+                                  workdir=swdir,
+                                  deffnm=run_name)
         logger.debug(f"{cmd_str}")
         returncode = None
         stderr = bytes()
@@ -604,11 +606,10 @@ class GmxEngine(MDEngine):
             raise TypeError("Starting_configuration must be None or a wrapped "
                             + f"trr ({Trajectory}).")
         # ...and call grompp to get a tpr
-        tpr_out = os.path.join(self.workdir, deffnm + ".tpr")
         # remember the path to use as structure file for out trajs
-        self._tpr = tpr_out
+        self._tpr = os.path.join(self.workdir, deffnm + ".tpr")
         await self._run_grompp(workdir=self.workdir, deffnm=self._deffnm,
-                               trr_in=trr_in, tpr_out=tpr_out,
+                               trr_in=trr_in, tpr_out=self._tpr,
                                mdp_obj=self._mdp)
         if not await aiofiles.ospath.isfile(self._tpr):
             # better be save than sorry :)
@@ -632,6 +633,7 @@ class GmxEngine(MDEngine):
             mdp_obj.write(mdp_in, overwrite=True)
         mdp_out = os.path.join(workdir, deffnm + "_mdout.mdp")
         cmd_str = self._grompp_cmd(mdp_in=mdp_in, tpr_out=tpr_out,
+                                   workdir=workdir,
                                    trr_in=trr_in, mdp_out=mdp_out)
         logger.debug(f"About to execute command: {cmd_str}")
         # 3 file descriptors: stdin, stdout, stderr
@@ -781,7 +783,8 @@ class GmxEngine(MDEngine):
                                  + "time...")
 
         self._simulation_part += 1
-        cmd_str = self._mdrun_cmd(tpr=self._tpr, deffnm=self._deffnm,
+        cmd_str = self._mdrun_cmd(tpr=self._tpr, workdir=self.workdir,
+                                  deffnm=self._deffnm,
                                   # TODO: use more/any other kwargs?
                                   maxh=walltime, nsteps=nsteps)
         logger.debug(f"{cmd_str}")
@@ -852,32 +855,48 @@ class GmxEngine(MDEngine):
         num_suffix = ".part{:04d}".format(sim_part)
         return num_suffix
 
-    def _grompp_cmd(self, mdp_in, tpr_out, trr_in=None, mdp_out=None):
+    def _grompp_cmd(self, mdp_in, tpr_out, workdir, trr_in=None, mdp_out=None):
         # all args are expected to be file paths
-        cmd = f"{self.grompp_executable} -f {mdp_in} -c {self.gro_file}"
-        cmd += f" -p {self.top_file}"
+        # make sure we use the right ones, i.e. relative to workdir
+        if workdir is not None:
+            mdp_in = os.path.relpath(mdp_in, start=workdir)
+            tpr_out = os.path.relpath(tpr_out, start=workdir)
+            gro_file = os.path.relpath(self.gro_file, start=workdir)
+            top_file = os.path.relpath(self.top_file, start=workdir)
+        cmd = f"{self.grompp_executable} -f {mdp_in} -c {gro_file}"
+        cmd += f" -p {top_file}"
         if self.ndx_file is not None:
-            cmd += f" -n {self.ndx_file}"
+            if workdir is not None:
+                ndx_file = os.path.relpath(self.ndx_file, start=workdir)
+            else:
+                ndx_file = self.ndx_file
+            cmd += f" -n {ndx_file}"
         if trr_in is not None:
             # input trr is optional
             # TODO/FIXME?!
             # TODO/NOTE: currently we do not pass '-time', i.e. we just use the
             #            gmx default frame selection: last frame from trr
+            if workdir is not None:
+                trr_in = os.path.relpath(trr_in, start=workdir)
             cmd += f" -t {trr_in}"
         if mdp_out is None:
             # find out the name and dir of the tpr to put the mdp next to it
             head, tail = os.path.split(tpr_out)
             name = tail.split(".")[0]
             mdp_out = os.path.join(head, name + ".mdout.mdp")
+        if workdir is not None:
+            mdp_out = os.path.relpath(mdp_out, start=workdir)
         cmd += f" -o {tpr_out} -po {mdp_out}"
         if self.grompp_extra_args != "":
             # add extra args string if it is not empty
             cmd += f" {self.grompp_extra_args}"
         return cmd
 
-    def _mdrun_cmd(self, tpr, deffnm=None, maxh=None, nsteps=None):
+    def _mdrun_cmd(self, tpr, workdir, deffnm=None, maxh=None, nsteps=None):
         # use "-noappend" to avoid appending to the trajectories when starting
         # from checkpoints, instead let gmx create new files with .partXXXX suffix
+        if workdir is not None:
+            tpr = os.path.relpath(tpr, start=workdir)
         if deffnm is None:
             # find out the name of the tpr and use that as deffnm
             head, tail = os.path.split(tpr)

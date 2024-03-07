@@ -252,6 +252,9 @@ class Trajectory:
             data += traj_f.encode("utf-8")
             fsize = os.stat(traj_f).st_size
             if fsize == 0:
+                # Note: we could also just warn as long as we do not do the
+                #       negative seek below if filesize == 0. However,
+                #       mdanalysis throws errors for empty trajectories anyway
                 raise ValueError(f"Trajectory file {traj_f} is of size 0.")
             with open(traj_f, "rb") as traj_file:
                 # read the first .5 MB of each file
