@@ -156,7 +156,7 @@ class Trajectory:
         #        with pickling...?)
         self._trajectory_files = self._sanitize_trajectory_files(trajectory_files)
         if os.path.isfile(structure_file):
-            self._structure_file = os.path.abspath(structure_file)
+            self._structure_file = os.path.relpath(structure_file)
         else:
             raise FileNotFoundError(f"structure_file ({structure_file}) must "
                                     + "be accessible.")
@@ -220,12 +220,12 @@ class Trajectory:
     def _sanitize_trajectory_files(cls, trajectory_files) -> list[str]:
         if isinstance(trajectory_files, str):
             trajectory_files = [trajectory_files]
-        traj_files_sanitized = [os.path.abspath(traj_f)
+        traj_files_sanitized = [os.path.relpath(traj_f)
                                 for traj_f in trajectory_files]
         #traj_files_sanitized = []
         #for traj_f in trajectory_files:
         #    if os.path.isfile(traj_f):
-        #        traj_files_sanitized += [os.path.abspath(traj_f)]
+        #        traj_files_sanitized += [os.path.relpath(traj_f)]
         #    else:
         #        raise FileNotFoundError(f"Trajectory file ({traj_f}) must be "
         #                                + "accessible.")
@@ -246,16 +246,23 @@ class Trajectory:
         #       confusing we happily pay the small price of potentially
         #       calculating CV values slightly more often than necesary
         # TODO: how much should we read?
-        #      (I [hejung] think the first and last 2.5 MB are enough for sure)
+        #      (I [hejung] think the first and last .5 MB are enough)
         data = bytes()
         for traj_f in trajectory_files:
             data += traj_f.encode("utf-8")
+            fsize = os.stat(traj_f).st_size
+            if fsize == 0:
+                # Note: we could also just warn as long as we do not do the
+                #       negative seek below if filesize == 0. However,
+                #       mdanalysis throws errors for empty trajectories anyway
+                raise ValueError(f"Trajectory file {traj_f} is of size 0.")
             with open(traj_f, "rb") as traj_file:
-                # read the first 2.5 MB of each file
-                data += traj_file.read(2560)
-                # and read the last 2.5 MB of each file
-                traj_file.seek(-2560, io.SEEK_END)
-                data += traj_file.read(2560)
+                # read the first .5 MB of each file
+                data += traj_file.read(512)
+                # and read the last .5 MB of each file
+                # Note that the last .5 MB potentialy overlapp with the first
+                traj_file.seek(-512, io.SEEK_END)
+                data += traj_file.read(512)
         # calculate one hash over all traj_files
         traj_hash = int(hashlib.blake2b(data,
                                         # digest size 8 bytes = 64 bit
@@ -576,12 +583,12 @@ class Trajectory:
 
     @property
     def structure_file(self) -> str:
-        """Return absolute path to the structure file."""
+        """Return relative path to the structure file."""
         return copy.copy(self._structure_file)
 
     @property
     def trajectory_files(self) -> str:
-        """Return absolute path to the trajectory files."""
+        """Return relative path to the trajectory files."""
         return copy.copy(self._trajectory_files)
 
     @property
@@ -892,14 +899,14 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
         Parameters
         ----------
         fname_trajs : list[str]
-            Absolute path to the trajectory for which we cache.
+            Path to the trajectory for which we cache.
         trajectory_hash : int
             Hash of the trajectory (files).
 
         Returns
         -------
         str
-            Absolute path to the cachefile associated with trajectory.
+            Path to the cachefile associated with trajectory.
         """
         head, tail = os.path.split(fname_trajs[0])
         hash_part = str(trajectory_hash)[:5]

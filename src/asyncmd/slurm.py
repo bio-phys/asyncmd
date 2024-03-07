@@ -570,9 +570,9 @@ class SlurmProcess:
         # TODO/FIXME: do we want sbatch_script to be relative to wdir?
         #             (currently it is relative to current dir when creating
         #              the slurmprocess)
-        self.sbatch_script = os.path.abspath(sbatch_script)
+        self.sbatch_script = os.path.relpath(sbatch_script)
         # TODO: default to current dir when creating?
-        self.workdir = os.path.abspath(workdir)
+        self.workdir = os.path.relpath(workdir)
         self.time = time
         self.stdfiles_removal = stdfiles_removal
         self._jobid = None
