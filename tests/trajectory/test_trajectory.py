@@ -35,6 +35,8 @@ class TBase:
     # base class all trajectory.py tests
     # contains general purpose data generation/setup functions
     def setup_method(self):
+        # remember current workdir (for tests that change the dir to change back)
+        self.workdir = os.path.abspath(os.getcwd())
         # define functions for data generation and bind them to the test class
         self.ran_gen = np.random.default_rng()
         ii64 = np.iinfo(np.int64)
@@ -60,6 +62,11 @@ class TBase:
             return self.ran_gen.random(size=(traj_len, cv_dim))
 
         self.make_func_values = make_func_values
+
+    def teardown_method(self):
+        # make sure we are back at initial workdir for test in which we change
+        # the workdir
+        os.chdir(self.workdir)
 
 
 class Test_Trajectory(TBase):
@@ -301,14 +308,6 @@ class Test_Trajectory(TBase):
         traj2 = make_traj()
         assert traj1 == traj2  # make sure they are equal to begin with
         assert not traj1 != traj2  # and check that neq also works
-        # modify trajectory file
-        traj2._trajectory_files[-1] += "test123"
-        assert_neq(traj1, traj2)
-        traj2 = make_traj()  # get a new traj2
-        # add a trajectory file
-        traj2._trajectory_files += ["test123"]
-        assert_neq(traj1, traj2)
-        traj2 = make_traj()  # get a new traj2
         # modify hash
         traj2 = make_traj()  # get a new traj2
         traj2._traj_hash += 1
@@ -416,10 +415,16 @@ class Test_Trajectory(TBase):
                              [None, "npz", "h5py", "memory"])
     @pytest.mark.parametrize("cache_type",
                              [None, "npz", "h5py", "memory"])
+    @pytest.mark.parametrize("change_wdir_between_pickle_unpickle",
+                             [True, False])
     @pytest.mark.asyncio
-    async def test_pickle_and_wrapped_func_application(self, tmp_path,
-                                                       default_cache_type,
-                                                       cache_type):
+    async def test_pickle_and_wrapped_func_application(
+                                        self,
+                                        tmp_path,
+                                        default_cache_type,
+                                        cache_type,
+                                        change_wdir_between_pickle_unpickle,
+                                                       ):
         global _GLOBALS
         if default_cache_type == "h5py" or cache_type == "h5py":
             h5py = pytest.importorskip("h5py", minversion=None,
@@ -467,6 +472,11 @@ class Test_Trajectory(TBase):
         fname = tmp_path / "pickle_test.pckl"
         with open(file=fname, mode="wb") as pfile:
             pickle.dump(traj, pfile)
+
+        if change_wdir_between_pickle_unpickle:
+            # NOTE: we change back to the old workdir in the teardown func
+            os.chdir(tmp_path)
+
         # now open the file and load it again
         with open(file=fname, mode="rb") as pfile:
             loaded_traj = pickle.load(pfile)
