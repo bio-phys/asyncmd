@@ -512,7 +512,8 @@ class SlurmProcess:
     sbatch_executable = "sbatch"
     scancel_executable = "scancel"
 
-    def __init__(self, jobname: str, sbatch_script: str, workdir: str,
+    def __init__(self, jobname: str, sbatch_script: str,
+                 workdir: typing.Optional[str] = None,
                  time: typing.Optional[float] = None,
                  stdfiles_removal: str = "success",
                  **kwargs) -> None:
@@ -528,8 +529,9 @@ class SlurmProcess:
             SLURM jobname (``--job-name``).
         sbatch_script : str
             Absolute or relative path to a SLURM submission script.
-        workdir : str
-            Absolute or relative path to use as working directory.
+        workdir : str or None
+            Absolute or relative path to use as working directory. None will
+            result in using the current directory as workdir.
         time : float or None
             Timelimit for the job in hours. None will result in using the
             default as either specified in the sbatch script or the partition.
@@ -570,9 +572,11 @@ class SlurmProcess:
         # TODO/FIXME: do we want sbatch_script to be relative to wdir?
         #             (currently it is relative to current dir when creating
         #              the slurmprocess)
-        self.sbatch_script = os.path.relpath(sbatch_script)
+        self.sbatch_script = os.path.abspath(sbatch_script)
         # TODO: default to current dir when creating?
-        self.workdir = os.path.relpath(workdir)
+        if workdir is None:
+            workdir = os.getcwd()
+        self.workdir = os.path.abspath(workdir)
         self.time = time
         self.stdfiles_removal = stdfiles_removal
         self._jobid = None
