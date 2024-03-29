@@ -11,6 +11,13 @@ and many more. Note :py:class:`asyncmd.Trajectory` are unique objects in the
 sense that every combination of underlying ``trajectory_files`` will give you the
 same object back even if you instantiate it multiple times, i.e. ``is`` will be
 ``True`` for the two objects (in addition to ``==`` beeing ``True``).
+Also note that it is possible to pickle and unpickle :py:class:`asyncmd.Trajectory`
+objects. You can even change the filepath of the underlying trajectories, i.e.
+copy/move them to another location (consider also moving the npz cache files)
+and still unpickle to get a working :py:class:`asyncmd.Trajectory` object as
+long as the relative path between your python workdir and the trajectory files
+does not change. Or you can change the workdir of the python interpreter as long
+as the trajectory files remain at the same location in the filesystem.
 
 ..
    TODO: reference to the dev section where we explain the two hidden funcs
