@@ -221,8 +221,9 @@ class _TrajectoryPropagator:
                                                     deffnm=deffnm,
                                                     file_ending=ending.upper(),
                                                            )
-            await asyncio.gather(*(aiofiles.os.unlink(os.path.join(workdir, f))
-                                   for f in parts_to_remove)
+            await asyncio.gather(*(aiofiles.os.unlink(f)
+                                   for f in parts_to_remove
+                                   )
                                  )
 
 
