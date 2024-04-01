@@ -263,50 +263,37 @@ class Trajectory:
         #       python session OR change the location of the trajectories as
         #       as long as the relative path between trajectory and python
         #       workdir does not change!
-        if isinstance(trajectory_files, str):
-            trajectory_files = [trajectory_files]
-        if all(os.path.isfile(traj_f) for traj_f in trajectory_files):
-            # all trajectories are there at their path
-            # so just sanitize (== make relpath) and return
-            traj_files_sanitized = [os.path.relpath(traj_f)
-                                    for traj_f in trajectory_files
-                                    ]
-            if not os.path.isfile(structure_file):
-                raise FileNotFoundError(f"Structure file ({structure_file}) is"
-                                        " not accessible.")
-            struct_file_sanitized = os.path.relpath(structure_file)
-            return traj_files_sanitized, struct_file_sanitized
-        # if we get until here we might have changed the workdir between pickle
-        # unpickle, so lets try to add that in and hope the trajectories did
-        # not change their path
+        def sanitize_path(f, pathdiff=None):
+            if os.path.isfile(f):
+                return os.path.relpath(f)
+            elif pathdiff is not None:
+                f_diff = os.path.join(pathdiff, f)
+                if os.path.isfile(f_diff):
+                    return os.path.relpath(f_diff)
+            # if we get until here we cant find the file
+            raise FileNotFoundError(f"File {f} is not accessible "
+                                    f"(we also tried {f_diff})."
+                                    )
+
         if old_workdir is not None:
             if current_workdir is None:
                 raise ValueError("'old_workdir' given but 'current_workdir' "
                                  "was None.")
             path_diff = os.path.relpath(old_workdir, current_workdir)
-            traj_files_sanitized = [os.path.relpath(
-                                        os.path.join(path_diff, traj_f)
-                                                    )
-                                    for traj_f in trajectory_files
-                                    ]
-            struct_file_sanitized = os.path.relpath(
-                                        os.path.join(path_diff, structure_file)
-                                                    )
-            if all(os.path.isfile(f)
-                   for f in traj_files_sanitized + [struct_file_sanitized]
-                   ):
-                return traj_files_sanitized, struct_file_sanitized
-        # if we got until here we have a problem: either both the workdir and
-        # the traj paths have changed, but there would be no way of knowning
-        # this I (hejung) think
-        # Or (some of) the trajectories are not accessible, e.g. because a user
-        # passed a wrong path
-        raise FileNotFoundError(
-                    "Trajectory and structure files must exist, "
-                    f"but some of the trajectory_files ({trajectory_files}) "
-                    f"and/or the structure_file ({structure_file}) are not "
-                    "accessible."
-                                )
+        else:
+            path_diff = None
+
+        if isinstance(trajectory_files, str):
+            trajectory_files = [trajectory_files]
+
+        traj_files_sanitized = [sanitize_path(f=traj_f, pathdiff=path_diff)
+                                for traj_f in trajectory_files
+                                ]
+        struct_file_sanitized = sanitize_path(f=structure_file,
+                                              pathdiff=path_diff,
+                                              )
+
+        return traj_files_sanitized, struct_file_sanitized
 
     @classmethod
     def _calc_traj_hash(cls, trajectory_files):
