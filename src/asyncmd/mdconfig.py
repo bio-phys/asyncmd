@@ -343,7 +343,7 @@ class LineBasedMDConfig(MDConfig):
     def original_file(self, value: str) -> None:
         # NOTE: (re)setting the file also replaces the current config with
         #       what we parse from that file
-        value = os.path.abspath(value)
+        value = os.path.relpath(value)
         if not os.path.isfile(value):
             raise ValueError(f"Can not access the file {value}")
         self._original_file = value
@@ -410,7 +410,7 @@ class LineBasedMDConfig(MDConfig):
         ValueError
             Raised when `overwrite=False` but `outfile` exists.
         """
-        outfile = os.path.abspath(outfile)
+        outfile = os.path.relpath(outfile)
         if os.path.exists(outfile) and not overwrite:
             raise ValueError(f"overwrite=False and file exists ({outfile}).")
         if not self.changed:

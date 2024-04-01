@@ -150,16 +150,16 @@ class Trajectory:
         #                        + f"mismatching type ({type(value)}). "
         #                        + f" Default type is {type(cval)}."
         #                        )
-        # TODO: already sanitized by __new__ when calculating the traj_hash
-        #       but we get the old (pre-sanitizing) value passed to __init__
-        #       (we could call init ourselfs in __new__? but that would mess
-        #        with pickling...?)
-        self._trajectory_files = self._sanitize_trajectory_files(trajectory_files)
-        if os.path.isfile(structure_file):
-            self._structure_file = os.path.abspath(structure_file)
-        else:
-            raise FileNotFoundError(f"structure_file ({structure_file}) must "
-                                    + "be accessible.")
+        # NOTE: self._trajectory_files is set in __new__ because we otherwise
+        #       would sanitize the files twice, but we need to check in __new__
+        #       to make pickling work
+        #       self._structure_file is also set in __new__ together with the
+        #       trajectory_files as we also sanitize its path
+        #       self._traj_hash and self._workdir are also set by __new__!
+        # self._trajectory_files
+        # self._structure_file
+        # self._workdir
+        # self._traj_hash
         # properties
         self.nstout = nstout  # use the setter to make basic sanity checks
         self._len = None
@@ -191,20 +191,48 @@ class Trajectory:
                 cache_type: typing.Optional[str] = None,
                 **kwargs):
         global _TRAJECTORIES_BY_HASH  # our global traj registry
-        trajectory_files = Trajectory._sanitize_trajectory_files(trajectory_files)
+        # see if old_workdir is given to sanitize file paths
+        old_workdir = kwargs.get("old_workdir", None)
+        # get cwd to get (and set) it only once for init and unpickle
+        current_workdir = os.path.abspath(os.getcwd())
+        trajectory_files, structure_file = Trajectory._sanitize_file_paths(
+                                            trajectory_files=trajectory_files,
+                                            structure_file=structure_file,
+                                            current_workdir=current_workdir,
+                                            old_workdir=old_workdir,
+                                                                           )
         traj_hash = Trajectory._calc_traj_hash(trajectory_files)
         try:
             # see if we (i.e. a traj with the same hash) are already existing
             other_traj = _TRAJECTORIES_BY_HASH[traj_hash]
             # if yes return 'ourself'
+            # (but make sure that the filepaths match even after a potential
+            #   change of workdir)
+            other_traj._trajectory_files = trajectory_files
+            other_traj._structure_file = structure_file
+            other_traj._workdir = current_workdir
             return other_traj
         except KeyError:
             # not yet in there, so need to create us
-            # we just create cls so that we will be "created" by init and
+            # we just create cls so that we will be "created" by init or
             # unpickled by setstate
+            # NOTE: we need to make sure that every attribute we set
+            #       below is not overwritten by setstate and/or init!
             obj = super().__new__(cls)
             # but set self._traj_hash so we dont recalculate it
             obj._traj_hash = traj_hash
+            # and set self._trajectory_files so we dont sanitize twice
+            obj._trajectory_files = trajectory_files
+            # also set self._structure_file
+            obj._structure_file = structure_file
+            # and set self._workdir to the new value
+            # Note:
+            # we remember the current workdir to be able to unpickle as long as
+            # either the relpath between traj and old/new workdir does not change
+            # or the trajectory did not change its location but we changed workdir
+            # (we need the workdir only for the second option)
+            obj._workdir = current_workdir
+            # and add us to the global trajectory registry
             _TRAJECTORIES_BY_HASH[traj_hash] = obj
             return obj
 
@@ -217,19 +245,55 @@ class Trajectory:
     #    _forget_trajectory(traj_hash=self.trajectory_hash)
 
     @classmethod
-    def _sanitize_trajectory_files(cls, trajectory_files) -> list[str]:
+    def _sanitize_file_paths(cls,
+                             trajectory_files: typing.Union[list[str], str],
+                             structure_file: str,
+                             current_workdir: typing.Optional[str] = None,
+                             old_workdir: typing.Optional[str] = None,
+                             ) -> typing.Tuple[list[str], str]:
+        # NOTE: this returns relpath if no old_workdir is given and the traj
+        #       is accessible
+        #       if old_workdir is given (and the traj not accesible) it (tries)
+        #       to find the traj by assuming the traj did not change place and
+        #       we just need to add the "path_diff" from old to new workdir to
+        #       the path, if the file is then still not there it raises a
+        #       FileNotFoundError
+        # NOTE: (for pickling and aimmd storage behavior):
+        #       The above makes it possible to either change the workdir of the
+        #       python session OR change the location of the trajectories as
+        #       as long as the relative path between trajectory and python
+        #       workdir does not change!
+        def sanitize_path(f, pathdiff=None):
+            if os.path.isfile(f):
+                return os.path.relpath(f)
+            elif pathdiff is not None:
+                f_diff = os.path.join(pathdiff, f)
+                if os.path.isfile(f_diff):
+                    return os.path.relpath(f_diff)
+            # if we get until here we cant find the file
+            raise FileNotFoundError(f"File {f} is not accessible "
+                                    f"(we also tried {f_diff})."
+                                    )
+
+        if old_workdir is not None:
+            if current_workdir is None:
+                raise ValueError("'old_workdir' given but 'current_workdir' "
+                                 "was None.")
+            path_diff = os.path.relpath(old_workdir, current_workdir)
+        else:
+            path_diff = None
+
         if isinstance(trajectory_files, str):
             trajectory_files = [trajectory_files]
-        traj_files_sanitized = [os.path.abspath(traj_f)
-                                for traj_f in trajectory_files]
-        #traj_files_sanitized = []
-        #for traj_f in trajectory_files:
-        #    if os.path.isfile(traj_f):
-        #        traj_files_sanitized += [os.path.abspath(traj_f)]
-        #    else:
-        #        raise FileNotFoundError(f"Trajectory file ({traj_f}) must be "
-        #                                + "accessible.")
-        return traj_files_sanitized
+
+        traj_files_sanitized = [sanitize_path(f=traj_f, pathdiff=path_diff)
+                                for traj_f in trajectory_files
+                                ]
+        struct_file_sanitized = sanitize_path(f=structure_file,
+                                              pathdiff=path_diff,
+                                              )
+
+        return traj_files_sanitized, struct_file_sanitized
 
     @classmethod
     def _calc_traj_hash(cls, trajectory_files):
@@ -238,24 +302,25 @@ class Trajectory:
         # note that we do not include the structure file on purpose because
         # that allows for changing .gro <-> .tpr or similar
         # (which we expect to not change the calculated CV values)
-        # NOTE: We do however include the path(s) to the trajectory_files
-        #       as we can otherwise return a Trajectory object with different
-        #       trajectory_files than expected from __new__ when we create a
-        #       second Trajectory obj that has the same trajectory data, which
-        #       admitedtly is a corner case. However, as this would be very
-        #       confusing we happily pay the small price of potentially
-        #       calculating CV values slightly more often than necesary
         # TODO: how much should we read?
-        #      (I [hejung] think the first and last 2.5 MB are enough for sure)
+        #      (I [hejung] think the first and last .5 MB are enough)
         data = bytes()
         for traj_f in trajectory_files:
-            data += traj_f.encode("utf-8")
+            #data += traj_f.encode("utf-8")  # DONT include filepaths!...
+            fsize = os.stat(traj_f).st_size
+            data += str(fsize).encode("utf-8")
+            if fsize == 0:
+                # Note: we could also just warn as long as we do not do the
+                #       negative seek below if filesize == 0. However,
+                #       mdanalysis throws errors for empty trajectories anyway
+                raise ValueError(f"Trajectory file {traj_f} is of size 0.")
             with open(traj_f, "rb") as traj_file:
-                # read the first 2.5 MB of each file
-                data += traj_file.read(2560)
-                # and read the last 2.5 MB of each file
-                traj_file.seek(-2560, io.SEEK_END)
-                data += traj_file.read(2560)
+                # read the first .5 MB of each file
+                data += traj_file.read(512)
+                # and read the last .5 MB of each file
+                # Note that the last .5 MB potentialy overlapp with the first
+                traj_file.seek(-512, io.SEEK_END)
+                data += traj_file.read(512)
         # calculate one hash over all traj_files
         traj_hash = int(hashlib.blake2b(data,
                                         # digest size 8 bytes = 64 bit
@@ -343,11 +408,11 @@ class Trajectory:
         elif self._cache_type == "h5py":
             try:
                 h5py_cache = _GLOBALS["H5PY_CACHE"]
-            except KeyError:
+            except KeyError as exc:
                 raise ValueError(
                     "No h5py cache file registered yet. Try calling "
                     + "``asyncmd.config.register_h5py_cache_file()``"
-                    + " with the appropriate arguments first")
+                    + " with the appropriate arguments first") from exc
             if self._h5py_cache is None:
                 # dont have one yet so setup the cache
                 self._h5py_cache = TrajectoryFunctionValueCacheH5PY(
@@ -433,8 +498,8 @@ class Trajectory:
             self._fix_trr_xtc_step_wraparound(universe=u)
         else:
             # bail out if traj is not an XTC or TRR
-            logger.info(f"{self} is not of type XTC or TRR. Not applying "
-                        + "wraparound fix.")
+            logger.info("%s is not of type XTC or TRR. Not applying "
+                        "wraparound fix.", self)
         # make sure the trajectory is closed by MDAnalysis
         u.trajectory.close()
 
@@ -547,24 +612,6 @@ class Trajectory:
         if self.trajectory_hash != other.trajectory_hash:
             # if it has a different hash it cant be equal
             return False
-        # if they dont have the same number of trajecory files they can not be
-        # the same
-        if len(self.trajectory_files) != len(other.trajectory_files):
-            return False
-        # they might be the same file (bitwise) but at different locations in
-        # the FS, then they are not equal (at least for out purposes)
-        for traj_f_self, traj_f_other in zip(self.trajectory_files,
-                                             other.trajectory_files):
-            if traj_f_self != traj_f_other:
-                return False
-        # NOTE: we allow the structure file to change
-        #       this way we consider e.g. the same traj with a gro and with a
-        #       tpr (or whatever) as structure files as equal
-        #       The rationale is that MDAnalysis will ocmplain if the struct
-        #       and the traj dont match and we e.g. reuse cached values without
-        #       checking the structure file anyway
-        #if self.structure_file != other.structure_file:
-        #    return False
         # TODO: check for cached CV values? I (hejung) think it does not really
         #       make sense...
 
@@ -576,12 +623,12 @@ class Trajectory:
 
     @property
     def structure_file(self) -> str:
-        """Return absolute path to the structure file."""
+        """Return relative path to the structure file."""
         return copy.copy(self._structure_file)
 
     @property
     def trajectory_files(self) -> str:
-        """Return absolute path to the trajectory files."""
+        """Return relative path to the trajectory files."""
         return copy.copy(self._trajectory_files)
 
     @property
@@ -731,7 +778,18 @@ class Trajectory:
         return state
 
     def __setstate__(self, d: dict):
-        self.__dict__ = d
+        # remove the attributes we set in __new__ from dict
+        # (otherwise we would overwrite what we set in __new__)
+        del d["_trajectory_files"]
+        del d["_structure_file"]
+        del d["_traj_hash"]
+        try:
+            del d["_workdir"]
+        except KeyError:
+            # 'old' trajectory objects dont have a _workdir attribute
+            pass
+        # now we can update without overwritting what we set in __new__
+        self.__dict__.update(d)
         # sort out which cache we were using (and which we will use now)
         if self._using_default_cache_type:
             # if we were using the global default when pickling use it now too
@@ -751,11 +809,12 @@ class Trajectory:
                 # Note that this will not err but just emit the warning to log
                 # when we change the cache but it will err when the global
                 # default cache is set to h5py (as above)
-                logger.warning(f"Trying to unpickle {self} with cache_type "
-                               + "'h5py' not possible without a registered "
-                               + "cache. Falling back to global default type."
-                               + "See 'asyncmd.config.register_h5py_cache' and"
-                               + " 'asyncmd.config.set_default_cache_type'."
+                logger.warning("Trying to unpickle %s with cache_type "
+                               "'h5py' not possible without a registered "
+                               "cache. Falling back to global default type."
+                               "See 'asyncmd.config.register_h5py_cache' and"
+                               " 'asyncmd.config.set_default_cache_type'.",
+                                self
                                )
                 self.cache_type = None  # this calls _setup_cache
                 return  # get out of here, no need to setup the cache twice
@@ -772,6 +831,7 @@ class Trajectory:
                      "structure_file": self.structure_file,
                      "nstout": self.nstout,
                      "cache_type": self.cache_type,
+                     "old_workdir": self._workdir,
                      })
 
 
@@ -878,9 +938,11 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
         # now if the old npz did not match we should remove it
         # then we will rewrite it with the first cached CV values
         if not existing_npz_matches:
-            logger.debug(f"Found existing npz file ({self.fname_npz}) but the"
-                         + " trajectory hash does not match."
-                         + " Recreating the npz cache from scratch.")
+            logger.debug("Found existing npz file (%s) but the"
+                         " trajectory hash does not match."
+                         " Recreating the npz cache from scratch.",
+                         self.fname_npz
+                         )
             os.unlink(self.fname_npz)
 
     @classmethod
@@ -892,14 +954,14 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
         Parameters
         ----------
         fname_trajs : list[str]
-            Absolute path to the trajectory for which we cache.
+            Path to the trajectory for which we cache.
         trajectory_hash : int
             Hash of the trajectory (files).
 
         Returns
         -------
         str
-            Absolute path to the cachefile associated with trajectory.
+            Path to the cachefile associated with trajectory.
         """
         head, tail = os.path.split(fname_trajs[0])
         hash_part = str(trajectory_hash)[:5]

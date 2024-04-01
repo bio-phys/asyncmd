@@ -112,11 +112,11 @@ class TrajectoryConcatenator:
         FileNotFoundError
             If ``struct_out`` given but the file is not accessible.
         """
-        tra_out = os.path.abspath(tra_out)
+        tra_out = os.path.relpath(tra_out)
         if os.path.exists(tra_out) and not overwrite:
             raise FileExistsError(f"overwrite=False and tra_out exists: {tra_out}")
         struct_out = (trajs[0].structure_file if struct_out is None
-                      else os.path.abspath(struct_out))
+                      else os.path.relpath(struct_out))
         if not os.path.isfile(struct_out):
             # although we would expect that it exists if it comes from an
             # existing traj, we still check to catch other unrelated issues :)
@@ -259,11 +259,11 @@ class FrameExtractor(abc.ABC):
         #       and also for modification?
         # TODO: should we make it possible to extract multiple frames, i.e.
         #       enable the use of slices (and iterables of indices?)
-        outfile = os.path.abspath(outfile)
+        outfile = os.path.relpath(outfile)
         if os.path.exists(outfile) and not overwrite:
             raise FileExistsError(f"overwrite=False but outfile={outfile} exists.")
         struct_out = (traj_in.structure_file if struct_out is None
-                      else os.path.abspath(struct_out))
+                      else os.path.relpath(struct_out))
         if not os.path.isfile(struct_out):
             # although we would expect that it exists if it comes from an
             # existing traj, we still check to catch other unrelated issues :)
