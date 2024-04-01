@@ -782,8 +782,12 @@ class Trajectory:
         # (otherwise we would overwrite what we set in __new__)
         del d["_trajectory_files"]
         del d["_structure_file"]
-        del d["_workdir"]
         del d["_traj_hash"]
+        try:
+            del d["_workdir"]
+        except KeyError:
+            # 'old' trajectory objects dont have a _workdir attribute
+            pass
         # now we can update without overwritting what we set in __new__
         self.__dict__.update(d)
         # sort out which cache we were using (and which we will use now)
