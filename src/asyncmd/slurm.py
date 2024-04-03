@@ -614,7 +614,7 @@ class SlurmProcess:
 
         Can be one of "success", "no", "yes", "always", where "yes" and
         "always" are synomyms for always remove. "success" means remove
-        stdfiles if the slurm-job was successfull and "no" means never remove.
+        stdfiles if the slurm-job was successful and "no" means never remove.
         """
         return self._stdfiles_removal
 
@@ -635,8 +635,8 @@ class SlurmProcess:
             raise RuntimeError("SLURM monitoring not initialized. Please call"
                                + "`asyncmd.config.set_slurm_settings()`"
                                + " with appropriate arguments.")
-        else:
-            return self._slurm_cluster_mediator
+
+        return self._slurm_cluster_mediator
 
     async def submit(self, stdin: typing.Optional[str] = None) -> None:
         """
