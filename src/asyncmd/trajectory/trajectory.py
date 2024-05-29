@@ -314,13 +314,15 @@ class Trajectory:
                 #       negative seek below if filesize == 0. However,
                 #       mdanalysis throws errors for empty trajectories anyway
                 raise ValueError(f"Trajectory file {traj_f} is of size 0.")
+            # read (at most) the first and last 0.5 MB of each file
+            max_to_read = min((512, fsize))
             with open(traj_f, "rb") as traj_file:
-                # read the first .5 MB of each file
-                data += traj_file.read(512)
-                # and read the last .5 MB of each file
-                # Note that the last .5 MB potentialy overlapp with the first
-                traj_file.seek(-512, io.SEEK_END)
-                data += traj_file.read(512)
+                # read the first bit of each file
+                data += traj_file.read(max_to_read)
+                # and read the last bit of each file
+                # Note that the last bit potentially overlapps with the first
+                traj_file.seek(-max_to_read, io.SEEK_END)
+                data += traj_file.read(max_to_read)
         # calculate one hash over all traj_files
         traj_hash = int(hashlib.blake2b(data,
                                         # digest size 8 bytes = 64 bit
