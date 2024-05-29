@@ -51,6 +51,9 @@ class TrajectoryConcatenator:
     this can be controlled via the invert_v_for_negative_step attribute.
     We assume that all trajs have the same structure file and attach the
     structure of the first traj if not told otherwise.
+    Note that you can pass MDAnalysis transformations to this class to
+    transform your trajectories on-the-fly, see the ``mda_transformations`` and
+    ``mda_transformations_setup_func`` arguments to :method:`__init__`.
 
     Attributes
     ----------
@@ -58,7 +61,11 @@ class TrajectoryConcatenator:
         Whether to invert all momenta for segments with negative stride.
     """
 
-    def __init__(self, invert_v_for_negative_step: bool = True):
+    def __init__(self,
+        invert_v_for_negative_step: bool = True,
+        mda_transformations: typing.Optional[list[typing.Callable]] = None,
+        mda_transformations_setup_func: typing.Optional[typing.Callable] = None,
+                 ) -> None:
         """
         Initialize a :class:`TrajectoryConcatenator`.
 
@@ -67,8 +74,47 @@ class TrajectoryConcatenator:
         invert_v_for_negative_step : bool, optional
             Whether to invert all momenta for segments with negative stride,
             by default True.
+        mda_transformations : list of callables, optional
+            If given will be added as a list of transformations to the
+            MDAnalysis universe as
+            ```universe.trajectory.add_transformation(*mda_transformations)```.
+            See the ``mda_transformations_setup_func`` argument if your
+            transformations need additional universe-dependant arguments, e.g.
+            atomgroups from the universe.
+            See https://docs.mdanalysis.org/stable/documentation_pages/trajectory_transformations.html
+            for more on MDAnalysis transformations.
+        mda_transformations_setup_func: callable, optional
+            If given will be called to attach user-defined MDAnalysis
+            transformations to the universe. The function must take a universe
+            as argument and return the universe with attached transformations.
+            I.e. it is expected that the function calls
+            ```universe.trajectory.add_transformations(*list_of_trafos)```
+            after defining ``list_of_trafos`` (potentially depending on the
+            universe or atomgroups therein) and then finally returns the
+            universe with trafos.
+            See https://docs.mdanalysis.org/stable/documentation_pages/trajectory_transformations.html
+            for more on MDAnalysis transformations.
         """
         self.invert_v_for_negative_step = invert_v_for_negative_step
+        if (mda_transformations is not None
+            and mda_transformations_setup_func is not None):
+            raise ValueError("`mda_transformations` and "
+                             "`mda_transformations_setup_func` are mutualy "
+                             "exclusive, but both were given."
+                             )
+        self.mda_transformations = mda_transformations
+        self.mda_transformations_setup_func = mda_transformations_setup_func
+
+    def _attach_mda_trafos_to_universe(self,
+                                       universe: mda.Universe,
+                                       ) -> mda.Universe:
+        # NOTE: we use exactly the same attach func for the FrameExtractors,
+        #       maybe we can deduplicate some code by creating a common base class?
+        if self.mda_transformations_setup_func is not None:
+            universe = self.mda_transformations_setup_func(universe)
+        elif self.mda_transformations is not None:
+            universe.trajectory.add_transformations(*self.mda_transformations)
+        return universe
 
     def concatenate(self, trajs: "list[Trajectory]", slices: "list[tuple]",
                     tra_out: str, struct_out: typing.Optional[str] = None,
@@ -126,6 +172,7 @@ class TrajectoryConcatenator:
 
         # special treatment for traj0 because we need n_atoms for the writer
         u0 = mda.Universe(trajs[0].structure_file, *trajs[0].trajectory_files)
+        u0 = self._attach_mda_trafos_to_universe(universe=u0)
         start0, stop0, step0 = slices[0]
         # if the file exists MDAnalysis will silently overwrite
         with mda.Writer(tra_out, n_atoms=u0.trajectory.n_atoms) as W:
@@ -142,6 +189,7 @@ class TrajectoryConcatenator:
             del u0  # and delete the universe just because we can
             for traj, sl in zip(trajs[1:], slices[1:]):
                 u = mda.Universe(traj.structure_file, *traj.trajectory_files)
+                u = self._attach_mda_trafos_to_universe(universe=u)
                 start, stop, step = sl
                 for ts in u.trajectory[start:stop:step]:
                     if remove_double_frames:
@@ -197,8 +245,63 @@ class FrameExtractor(abc.ABC):
     # simplest case is without modification, but useful modifications are e.g.
     # with inverted velocities, with random Maxwell-Boltzmann velocities, etc.
 
+    def __init__(
+        self,
+        mda_transformations: typing.Optional[list[typing.Callable]] = None,
+        mda_transformations_setup_func: typing.Optional[typing.Callable] = None,
+                 ) -> None:
+        """
+        Initialize a :class:`FrameExtractor`.
+
+        Parameters
+        ----------
+        mda_transformations : list of callables, optional
+            If given will be added as a list of transformations to the
+            MDAnalysis universe as
+            ```universe.trajectory.add_transformation(*mda_transformations)```.
+            See the ``mda_transformations_setup_func`` argument if your
+            transformations need additional universe-dependant arguments, e.g.
+            atomgroups from the universe.
+            See https://docs.mdanalysis.org/stable/documentation_pages/trajectory_transformations.html
+            for more on MDAnalysis transformations.
+        mda_transformations_setup_func: callable, optional
+            If given will be called to attach user-defined MDAnalysis
+            transformations to the universe. The function must take a universe
+            as argument and return the universe with attached transformations.
+            I.e. it is expected that the function calls
+            ```universe.trajectory.add_transformations(*list_of_trafos)```
+            after defining ``list_of_trafos`` (potentially depending on the
+            universe or atomgroups therein) and then finally returns the
+            universe with trafos.
+            See https://docs.mdanalysis.org/stable/documentation_pages/trajectory_transformations.html
+            for more on MDAnalysis transformations.
+        """
+        if (mda_transformations is not None
+            and mda_transformations_setup_func is not None):
+            raise ValueError("`mda_transformations` and "
+                             "`mda_transformations_setup_func` are mutualy "
+                             "exclusive, but both were given."
+                             )
+        self.mda_transformations = mda_transformations
+        self.mda_transformations_setup_func = mda_transformations_setup_func
+
+    def _attach_mda_trafos_to_universe(self,
+                                       universe: mda.Universe,
+                                       ) -> mda.Universe:
+        # NOTE: we use exactly the same attach func for the TrajectoryConcatenator,
+        #       maybe we can deduplicate some code by creating a common base class?
+        if self.mda_transformations_setup_func is not None:
+            universe = self.mda_transformations_setup_func(universe)
+        elif self.mda_transformations is not None:
+            universe.trajectory.add_transformations(*self.mda_transformations)
+        return universe
+
     @abc.abstractmethod
-    def apply_modification(self, universe, ts):
+    def apply_modification(self,
+                           universe: mda.Universe,
+            # TODO: MDA timestep class is at mda.coordinates.timestep.Timestep
+                           ts,
+                           ):
         """
         Apply modification to selected frame (timestep/universe).
 
@@ -271,6 +374,7 @@ class FrameExtractor(abc.ABC):
                                     + f"(given struct_out is {struct_out})."
                                     )
         u = mda.Universe(traj_in.structure_file, *traj_in.trajectory_files)
+        u = self._attach_mda_trafos_to_universe(universe=u)
         with mda.Writer(outfile, n_atoms=u.trajectory.n_atoms) as W:
             ts = u.trajectory[idx]
             self.apply_modification(u, ts)
@@ -345,7 +449,12 @@ class RandomVelocitiesFrameExtractor(FrameExtractor):
         generation, in Kelvin.
     """
 
-    def __init__(self, T: float):
+    def __init__(
+        self,
+        T: float,
+        mda_transformations: typing.Optional[list[typing.Callable]] = None,
+        mda_transformations_setup_func: typing.Optional[typing.Callable] = None,
+        ) -> None:
         """
         Initialize a :class:`RandomVelocitiesFrameExtractor`.
 
@@ -353,7 +462,31 @@ class RandomVelocitiesFrameExtractor(FrameExtractor):
         ----------
         T : float
             Temperature of the Maxwell-Boltzmann distribution, in Kelvin.
+        mda_transformations : list of callables, optional
+            If given will be added as a list of transformations to the
+            MDAnalysis universe as
+            ```universe.trajectory.add_transformation(*mda_transformations)```.
+            See the ``mda_transformations_setup_func`` argument if your
+            transformations need additional universe-dependant arguments, e.g.
+            atomgroups from the universe.
+            See https://docs.mdanalysis.org/stable/documentation_pages/trajectory_transformations.html
+            for more on MDAnalysis transformations.
+        mda_transformations_setup_func: callable, optional
+            If given will be called to attach user-defined MDAnalysis
+            transformations to the universe. The function must take a universe
+            as argument and return the universe with attached transformations.
+            I.e. it is expected that the function calls
+            ```universe.trajectory.add_transformations(*list_of_trafos)```
+            after defining ``list_of_trafos`` (potentially depending on the
+            universe or atomgroups therein) and then finally returns the
+            universe with trafos.
+            See https://docs.mdanalysis.org/stable/documentation_pages/trajectory_transformations.html
+            for more on MDAnalysis transformations.
         """
+        super().__init__(
+                mda_transformations=mda_transformations,
+                mda_transformations_setup_func=mda_transformations_setup_func,
+                         )
         self.T = T  # in K
         self._rng = np.random.default_rng()
 
