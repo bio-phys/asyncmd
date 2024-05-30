@@ -84,15 +84,16 @@ def _attach_mda_trafos_to_universe(
     # NOTE: this func is used to attach the MDAnalysis transformations to
     #       the given universe in the TrajectoryConcatenator and
     #       FrameExtractor classes.
-    if mda_transformations_setup_func is not None:
-        universe = mda_transformations_setup_func(universe)
-    elif mda_transformations is not None:
-        universe.trajectory.add_transformations(*mda_transformations)
-    else:
+    if (mda_transformations is not None
+            and mda_transformations_setup_func is not None):
         raise ValueError("`mda_transformations` and "
                          "`mda_transformations_setup_func` are mutualy "
                          "exclusive, but both were given."
                          )
+    if mda_transformations_setup_func is not None:
+        universe = mda_transformations_setup_func(universe)
+    elif mda_transformations is not None:
+        universe.trajectory.add_transformations(*mda_transformations)
     return universe
 
 
