@@ -17,9 +17,7 @@ import os
 import pickle
 import numpy as np
 
-
 from unittest.mock import AsyncMock
-
 
 import asyncmd
 from asyncmd import Trajectory
