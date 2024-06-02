@@ -224,6 +224,8 @@ class TrajectoryConcatenator:
             mda_transformations_setup_func=self.mda_transformations_setup_func,
             )
         start0, stop0, step0 = slices[0]
+        if remove_double_frames:
+            last_time_seen = None
         # if the file exists MDAnalysis will silently overwrite
         with mda.Writer(tra_out, n_atoms=u0.trajectory.n_atoms) as W:
             for ts in u0.trajectory[start0:stop0:step0]:
@@ -234,9 +236,9 @@ class TrajectoryConcatenator:
                 if remove_double_frames:
                     # remember the last timestamp, so we can take it out
                     last_time_seen = ts.data["time"]
-            # make sure MDAnalysis closes the underlying trajectory file
+            # close the trajectory file for and delete the original universe
             u0.trajectory.close()
-            del u0  # and delete the universe just because we can
+            del u0
             for traj, sl in zip(trajs[1:], slices[1:]):
                 u = mda.Universe(traj.structure_file, *traj.trajectory_files)
                 u = _attach_mda_trafos_to_universe(
@@ -246,7 +248,7 @@ class TrajectoryConcatenator:
                     )
                 start, stop, step = sl
                 for ts in u.trajectory[start:stop:step]:
-                    if remove_double_frames:
+                    if remove_double_frames and (last_time_seen is not None):
                         if last_time_seen == ts.data["time"]:
                             # this is a no-op, as they are they same...
                             # last_time_seen = ts.data["time"]
@@ -257,9 +259,9 @@ class TrajectoryConcatenator:
                     W.write(u.atoms)
                     if remove_double_frames:
                         last_time_seen = ts.data["time"]
-                # again close the trajectory file and delete universe
+                # make sure MDAnalysis closes the underlying trajectory file
                 u.trajectory.close()
-                del u
+                del u  # and delete the universe just because we can
         # return (file paths to) the finished trajectory
         return Trajectory(tra_out, struct_out)
 
@@ -428,6 +430,7 @@ class FrameExtractor(abc.ABC):
             W.write(u.atoms)
         # make sure MDAnalysis closes the underlying trajectory files
         u.trajectory.close()
+        del u
         return Trajectory(trajectory_files=outfile, structure_file=struct_out)
 
     @_is_documented_by(extract)

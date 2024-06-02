@@ -507,6 +507,7 @@ class Trajectory:
                         "wraparound fix.", self)
         # make sure the trajectory is closed by MDAnalysis
         u.trajectory.close()
+        del u
 
     def _fix_trr_xtc_step_wraparound(self, universe: mda.Universe) -> None:
         # check/correct for wraparounds in the integration step numbers
