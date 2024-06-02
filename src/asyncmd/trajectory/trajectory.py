@@ -271,9 +271,12 @@ class Trajectory:
                 if os.path.isfile(f_diff):
                     return os.path.relpath(f_diff)
             # if we get until here we cant find the file
-            raise FileNotFoundError(f"File {f} is not accessible "
-                                    f"(we also tried {f_diff})."
-                                    )
+            err_msg = f"File {f} is not accessible"
+            if pathdiff is not None:
+                err_msg += f" (we also tried {f_diff})."
+            else:
+                err_msg += "."
+            raise FileNotFoundError(err_msg)
 
         if old_workdir is not None:
             if current_workdir is None:
@@ -504,6 +507,7 @@ class Trajectory:
                         "wraparound fix.", self)
         # make sure the trajectory is closed by MDAnalysis
         u.trajectory.close()
+        del u
 
     def _fix_trr_xtc_step_wraparound(self, universe: mda.Universe) -> None:
         # check/correct for wraparounds in the integration step numbers
