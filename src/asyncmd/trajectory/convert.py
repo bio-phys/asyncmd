@@ -110,7 +110,7 @@ class TrajectoryConcatenator:
     structure of the first traj if not told otherwise.
     Note that you can pass MDAnalysis transformations to this class to
     transform your trajectories on-the-fly, see the ``mda_transformations`` and
-    ``mda_transformations_setup_func`` arguments to :method:`__init__`.
+    ``mda_transformations_setup_func`` arguments to :meth:`__init__`.
 
     Attributes
     ----------
@@ -134,7 +134,7 @@ class TrajectoryConcatenator:
         mda_transformations : list of callables, optional
             If given will be added as a list of transformations to the
             MDAnalysis universe as
-            ```universe.trajectory.add_transformation(*mda_transformations)```.
+            ``universe.trajectory.add_transformation(*mda_transformations)``.
             See the ``mda_transformations_setup_func`` argument if your
             transformations need additional universe-dependant arguments, e.g.
             atomgroups from the universe.
@@ -145,7 +145,7 @@ class TrajectoryConcatenator:
             transformations to the universe. The function must take a universe
             as argument and return the universe with attached transformations.
             I.e. it is expected that the function calls
-            ```universe.trajectory.add_transformations(*list_of_trafos)```
+            ``universe.trajectory.add_transformations(*list_of_trafos)``
             after defining ``list_of_trafos`` (potentially depending on the
             universe or atomgroups therein) and then finally returns the
             universe with trafos.
@@ -315,7 +315,7 @@ class FrameExtractor(abc.ABC):
         mda_transformations : list of callables, optional
             If given will be added as a list of transformations to the
             MDAnalysis universe as
-            ```universe.trajectory.add_transformation(*mda_transformations)```.
+            ``universe.trajectory.add_transformation(*mda_transformations)``.
             See the ``mda_transformations_setup_func`` argument if your
             transformations need additional universe-dependant arguments, e.g.
             atomgroups from the universe.
@@ -326,7 +326,7 @@ class FrameExtractor(abc.ABC):
             transformations to the universe. The function must take a universe
             as argument and return the universe with attached transformations.
             I.e. it is expected that the function calls
-            ```universe.trajectory.add_transformations(*list_of_trafos)```
+            ``universe.trajectory.add_transformations(*list_of_trafos)``
             after defining ``list_of_trafos`` (potentially depending on the
             universe or atomgroups therein) and then finally returns the
             universe with trafos.
@@ -521,7 +521,7 @@ class RandomVelocitiesFrameExtractor(FrameExtractor):
         mda_transformations : list of callables, optional
             If given will be added as a list of transformations to the
             MDAnalysis universe as
-            ```universe.trajectory.add_transformation(*mda_transformations)```.
+            ``universe.trajectory.add_transformation(*mda_transformations)``.
             See the ``mda_transformations_setup_func`` argument if your
             transformations need additional universe-dependant arguments, e.g.
             atomgroups from the universe.
@@ -532,7 +532,7 @@ class RandomVelocitiesFrameExtractor(FrameExtractor):
             transformations to the universe. The function must take a universe
             as argument and return the universe with attached transformations.
             I.e. it is expected that the function calls
-            ```universe.trajectory.add_transformations(*list_of_trafos)```
+            ``universe.trajectory.add_transformations(*list_of_trafos)``
             after defining ``list_of_trafos`` (potentially depending on the
             universe or atomgroups therein) and then finally returns the
             universe with trafos.

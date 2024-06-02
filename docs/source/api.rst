@@ -117,6 +117,7 @@ FrameExtractors
 
 .. autoclass:: asyncmd.trajectory.convert.FrameExtractor
    :members:
+   :special-members:
    :inherited-members:
 
 .. autoclass:: asyncmd.trajectory.convert.NoModificationFrameExtractor
