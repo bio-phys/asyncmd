@@ -26,6 +26,7 @@ from asyncmd.trajectory.convert import (TrajectoryConcatenator,
 
 
 class TBase:
+    # class with common test methods useful for FrameExtractors and TrajectoryConcatenator
     def setup_method(self):
         # this ala traj has 18 frames
         self.ala_traj = asyncmd.Trajectory(
@@ -70,45 +71,65 @@ class TBase:
         self.mda_trafo_setup_func = mda_trafo_setup_func
 
 
-class Test_NoModificationFrameExtractor(TBase):
-    @pytest.mark.parametrize("idx", [0, 5, 10, 17])
-    @pytest.mark.parametrize("mda_transformations", [True, False])
-    @pytest.mark.parametrize("mda_transformations_setup_func", [True, False])
-    @pytest.mark.parametrize("use_async", [True, False])
-    @pytest.mark.asyncio
+class TBase_FrameExtractors(TBase):
+    # class for common test methods useful for all FrameExtractors
     async def test_extract(
                 self, idx, tmpdir, use_async,
                 mda_transformations,  # whether we use simple mda trafos
-                mda_transformations_setup_func,  # whetger we use a setup func for more complex trafos
+                mda_transformations_setup_func,  # whether we use a setup func for more complex trafos
+                extractor_class,  # the FrameExtractor subclass to test
+                extractor_init_kwargs: dict,  # the (additional) init kwargs for the extractor as a dict
                            ):
+        """
+        Instantiante a given extractor_class with given additional kwargs and
+        call its extract or extract_async methods. Return original position and
+        velocities and extacted atoms group for comparison in subclassed tests.
+        If MDAnalysis transformations are requested the original atoms positions
+        are modified according to the transformations before returning.
+
+        Parameters
+        ----------
+        idx : int
+            index to pass to extract
+        tmpdir : Fixture
+            pytest tempdir fixture
+        use_async : bool
+            whether to test the async or non-async version of extract method
+        mda_transformations : bool
+            whether to use MDAnalysis transformations (simple list)
+        mda_transformations_setup_func : bool
+            whether to use more complex MDAnalysis transformations with setup func
+        extractor_class : FrameExtractor
+            the FrameExtractor (subclass) to test
+        extractor_init_kwargs : dict
+            the (additional) init kwargs for the extractor as a dict
+
+        Returns
+        -------
+        all_pos_original, all_vels_original, all_atoms_extracted
+        """
         # figure out if we use mda trafos
         if mda_transformations and not mda_transformations_setup_func:
             # simple trafos
-            extractor = NoModificationFrameExtractor(
+            extractor = extractor_class(
                     mda_transformations=self.mda_trafos,
                     mda_transformations_setup_func=None,
-                                                     )
+                    **extractor_init_kwargs
+                                        )
         elif not mda_transformations and mda_transformations_setup_func:
             # complex trafos
-            extractor = NoModificationFrameExtractor(
+            extractor = extractor_class(
                     mda_transformations=None,
                     mda_transformations_setup_func=self.mda_trafo_setup_func,
-                                                     )
+                    **extractor_init_kwargs
+                                        )
         elif not mda_transformations and not mda_transformations_setup_func:
             # no trafos at all
-            extractor = NoModificationFrameExtractor(
+            extractor = extractor_class(
                     mda_transformations=None,
                     mda_transformations_setup_func=None,
-                                                     )
-        elif mda_transformations and mda_transformations_setup_func:
-            # if both ways of passing mda trafos are used simultaneously we
-            # should get a ValueError
-            with pytest.raises(ValueError):
-                extractor = NoModificationFrameExtractor(
-                    mda_transformations=self.mda_trafos,
-                    mda_transformations_setup_func=self.mda_trafo_setup_func,
-                                                         )
-            return  # get out of here
+                    **extractor_init_kwargs
+                                        )
         # actual extraction
         if use_async:
             out_frame = await extractor.extract_async(
@@ -144,11 +165,162 @@ class Test_NoModificationFrameExtractor(TBase):
             protein_ixs = all_prot_atoms_original.ix
             all_pos_original[protein_ixs, 0] += 5
             all_pos_original[protein_ixs, 1] += 5
+        return (all_pos_original,
+                all_atoms_original.velocities,
+                all_atoms_extracted,
+                )
+
+
+class Test_NoModificationFrameExtractor(TBase_FrameExtractors):
+    def test_extract_raises(self, tmpdir):
+        # check for the errors raised by extract here once as they are the same
+        # in all other classes that actually modify, its just that we can not
+        # instanstiate the ABC that implements the extract method that raises
+        # these errors
+        extractor = NoModificationFrameExtractor()
+        # check for error if both mda_trafos and mda_trafos_setup_func are given
+        # if both ways of passing mda trafos are used simultaneously we
+        # should get a ValueError
+        with pytest.raises(ValueError):
+            extractor = NoModificationFrameExtractor(
+                mda_transformations=self.mda_trafos,
+                mda_transformations_setup_func=self.mda_trafo_setup_func,
+                                                     )
+        # extract the same frame twice to raise FileExistsError
+        _ = extractor.extract(outfile=tmpdir + "/out_frame.trr",
+                              traj_in=self.ala_traj,
+                              idx=0,
+                              )
+        with pytest.raises(FileExistsError):
+            _ = extractor.extract(outfile=tmpdir + "/out_frame.trr",
+                                  traj_in=self.ala_traj,
+                                  idx=0,
+                                  )
+        # check that it works if we pass overwrite=True
+        _ = extractor.extract(outfile=tmpdir + "/out_frame.trr",
+                              traj_in=self.ala_traj,
+                              idx=0,
+                              overwrite=True,
+                              )
+        # finally check for the FileNotFoundError raised if the structure file
+        # does not exist
+        with pytest.raises(FileNotFoundError):
+            _ = extractor.extract(outfile=tmpdir + "/out_frame2.trr",
+                                  traj_in=self.ala_traj,
+                                  idx=0,
+                                  struct_out=tmpdir + "/does_not_exist.tpr",
+                                  )
+
+    @pytest.mark.parametrize("idx", [0, 5, 10, 17])
+    @pytest.mark.parametrize(["mda_transformations", "mda_transformations_setup_func"],
+                             # they can not be both true at the same time (we test for the err above)
+                             ([False, False],
+                              [True, False],
+                              [False, True],
+                              )
+                             )
+    @pytest.mark.parametrize("use_async", [True, False])
+    @pytest.mark.asyncio
+    async def test_extract(
+                self, idx, tmpdir, use_async,
+                mda_transformations,  # whether we use simple mda trafos
+                mda_transformations_setup_func,  # whether we use a setup func for more complex trafos
+                           ):
+        (all_pos_original,
+         all_vels_original,
+         all_atoms_extracted,
+         ) = await super().test_extract(
+                    idx=idx, tmpdir=tmpdir, use_async=use_async,
+                    mda_transformations=mda_transformations,
+                    mda_transformations_setup_func=mda_transformations_setup_func,
+                    extractor_class=NoModificationFrameExtractor,
+                    extractor_init_kwargs={},  # no additional init kwargs
+                                        )
         # compare!
         assert np.allclose(all_pos_original,
                            all_atoms_extracted.positions,
                            )
         # and check for velocities too
-        assert np.allclose(all_atoms_original.velocities,
+        assert np.allclose(all_vels_original,
                            all_atoms_extracted.velocities,
                            )
+
+
+class Test_InvertedVelocitiesFrameExtractor(TBase_FrameExtractors):
+    @pytest.mark.parametrize("idx", [0, 5, 10, 17])
+    @pytest.mark.parametrize(["mda_transformations", "mda_transformations_setup_func"],
+                             # they can not be both true at the same time (we test for the err above)
+                             ([False, False],
+                              [True, False],
+                              [False, True],
+                              )
+                             )
+    @pytest.mark.parametrize("use_async", [True, False])
+    @pytest.mark.asyncio
+    async def test_extract(
+                self, idx, tmpdir, use_async,
+                mda_transformations,  # whether we use simple mda trafos
+                mda_transformations_setup_func,  # whether we use a setup func for more complex trafos
+                           ):
+        (all_pos_original,
+         all_vels_original,
+         all_atoms_extracted,
+         ) = await super().test_extract(
+                    idx=idx, tmpdir=tmpdir, use_async=use_async,
+                    mda_transformations=mda_transformations,
+                    mda_transformations_setup_func=mda_transformations_setup_func,
+                    extractor_class=InvertedVelocitiesFrameExtractor,
+                    extractor_init_kwargs={},  # no additional init kwargs
+                                        )
+        # compare!
+        # positions should be unmodified
+        assert np.allclose(all_pos_original,
+                           all_atoms_extracted.positions,
+                           )
+        # and check for inverted velocities too
+        assert np.allclose(all_vels_original,
+                           -1. * all_atoms_extracted.velocities,
+                           )
+
+
+class Test_RandomVelocitiesFrameExtractor(TBase_FrameExtractors):
+    # NOTE: no need to test the full array of stuff we already tested for the
+    #       other FrameExtractor subclasses
+    @pytest.mark.parametrize("idx", [0, #5, 10, 17
+                                     ]
+                             )
+    @pytest.mark.parametrize(["mda_transformations", "mda_transformations_setup_func"],
+                             # they can not be both true at the same time (we test for the err above)
+                             ([False, False],
+                              #[True, False],
+                              #[False, True],
+                              )
+                             )
+    @pytest.mark.parametrize("use_async", [True, False])
+    @pytest.mark.asyncio
+    async def test_extract(
+                self, idx, tmpdir, use_async,
+                mda_transformations,  # whether we use simple mda trafos
+                mda_transformations_setup_func,  # whether we use a setup func for more complex trafos
+                           ):
+        (all_pos_original,
+         all_vels_original,
+         all_atoms_extracted,
+         ) = await super().test_extract(
+                    idx=idx, tmpdir=tmpdir, use_async=use_async,
+                    mda_transformations=mda_transformations,
+                    mda_transformations_setup_func=mda_transformations_setup_func,
+                    extractor_class=RandomVelocitiesFrameExtractor,
+                    extractor_init_kwargs={"T": 303.},  # Temperature as init kwarg needed
+                                        )
+        # compare!
+        # positions should be unmodified
+        assert np.allclose(all_pos_original,
+                           all_atoms_extracted.positions,
+                           )
+        # TODO: check for normal distribution of veloctities?!
+        #       we could check for normality with scipy.stats.normaltest but
+        #       that would only provide evidence against but not for the null
+        #       hypothesis that the data is from a normal distribution
+        #       also we would expect it to fail once in a while statistically...
+        #       so for now we just ignore the velocities....

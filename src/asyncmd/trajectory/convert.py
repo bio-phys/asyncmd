@@ -18,6 +18,7 @@ import typing
 import asyncio
 import logging
 import functools
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import MDAnalysis as mda
 try:
@@ -27,7 +28,6 @@ except ImportError:
     # this is where it lives for mda v<=2.2
     from MDAnalysis.coordinates.base import Timestep as mda_Timestep
 from scipy import constants
-from concurrent.futures import ThreadPoolExecutor
 
 from .._config import _SEMAPHORES
 from .trajectory import Trajectory
@@ -87,7 +87,7 @@ def _attach_mda_trafos_to_universe(
     if (mda_transformations is not None
             and mda_transformations_setup_func is not None):
         raise ValueError("`mda_transformations` and "
-                         "`mda_transformations_setup_func` are mutualy "
+                         "`mda_transformations_setup_func` are mutually "
                          "exclusive, but both were given."
                          )
     if mda_transformations_setup_func is not None:
@@ -156,7 +156,7 @@ class TrajectoryConcatenator:
         if (mda_transformations is not None
             and mda_transformations_setup_func is not None):
             raise ValueError("`mda_transformations` and "
-                             "`mda_transformations_setup_func` are mutualy "
+                             "`mda_transformations_setup_func` are mutually "
                              "exclusive, but both were given."
                              )
         self.mda_transformations = mda_transformations
@@ -264,6 +264,7 @@ class TrajectoryConcatenator:
         return Trajectory(tra_out, struct_out)
 
     @_is_documented_by(concatenate)
+    # pylint: disable-next=missing-function-docstring
     async def concatenate_async(self, trajs: "list[Trajectory]",
                                 slices: "list[tuple]", tra_out: str,
                                 struct_out: typing.Optional[str] = None,
@@ -333,7 +334,7 @@ class FrameExtractor(abc.ABC):
         if (mda_transformations is not None
             and mda_transformations_setup_func is not None):
             raise ValueError("`mda_transformations` and "
-                             "`mda_transformations_setup_func` are mutualy "
+                             "`mda_transformations_setup_func` are mutually "
                              "exclusive, but both were given."
                              )
         self.mda_transformations = mda_transformations
@@ -430,6 +431,7 @@ class FrameExtractor(abc.ABC):
         return Trajectory(trajectory_files=outfile, structure_file=struct_out)
 
     @_is_documented_by(extract)
+    # pylint: disable-next=missing-function-docstring
     async def extract_async(self, outfile, traj_in: Trajectory, idx: int,
                             struct_out=None, overwrite: bool = False) -> Trajectory:
         extract_fx = functools.partial(self.extract,
@@ -465,7 +467,6 @@ class NoModificationFrameExtractor(FrameExtractor):
         ts : MDAnalysis.coordinates.base.Timestep
             The mdanalysis timestep of the frame to extract.
         """
-        pass
 
 
 class InvertedVelocitiesFrameExtractor(FrameExtractor):
