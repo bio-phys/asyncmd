@@ -23,7 +23,10 @@ import os
 import aiofiles
 import aiofiles.os
 
-from .tools import ensure_executable_available
+from .tools import (ensure_executable_available,
+                    remove_file_if_exist_async,
+                    remove_file_if_exist,
+                    )
 from ._config import _SEMAPHORES
 
 
@@ -779,26 +782,17 @@ class SlurmProcess:
                    self._stderr_name(use_slurm_symbols=False),
                    ]
         for f in fnames:
-            fp = os.path.join(self.workdir, f)
-            try:
-                os.remove(fp)
-            except FileNotFoundError:
-                pass
+            remove_file_if_exist(f=os.path.join(self.workdir, f))
 
     async def _remove_stdfiles_async(self) -> None:
-        async def remove_f_if_exist(f):
-            try:
-                await aiofiles.os.remove(f)
-            except FileNotFoundError:
-                # TODO: should we warn if the file is not there?
-                pass
-
         fnames = [self._stdin] if self._stdin is not None else []
         fnames += [self._stdout_name(use_slurm_symbols=False),
                    self._stderr_name(use_slurm_symbols=False),
                    ]
-        await asyncio.gather(*(remove_f_if_exist(os.path.join(self.workdir, f))
-                               for f in fnames))
+        await asyncio.gather(
+                *(remove_file_if_exist_async(os.path.join(self.workdir, f))
+                  for f in fnames)
+                             )
 
     async def _read_stdfiles(self) -> tuple[bytes, bytes]:
         if self._stdout_data is not None and self._stderr_data is not None:
