@@ -24,8 +24,13 @@ import numpy as np
 from .trajectory import Trajectory
 from .functionwrapper import TrajectoryFunctionWrapper
 from .convert import TrajectoryConcatenator
-from ..utils import (get_all_traj_parts, get_all_file_parts,
-                     nstout_from_mdconfig)
+from ..utils import (get_all_traj_parts,
+                     get_all_file_parts,
+                     nstout_from_mdconfig,
+                     )
+from ..tools import (remove_file_if_exist,
+                     remove_file_if_exist_async,
+                     )
 
 
 logger = logging.getLogger(__name__)
@@ -176,6 +181,8 @@ class _TrajectoryPropagator:
     async def remove_parts(self, workdir: str, deffnm: str,
                            file_endings_to_remove: list[str] = ["trajectories",
                                                                 "log"],
+                            remove_mda_offset_and_lock_files: bool = True,
+                            remove_asyncmd_npz_caches: bool = True,
                            ) -> None:
         """
         Remove all `$deffnm.part$num.$file_ending` files for given file_endings
@@ -223,6 +230,51 @@ class _TrajectoryPropagator:
                                                            )
             await asyncio.gather(*(aiofiles.os.unlink(f)
                                    for f in parts_to_remove
+                                   )
+                                 )
+            # TODO: the note below?
+            # NOTE: this is a bit hacky: we just try to remove the offset and
+            #       lock files for every file we remove (since we do not know
+            #       if the file we remove is a trajectory [and therefore
+            #        potentially has corresponding offset and lock files] or if
+            #       the file we remove is e.g. an edr which has no lock/offset)
+            #       If we would know that we are removing a trajectory we could
+            #       try the removal only there, however even by comparing with
+            #       `traj_type` (from above) we can not be certain since users
+            #       could remove the wildcard "trajectories" and replace it by
+            #       their specific trajectory file ending, i.e. we would need
+            #       to know all potential traj file endings to be sure
+            if remove_mda_offset_and_lock_files or remove_asyncmd_npz_caches:
+                # create list with head, tail filenames only if needed
+                f_splits = [os.path.split(f) for f in parts_to_remove]
+            if remove_mda_offset_and_lock_files:
+                offset_lock_files_to_remove = [os.path.join(
+                                                 f_head,
+                                                 "." + f_tail + "_offsets.npz",
+                                                            )
+                                               for f_head, f_tail in f_splits
+                                               ]
+                offset_lock_files_to_remove += [os.path.join(
+                                                  f_head,
+                                                  "." + f_tail + "_offsets.lock",
+                                                             )
+                                                for f_head, f_tail in f_splits
+                                                ]
+            else:
+                offset_lock_files_to_remove = []
+            if remove_asyncmd_npz_caches:
+                # NOTE: we do not try to remove the multipart traj caches since
+                #       the Propagators only return non-multipart Trajectories
+                npz_caches_to_remove = [os.path.join(
+                                          f_head,
+                                          "." + f_tail + "_asyncmd_cv_cache.npz",
+                                                     )
+                                        for f_head, f_tail in f_splits
+                                        ]
+            else:
+                npz_caches_to_remove = []
+            await asyncio.gather(*(remove_file_if_exist_async(f)
+                                   for f in offset_lock_files_to_remove + npz_caches_to_remove
                                    )
                                  )
 

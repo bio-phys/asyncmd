@@ -14,6 +14,7 @@
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import os
 import shutil
+import aiofiles
 
 
 def ensure_executable_available(executable: str) -> str:
@@ -51,3 +52,35 @@ def ensure_executable_available(executable: str) -> str:
         raise ValueError(f"{executable} must be an existing path or accesible "
                          + "via the $PATH environment variable.")
     return executable
+
+
+def remove_file_if_exist(f: str):
+    """
+    Remove a given file if it exists.
+
+    Parameters
+    ----------
+    f : str
+        Path to the file to remove.
+    """
+    try:
+        os.remove(f)
+    except FileNotFoundError:
+        # TODO: should we info/warn if the file is not there?
+        pass
+
+
+async def remove_file_if_exist_async(f: str):
+    """
+    Remove a given file if it exists asynchronously.
+
+    Parameters
+    ----------
+    f : str
+        Path to the file to remove.
+    """
+    try:
+        await aiofiles.os.remove(f)
+    except FileNotFoundError:
+        # TODO: should we info/warn if the file is not there?
+        pass

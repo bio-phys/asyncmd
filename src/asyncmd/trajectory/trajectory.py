@@ -885,6 +885,8 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
     #       immutable (except for adding additional stored function values)
     #       but we assume that the actual underlying trajectory stays the same,
     #       i.e. it is not extended after first storing it
+    #       If it changes between two npz-cache initializiations, it will have
+    #       a different traj-hash and all cached CV values will be recalculated
 
     # NOTE: npz appending inspired by: https://stackoverflow.com/a/66618141
 
@@ -896,13 +898,13 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
     #    too it does not really matter (as they can not be async either)?
     # ...and as we also leave some room for non-semaphored file openings anyway
 
-    def __init__(self, fname_trajs: str, hash_traj: int) -> None:
+    def __init__(self, fname_trajs: list[str], hash_traj: int) -> None:
         """
         Initialize a `TrajectoryFunctionValueCacheNPZ`.
 
         Parameters
         ----------
-        fname_trajs : str
+        fname_trajs : list[str]
             Absolute filenames to the trajectories for which we cache CV values.
         hash_traj : int
             Hash over the first part of the trajectory file,
@@ -970,8 +972,9 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
             Path to the cachefile associated with trajectory.
         """
         head, tail = os.path.split(fname_trajs[0])
-        hash_part = str(trajectory_hash)[:5]
-        return os.path.join(head, f".{tail}_{hash_part}_asyncmd_cv_cache.npz")
+        return os.path.join(head,
+            f".{tail}{'_MULTIPART' if len(fname_trajs) > 1 else ''}_asyncmd_cv_cache.npz"
+                            )
 
     def __len__(self) -> int:
         return len(self._func_ids)
