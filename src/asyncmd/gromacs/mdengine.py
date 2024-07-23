@@ -132,6 +132,10 @@ class GmxEngine(MDEngine):
     #       we simply ignore them
     _output_traj_type = "trr"
     output_traj_type = _descriptor_output_traj_type()
+    # See the notes below for the SlurmGmxEngine on why this conversion factor
+    # is needed (there), here we have it only for consistency
+    _mdrun_time_conversion_factor = 1.  # run mdrun for 1. * time-limit
+
 
     def __init__(self, mdconfig, gro_file, top_file, ndx_file=None, **kwargs):
         """
@@ -915,6 +919,7 @@ class GmxEngine(MDEngine):
         cmd += f" -o {deffnm}.trr -x {deffnm}.xtc -c {deffnm}.confout.gro"
         cmd += f" -e {deffnm}.edr -g {deffnm}.log"
         if maxh is not None:
+            maxh = self._mdrun_time_conversion_factor * maxh
             cmd += f" -maxh {maxh}"
         if nsteps is not None:
             cmd += f" -nsteps {nsteps}"
@@ -937,11 +942,8 @@ class SlurmGmxEngine(GmxEngine):
     #       I (hejung) think probably not by much because we already use
     #       asyncios subprocess for grompp (i.e. do it asyncronous) and grompp
     #       will most likely not take much resources on the login (local) node
-    # TODO/FIXME: we should insert time if we know it! This should be a SlurmProcess feature!
-    #  (some qeue eligibility can depend on time requested so we should request
-    #   the known minimum)
 
-    # TODO: these are possible options, but they result in added dependencies
+    # NOTE: these are possible options, but they result in added dependencies
     #        - jinja2 templates for slurm submission scripts?
     #          (does not look like we gain flexibility but we get more work,
     #           so probably not?!)
@@ -950,6 +952,14 @@ class SlurmGmxEngine(GmxEngine):
     #           so also probably not?!)
 
     _mdrun_executable = "gmx_mpi mdrun"  # MPI as default for clusters
+    _mdrun_time_conversion_factor = 0.99  # run mdrun for 0.99 * time-limit
+    # NOTE: The rationale behind the (slightly) reduced mdrun time compared to
+    #       the slurm job time-limit is that sometimes setting up and finishing
+    #       up the slurm job takes some time (e.g. activating modules, sourcing
+    #       environments, etc.) and this can result in jobs that are cancelled
+    #       due to reaching the maximum time limit in slurm. This in turn means
+    #       that we would believe the job failed because it got cancelled
+    #       although the mdrun was successfull.
 
     def __init__(self, mdconfig, gro_file, top_file, sbatch_script, ndx_file=None,
                  **kwargs):
