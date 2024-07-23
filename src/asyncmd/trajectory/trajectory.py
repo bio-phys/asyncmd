@@ -973,7 +973,7 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
         """
         head, tail = os.path.split(fname_trajs[0])
         return os.path.join(head,
-            f".{tail}_{'MULTIPART' if len(fname_trajs) > 1 else ''}_asyncmd_cv_cache.npz"
+            f".{tail}{'_MULTIPART' if len(fname_trajs) > 1 else ''}_asyncmd_cv_cache.npz"
                             )
 
     def __len__(self) -> int:

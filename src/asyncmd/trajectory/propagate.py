@@ -244,18 +244,32 @@ class _TrajectoryPropagator:
             #       could remove the wildcard "trajectories" and replace it by
             #       their specific trajectory file ending, i.e. we would need
             #       to know all potential traj file endings to be sure
+            if remove_mda_offset_and_lock_files or remove_asyncmd_npz_caches:
+                # create list with head, tail filenames only if needed
+                f_splits = [os.path.split(f) for f in parts_to_remove]
             if remove_mda_offset_and_lock_files:
-                offset_lock_files_to_remove = ["." + f + "_offsets.npz"
-                                               for f in parts_to_remove]
-                offset_lock_files_to_remove += ["." + f + "_offsets.lock"
-                                                for f in parts_to_remove]
+                offset_lock_files_to_remove = [os.path.join(
+                                                 f_head,
+                                                 "." + f_tail + "_offsets.npz",
+                                                            )
+                                               for f_head, f_tail in f_splits
+                                               ]
+                offset_lock_files_to_remove += [os.path.join(
+                                                  f_head,
+                                                  "." + f_tail + "_offsets.lock",
+                                                             )
+                                                for f_head, f_tail in f_splits
+                                                ]
             else:
                 offset_lock_files_to_remove = []
             if remove_asyncmd_npz_caches:
                 # NOTE: we do not try to remove the multipart traj caches since
                 #       the Propagators only return non-multipart Trajectories
-                npz_caches_to_remove = ["." + f + "_asyncmd_cv_cache.npz"
-                                        for f in parts_to_remove
+                npz_caches_to_remove = [os.path.join(
+                                          f_head,
+                                          "." + f_tail + "_asyncmd_cv_cache.npz",
+                                                     )
+                                        for f_head, f_tail in f_splits
                                         ]
             else:
                 npz_caches_to_remove = []
