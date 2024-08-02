@@ -100,6 +100,8 @@ class SlurmClusterMediator:
     success_to_fail_ratio : int
         Number of successful jobs we need to observe per node to decrease the
         failed job counter by one.
+    exclude_nodes : list[str]
+        List of nodes to exclude in job submissions.
 
     """
 
@@ -120,6 +122,7 @@ class SlurmClusterMediator:
     #             (here forever means until we reinitialize SlurmClusterMediator)
 
     def __init__(self, **kwargs) -> None:
+        self._exclude_nodes = []
         # make it possible to set any attribute via kwargs
         # check the type for attributes with default values
         dval = object()
@@ -139,7 +142,6 @@ class SlurmClusterMediator:
         self.sinfo_executable = ensure_executable_available(self.sinfo_executable)
         self._node_job_fails = collections.Counter()
         self._node_job_successes = collections.Counter()
-        self._broken_nodes = []
         self._all_nodes = self.list_all_nodes()
         self._jobids = []  # list of jobids of jobs we know about
         self._jobids_sacct = []  # list of jobids we monitor actively via sacct
@@ -151,13 +153,19 @@ class SlurmClusterMediator:
         self._last_sacct_call = 0  # make sure we dont call sacct too often
         # make sure we can only call sacct once at a time
         # (since there is only one ClusterMediator at a time we can create
-        #  the smephore here in __init__)
+        #  the semaphore here in __init__)
         self._sacct_semaphore = asyncio.BoundedSemaphore(1)
 
     @property
-    def broken_nodes(self) -> "list[str]":
-        """Return a list with all nodes registered as broken."""
-        return self._broken_nodes.copy()
+    def exclude_nodes(self) -> "list[str]":
+        """Return a list with all nodes excluded from job submissions."""
+        return self._exclude_nodes.copy()
+
+    @exclude_nodes.setter
+    def exclude_nodes(self, val : typing.Union[list[str], None]):
+        if val is None:
+            val = []
+        self._exclude_nodes = val
 
     def list_all_nodes(self) -> "list[str]":
         """
@@ -454,21 +462,21 @@ class SlurmClusterMediator:
             self._node_job_fails[node] += 1
             if self._node_job_fails[node] >= self.num_fails_for_broken_node:
                 # declare it broken
-                logger.info("Adding node %s to list of broken nodes.", node)
-                if node not in self._broken_nodes:
-                    self._broken_nodes.append(node)
+                logger.info("Adding node %s to list of excluded nodes.", node)
+                if node not in self._exclude_nodes:
+                    self._exclude_nodes.append(node)
                 else:
-                    logger.error("Node %s already in broken node list.", node)
+                    logger.error("Node %s already in exclude node list.", node)
         # failsaves
         all_nodes = len(self._all_nodes)
-        broken_nodes = len(self._broken_nodes)
-        if broken_nodes >= all_nodes / 4:
+        exclude_nodes = len(self._exclude_nodes)
+        if exclude_nodes >= all_nodes / 4:
             logger.error("We already declared 1/4 of the cluster as broken."
                          + "Houston, we might have a problem?")
-            if broken_nodes >= all_nodes / 2:
+            if exclude_nodes >= all_nodes / 2:
                 logger.error("In fact we declared 1/2 of the cluster as broken."
                              + "Houston, we *do* have a problem!")
-                if broken_nodes >= all_nodes * 0.75:
+                if exclude_nodes >= all_nodes * 0.75:
                     raise RuntimeError("Houston? 3/4 of the cluster is broken?")
 
     def _note_job_success_on_nodes(self, nodelist: list[str]) -> None:
@@ -684,9 +692,9 @@ class SlurmProcess:
             #       is writeable?
             sbatch_cmd += f" --input=./{stdin}"
         # get the list of nodes we dont want to run on
-        broken_nodes = self.slurm_cluster_mediator.broken_nodes
-        if len(broken_nodes) > 0:
-            sbatch_cmd += f" --exclude={','.join(broken_nodes)}"
+        exclude_nodes = self.slurm_cluster_mediator.exclude_nodes
+        if len(exclude_nodes) > 0:
+            sbatch_cmd += f" --exclude={','.join(exclude_nodes)}"
         sbatch_cmd += f" --parsable {self.sbatch_script}"
         logger.debug("About to execute sbatch_cmd %s.", sbatch_cmd)
         # 3 file descriptors: stdin,stdout,stderr
@@ -1028,7 +1036,8 @@ def set_slurm_settings(sinfo_executable: str = "sinfo",
                        scancel_executable: str = "scancel",
                        min_time_between_sacct_calls: int = 10,
                        num_fails_for_broken_node: int = 3,
-                       success_to_fail_ratio: int = 50
+                       success_to_fail_ratio: int = 50,
+                       exclude_nodes: typing.Optional[list[str]] = None,
                        ) -> None:
     """
     (Re) initialize all settings relevant for SLURM job control.
@@ -1057,6 +1066,9 @@ def set_slurm_settings(sinfo_executable: str = "sinfo",
     success_to_fail_ratio : int, optional
         Number of successful jobs we need to observe per node to decrease the
         failed job counter by one, by default 50.
+    exclude_nodes : list[str], optional
+        List of nodes to exclude in job submissions, by default None, which
+        results in no excluded nodes.
     """
     global SlurmProcess
     SlurmProcess._slurm_cluster_mediator = SlurmClusterMediator(
@@ -1064,7 +1076,8 @@ def set_slurm_settings(sinfo_executable: str = "sinfo",
                     sacct_executable=sacct_executable,
                     min_time_between_sacct_calls=min_time_between_sacct_calls,
                     num_fails_for_broken_node=num_fails_for_broken_node,
-                    success_to_fail_ratio=success_to_fail_ratio
+                    success_to_fail_ratio=success_to_fail_ratio,
+                    exclude_nodes=exclude_nodes,
                                                                 )
     SlurmProcess.sbatch_executable = sbatch_executable
     SlurmProcess.scancel_executable = scancel_executable
