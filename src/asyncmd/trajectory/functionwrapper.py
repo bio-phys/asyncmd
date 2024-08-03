@@ -475,6 +475,13 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                                                    result_file=result_file,
                                                    slurm_workdir=tra_dir,
                                                                               )
+            if returncode == 2:
+                logger.error("Exit code indicating node fail from CV batch job"
+                             " for executable %s on trajectory %s (slurm jobid"
+                             " %s). stderr was: %s. stdout was: %s",
+                             self.executable, traj, slurm_proc.slurm_jobid,
+                             stdout.decode(), stderr.decode(),
+                             )
         if returncode != 0:
             # Can not be exitcode 2, because of the while loop above
             raise RuntimeError(
