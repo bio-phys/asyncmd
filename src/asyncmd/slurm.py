@@ -15,6 +15,7 @@
 import asyncio
 import collections
 import logging
+import re
 import shlex
 import subprocess
 import time
@@ -155,6 +156,40 @@ class SlurmClusterMediator:
         # (since there is only one ClusterMediator at a time we can create
         #  the semaphore here in __init__)
         self._sacct_semaphore = asyncio.BoundedSemaphore(1)
+        self._build_regexps()
+
+    def _build_regexps(self):
+        # first build the regexps used to match slurmstates to assign exitcodes
+        regexp_strings = {}
+        for state, e_code in _SLURM_STATE_TO_EXITCODE.items():
+            try:
+                # get previous string and add "or" delimiter
+                cur_str = regexp_strings[e_code]
+                cur_str += r"|"
+            except KeyError:
+                # nothing yet, so no "or" delimiter needed
+                cur_str = r""
+            # add the state (and we do not care if something is before or after it)
+            # (This is needed to also get e.g. "CANCELED by ..." as "CANCELED")
+            cur_str += rf".*{state}.*"
+            regexp_strings[e_code] = cur_str
+        # now make the regexps
+        self._ecode_for_slurmstate_regexps = {
+                            e_code: re.compile(regexp_str,
+                                               flags=re.IGNORECASE | re.DOTALL,
+                                               )
+                            for e_code, regexp_str in regexp_strings.items()
+                                               }
+        # build the regexp used to match and get the main-step lines from sacct
+        # output
+        self._match_mainstep_line_regexp = re.compile(
+            r"""
+            ^\d+  # the jobid at start of the line (but only the non-substeps)
+            \|\|\|\|  # the (first) separator (we set 4 "|" as separator)
+            .*$ # and we dont care what the rest is until the newline
+            """,
+            flags=re.VERBOSE | re.MULTILINE | re.DOTALL,
+                                                      )
 
     @property
     def exclude_nodes(self) -> "list[str]":
@@ -275,7 +310,9 @@ class SlurmClusterMediator:
         # query only for the specific job we are running
         sacct_cmd += f" -j {','.join(self._jobids_sacct)}"
         sacct_cmd += " -o jobid,state,exitcode,nodelist"
-        sacct_cmd += " --parsable2"  # separate with |
+        # parsable2 does not print separator at the end of each line
+        sacct_cmd += " --parsable2"
+        sacct_cmd += " --delimiter='||||'"  # use 4 "|" as separator char(s)
         # 3 file descriptors: stdin,stdout,stderr
         # (note that one semaphore counts for 3 files!)
         await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
@@ -297,17 +334,18 @@ class SlurmClusterMediator:
         # only jobid (and possibly clustername) returned, semikolon to separate
         logger.debug("sacct returned %s.", sacct_return)
         # sacct returns one line per substep, we only care for the whole job
-        # which should be the first line but we check explictly for jobid
+        # so our regexp checks explictly for jobid only
         # (the substeps have .$NUM suffixes)
-        for line in sacct_return.split("\n"):
-            splits = line.split("|")
-            if len(splits) == 4:
-                # basic sanity check that everything went alright parsing
+        for match in self._match_mainstep_line_regexp.finditer(sacct_return):
+            splits = match.group().split("||||")
+            if len(splits) != 4:
+                # basic sanity check that everything went alright parsing,
+                # i.e. that we got the number of fields we expect
+                logger.error("Could not parse sacct output line due to "
+                             "unexpected number of fields. The line was: %s",
+                             match.group())
+            else:
                 jobid, state, exitcode, nodelist = splits
-                if "." in jobid:
-                    # the substeps of jobs have '$jobid.$substepname' as jobid
-                    # where $substepname is e.g. 'batch' or '0', we ignore them
-                    continue
                 # parse returns (remove spaces, etc.) and put them in cache
                 jobid = jobid.strip()
                 try:
@@ -383,25 +421,22 @@ class SlurmClusterMediator:
             nums = nums.split(",")
             return [f"{hostnameprefix}{num}" for num in nums]
 
-    def _parse_exitcode_from_slurm_state(self, slurm_state: str) -> typing.Union[None, int]:
-        # TODO: use re module to match the text instead if iterating over the
-        #       dict each time?!
-        for key, val in _SLURM_STATE_TO_EXITCODE.items():
-            if key in slurm_state:
-                logger.debug("Parsed SLURM state %s as %s.",
-                             slurm_state, key,
+    def _parse_exitcode_from_slurm_state(self,
+                                         slurm_state: str,
+                                         ) -> typing.Union[None, int]:
+        for ecode, regexp in self._ecode_for_slurmstate_regexps.items():
+            if regexp.search(slurm_state):
+                # regexp matches the given slurm_state
+                logger.debug("Parsed SLURM state %s as exitcode %d.",
+                             slurm_state, ecode,
                              )
-                # this also recognizes `CANCELLED by ...` as CANCELLED
-                return val
+                return ecode
         # we should never finish the loop, it means we miss a slurm job state
         raise SlurmError("Could not find a matching exitcode for slurm state"
                          + f": {slurm_state}")
 
     # TODO: more _process_ functions?!
     #       exitcode? state?
-    # TODO: do we want functions for state_to_exitcode/exitcode_from_state?
-    #       ...currently we have all the state -> exitcode logic in SlurmProcess
-    #       until we parse exitcodes from sacct here that probably makes sense?!
 
     def _node_fail_heuristic(self, jobid: str, parsed_exitcode: int,
                              slurm_state: str, nodelist: list[str]) -> None:
