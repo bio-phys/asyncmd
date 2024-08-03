@@ -50,6 +50,13 @@ class SlurmSubmissionError(SlurmError):
 # NOTE: these are the sacct states (they differ from the squeue states)
 #       cf. https://slurm.schedmd.com/sacct.html#lbAG
 #       and https://slurm.schedmd.com/squeue.html#lbAG
+# NOTE on error codes:
+#      we return:
+#       - None if the job has not finished
+#       - 0 if it completed successfully
+#       - 1 if the job failed (probably) due to user error (or we dont know)
+#       - 2 if the job failed (almost certainly) due to cluster/node-issues as
+#         recognized/detected by slurm
 _SLURM_STATE_TO_EXITCODE = {
     "BOOT_FAIL": 1,  # Job terminated due to launch failure
     # Job was explicitly cancelled by the user or system administrator.
@@ -61,7 +68,7 @@ _SLURM_STATE_TO_EXITCODE = {
     # Job terminated with non-zero exit code or other failure condition.
     "FAILED": 1,
     # Job terminated due to failure of one or more allocated nodes.
-    "NODE_FAIL": 1,
+    "NODE_FAIL": 2,
     "OUT_OF_MEMORY": 1,  # Job experienced out of memory error.
     "PENDING": None,  # Job is awaiting resource allocation.
     # NOTE: preemption means interupting a process to later restart it,

@@ -29,7 +29,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from .._config import _SEMAPHORES
 from .. import slurm
-from ..tools import ensure_executable_available
+from ..tools import ensure_executable_available, remove_file_if_exist_async
 from .trajectory import Trajectory
 
 
@@ -451,10 +451,6 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                     cmd_str += f" {key} {' '.join([shlex.quote(str(v)) for v in val])}"
                 else:
                     cmd_str += f" {key} {shlex.quote(str(val))}"
-        # construct jobname
-        # TODO: do we want the traj name in the jobname here?!
-        #       I think rather not, because then we can cancel all jobs for one
-        #       trajfunc in one `scancel` (i.e. independant of the traj)
         # now prepare the sbatch script
         script = self.sbatch_script.format(cmd_str=cmd_str)
         # write it out
@@ -468,14 +464,65 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         async with _SEMAPHORES["MAX_FILES_OPEN"]:
             async with aiofiles.open(sbatch_fname, 'w') as f:
                 await f.write(script)
-        # and submit it
+        # NOTE: we set returncode to 2 (what slurmprocess returns in case of
+        # node failure) and rerun/retry until we either get a completed job
+        # or a non-node-failure error
+        returncode = 2
+        while returncode == 2:
+            # run slurm job
+            returncode, slurm_proc, stdout, stderr = await self._run_slurm_job(
+                                                   sbatch_fname=sbatch_fname,
+                                                   result_file=result_file,
+                                                   slurm_workdir=tra_dir,
+                                                                              )
+        if returncode != 0:
+            # Can not be exitcode 2, because of the while loop above
+            raise RuntimeError(
+                            "Non-zero exit code from CV batch job for "
+                            + f"executable {self.executable} on "
+                            + f"trajectory {traj} "
+                            + f"(slurm jobid {slurm_proc.slurm_jobid})."
+                            + f" Exit code was: {returncode}."
+                            + f" stderr was: {stderr.decode()}."
+                            + f" and stdout was: {stdout.decode()}"
+                                    )
+        # zero-exitcode: load the results
+        if self.load_results_func is None:
+            # we do not have '.npy' ending in results_file,
+            # numpy.save() adds it if it is not there, so we need it here
+            load_func = np.load
+            fname_results = result_file + ".npy"
+        else:
+            # use custom loading function from user
+            load_func = self.load_results_func
+            fname_results = result_file
+        # use a separate thread to load so we dont block with the io
+        loop = asyncio.get_running_loop()
+        async with _SEMAPHORES["MAX_FILES_OPEN"]:
+            async with _SEMAPHORES["MAX_PROCESS"]:
+                with ThreadPoolExecutor(
+                            max_workers=1,
+                            thread_name_prefix="SlurmTrajFunc_load_thread",
+                                        ) as pool:
+                    vals = await loop.run_in_executor(pool, load_func,
+                                                      fname_results)
+        # remove the results file and sbatch script
+        await asyncio.gather(remove_file_if_exist_async(fname_results),
+                             remove_file_if_exist_async(sbatch_fname),
+                             )
+        return vals
+
+    async def _run_slurm_job(self, sbatch_fname: str, result_file: str,
+                             slurm_workdir: str,
+                             ) -> tuple[int,slurm.SlurmProcess,bytes,bytes]:
+        # submit and run slurm-job
         if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
             await _SEMAPHORES["SLURM_MAX_JOB"].acquire()
         try:  # this try is just to make sure we always release the semaphore
             slurm_proc = await slurm.create_slurmprocess_submit(
                                                 jobname=self.slurm_jobname,
                                                 sbatch_script=sbatch_fname,
-                                                workdir=tra_dir,
+                                                workdir=slurm_workdir,
                                                 stdfiles_removal="success",
                                                 stdin=None,
                                                 # sleep 5 s between checking
@@ -485,58 +532,16 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             # also cancel the job when this future is canceled
             stdout, stderr = await slurm_proc.communicate()
             returncode = slurm_proc.returncode
+            return returncode, slurm_proc, stdout, stderr
         except asyncio.CancelledError:
             slurm_proc.kill()
-            try:
-                # clean up the sbatch file
-                await aiofiles.os.remove(sbatch_fname)
-                # clean up potentialy written result file
-                fname = (result_file + ".npy" if self.load_results_func is None
+            # clean up the sbatch file and potentialy written result file
+            res_fname = (result_file + ".npy" if self.load_results_func is None
                          else result_file)
-                await aiofiles.os.remove(fname)
-            except FileNotFoundError:
-                pass
+            await asyncio.gather(remove_file_if_exist_async(sbatch_fname),
+                                 remove_file_if_exist_async(res_fname),
+                                 )
             raise  # reraise CancelledError for encompassing coroutines
-        else:
-            if returncode != 0:
-                raise RuntimeError(
-                            "Non-zero exit code from CV batch job for "
-                            + f"executable {self.executable} on "
-                            + f"trajectory {traj} "
-                            + f"(slurm jobid {slurm_proc.slurm_jobid})."
-                            + f" Exit code was: {returncode}."
-                            + f" stderr was: {stderr.decode()}."
-                            + f" and stdout was: {stdout.decode()}"
-                                    )
-            # load the results
-            if self.load_results_func is None:
-                # we do not have '.npy' ending in results_file,
-                # numpy.save() adds it if it is not there, so we need it here
-                load_func = np.load
-                fname_results = result_file + ".npy"
-            else:
-                # use custom loading function from user
-                load_func = self.load_results_func
-                fname_results = result_file
-            # use a separate thread to load so we dont block with the io
-            loop = asyncio.get_running_loop()
-            async with _SEMAPHORES["MAX_FILES_OPEN"]:
-                async with _SEMAPHORES["MAX_PROCESS"]:
-                    with ThreadPoolExecutor(
-                                max_workers=1,
-                                thread_name_prefix="SlurmTrajFunc_load_thread",
-                                            ) as pool:
-                        vals = await loop.run_in_executor(pool, load_func,
-                                                          fname_results)
-                try:
-                    # remove the results file
-                    await aiofiles.os.remove(fname_results)
-                    # and clean up the sbatch file
-                    await aiofiles.os.remove(sbatch_fname)
-                except FileNotFoundError:
-                    # TODO: warn?
-                    pass
-            return vals
         finally:
             if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
                 _SEMAPHORES["SLURM_MAX_JOB"].release()
