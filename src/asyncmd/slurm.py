@@ -193,9 +193,14 @@ class SlurmClusterMediator:
             r"""
             ^\d+  # the jobid at start of the line (but only the non-substeps)
             \|\|\|\|  # the (first) separator (we set 4 "|" as separator)
-            .*$ # and we dont care what the rest is until the newline
+            .*?  # everything until the next separator (non-greedy), i.e. state
+            \|\|\|\|  # the second separator
+            .*?  # exitcode
+            \|\|\|\|  # third separator
+            .*?  # nodes
+            \|\|\|\|  # final (fourth) separator
             """,
-            flags=re.VERBOSE | re.MULTILINE,
+            flags=re.VERBOSE | re.MULTILINE | re.DOTALL,
                                                       )
 
     @property
@@ -317,8 +322,8 @@ class SlurmClusterMediator:
         # query only for the specific job we are running
         sacct_cmd += f" -j {','.join(self._jobids_sacct)}"
         sacct_cmd += " -o jobid,state,exitcode,nodelist"
-        # parsable2 does not print separator at the end of each line
-        sacct_cmd += " --parsable2"
+        # parsable does print the separator at the end of each line
+        sacct_cmd += " --parsable"
         sacct_cmd += " --delimiter='||||'"  # use 4 "|" as separator char(s)
         # 3 file descriptors: stdin,stdout,stderr
         # (note that one semaphore counts for 3 files!)
@@ -345,14 +350,15 @@ class SlurmClusterMediator:
         # (the substeps have .$NUM suffixes)
         for match in self._match_mainstep_line_regexp.finditer(sacct_return):
             splits = match.group().split("||||")
-            if len(splits) != 4:
+            if len(splits) != 5:
                 # basic sanity check that everything went alright parsing,
                 # i.e. that we got the number of fields we expect
                 logger.error("Could not parse sacct output line due to "
                              "unexpected number of fields. The line was: %s",
                              match.group())
             else:
-                jobid, state, exitcode, nodelist = splits
+                # the last is the empty string after the final/fourth separator
+                jobid, state, exitcode, nodelist, _ = splits
                 # parse returns (remove spaces, etc.) and put them in cache
                 jobid = jobid.strip()
                 try:
