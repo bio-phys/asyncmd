@@ -183,7 +183,7 @@ class SlurmClusterMediator:
         # now make the regexps
         self._ecode_for_slurmstate_regexps = {
                             e_code: re.compile(regexp_str,
-                                               flags=re.IGNORECASE | re.DOTALL,
+                                               flags=re.IGNORECASE,
                                                )
                             for e_code, regexp_str in regexp_strings.items()
                                                }
@@ -195,7 +195,7 @@ class SlurmClusterMediator:
             \|\|\|\|  # the (first) separator (we set 4 "|" as separator)
             .*$ # and we dont care what the rest is until the newline
             """,
-            flags=re.VERBOSE | re.MULTILINE | re.DOTALL,
+            flags=re.VERBOSE | re.MULTILINE,
                                                       )
 
     @property
