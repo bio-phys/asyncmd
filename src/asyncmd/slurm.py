@@ -15,6 +15,7 @@
 import asyncio
 import collections
 import logging
+import re
 import shlex
 import subprocess
 import time
@@ -49,6 +50,13 @@ class SlurmSubmissionError(SlurmError):
 # NOTE: these are the sacct states (they differ from the squeue states)
 #       cf. https://slurm.schedmd.com/sacct.html#lbAG
 #       and https://slurm.schedmd.com/squeue.html#lbAG
+# NOTE on error codes:
+#      we return:
+#       - None if the job has not finished
+#       - 0 if it completed successfully
+#       - 1 if the job failed (probably) due to user error (or we dont know)
+#       - 2 if the job failed (almost certainly) due to cluster/node-issues as
+#         recognized/detected by slurm
 _SLURM_STATE_TO_EXITCODE = {
     "BOOT_FAIL": 1,  # Job terminated due to launch failure
     # Job was explicitly cancelled by the user or system administrator.
@@ -60,7 +68,7 @@ _SLURM_STATE_TO_EXITCODE = {
     # Job terminated with non-zero exit code or other failure condition.
     "FAILED": 1,
     # Job terminated due to failure of one or more allocated nodes.
-    "NODE_FAIL": 1,
+    "NODE_FAIL": 2,
     "OUT_OF_MEMORY": 1,  # Job experienced out of memory error.
     "PENDING": None,  # Job is awaiting resource allocation.
     # NOTE: preemption means interupting a process to later restart it,
@@ -100,6 +108,8 @@ class SlurmClusterMediator:
     success_to_fail_ratio : int
         Number of successful jobs we need to observe per node to decrease the
         failed job counter by one.
+    exclude_nodes : list[str]
+        List of nodes to exclude in job submissions.
 
     """
 
@@ -120,6 +130,7 @@ class SlurmClusterMediator:
     #             (here forever means until we reinitialize SlurmClusterMediator)
 
     def __init__(self, **kwargs) -> None:
+        self._exclude_nodes = []
         # make it possible to set any attribute via kwargs
         # check the type for attributes with default values
         dval = object()
@@ -139,7 +150,6 @@ class SlurmClusterMediator:
         self.sinfo_executable = ensure_executable_available(self.sinfo_executable)
         self._node_job_fails = collections.Counter()
         self._node_job_successes = collections.Counter()
-        self._broken_nodes = []
         self._all_nodes = self.list_all_nodes()
         self._jobids = []  # list of jobids of jobs we know about
         self._jobids_sacct = []  # list of jobids we monitor actively via sacct
@@ -151,13 +161,58 @@ class SlurmClusterMediator:
         self._last_sacct_call = 0  # make sure we dont call sacct too often
         # make sure we can only call sacct once at a time
         # (since there is only one ClusterMediator at a time we can create
-        #  the smephore here in __init__)
+        #  the semaphore here in __init__)
         self._sacct_semaphore = asyncio.BoundedSemaphore(1)
+        self._build_regexps()
+
+    def _build_regexps(self):
+        # first build the regexps used to match slurmstates to assign exitcodes
+        regexp_strings = {}
+        for state, e_code in _SLURM_STATE_TO_EXITCODE.items():
+            try:
+                # get previous string and add "or" delimiter
+                cur_str = regexp_strings[e_code]
+                cur_str += r"|"
+            except KeyError:
+                # nothing yet, so no "or" delimiter needed
+                cur_str = r""
+            # add the state (and we do not care if something is before or after it)
+            # (This is needed to also get e.g. "CANCELED by ..." as "CANCELED")
+            cur_str += rf".*{state}.*"
+            regexp_strings[e_code] = cur_str
+        # now make the regexps
+        self._ecode_for_slurmstate_regexps = {
+                            e_code: re.compile(regexp_str,
+                                               flags=re.IGNORECASE,
+                                               )
+                            for e_code, regexp_str in regexp_strings.items()
+                                               }
+        # build the regexp used to match and get the main-step lines from sacct
+        # output
+        self._match_mainstep_line_regexp = re.compile(
+            r"""
+            ^\d+  # the jobid at start of the line (but only the non-substeps)
+            \|\|\|\|  # the (first) separator (we set 4 "|" as separator)
+            .*?  # everything until the next separator (non-greedy), i.e. state
+            \|\|\|\|  # the second separator
+            .*?  # exitcode
+            \|\|\|\|  # third separator
+            .*?  # nodes
+            \|\|\|\|  # final (fourth) separator
+            """,
+            flags=re.VERBOSE | re.MULTILINE | re.DOTALL,
+                                                      )
 
     @property
-    def broken_nodes(self) -> "list[str]":
-        """Return a list with all nodes registered as broken."""
-        return self._broken_nodes.copy()
+    def exclude_nodes(self) -> "list[str]":
+        """Return a list with all nodes excluded from job submissions."""
+        return self._exclude_nodes.copy()
+
+    @exclude_nodes.setter
+    def exclude_nodes(self, val : typing.Union[list[str], None]):
+        if val is None:
+            val = []
+        self._exclude_nodes = val
 
     def list_all_nodes(self) -> "list[str]":
         """
@@ -267,7 +322,9 @@ class SlurmClusterMediator:
         # query only for the specific job we are running
         sacct_cmd += f" -j {','.join(self._jobids_sacct)}"
         sacct_cmd += " -o jobid,state,exitcode,nodelist"
-        sacct_cmd += " --parsable2"  # separate with |
+        # parsable does print the separator at the end of each line
+        sacct_cmd += " --parsable"
+        sacct_cmd += " --delimiter='||||'"  # use 4 "|" as separator char(s)
         # 3 file descriptors: stdin,stdout,stderr
         # (note that one semaphore counts for 3 files!)
         await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
@@ -289,17 +346,19 @@ class SlurmClusterMediator:
         # only jobid (and possibly clustername) returned, semikolon to separate
         logger.debug("sacct returned %s.", sacct_return)
         # sacct returns one line per substep, we only care for the whole job
-        # which should be the first line but we check explictly for jobid
+        # so our regexp checks explictly for jobid only
         # (the substeps have .$NUM suffixes)
-        for line in sacct_return.split("\n"):
-            splits = line.split("|")
-            if len(splits) == 4:
-                # basic sanity check that everything went alright parsing
-                jobid, state, exitcode, nodelist = splits
-                if "." in jobid:
-                    # the substeps of jobs have '$jobid.$substepname' as jobid
-                    # where $substepname is e.g. 'batch' or '0', we ignore them
-                    continue
+        for match in self._match_mainstep_line_regexp.finditer(sacct_return):
+            splits = match.group().split("||||")
+            if len(splits) != 5:
+                # basic sanity check that everything went alright parsing,
+                # i.e. that we got the number of fields we expect
+                logger.error("Could not parse sacct output line due to "
+                             "unexpected number of fields. The line was: %s",
+                             match.group())
+            else:
+                # the last is the empty string after the final/fourth separator
+                jobid, state, exitcode, nodelist, _ = splits
                 # parse returns (remove spaces, etc.) and put them in cache
                 jobid = jobid.strip()
                 try:
@@ -375,25 +434,22 @@ class SlurmClusterMediator:
             nums = nums.split(",")
             return [f"{hostnameprefix}{num}" for num in nums]
 
-    def _parse_exitcode_from_slurm_state(self, slurm_state: str) -> typing.Union[None, int]:
-        # TODO: use re module to match the text instead if iterating over the
-        #       dict each time?!
-        for key, val in _SLURM_STATE_TO_EXITCODE.items():
-            if key in slurm_state:
-                logger.debug("Parsed SLURM state %s as %s.",
-                             slurm_state, key,
+    def _parse_exitcode_from_slurm_state(self,
+                                         slurm_state: str,
+                                         ) -> typing.Union[None, int]:
+        for ecode, regexp in self._ecode_for_slurmstate_regexps.items():
+            if regexp.search(slurm_state):
+                # regexp matches the given slurm_state
+                logger.debug("Parsed SLURM state %s as exitcode %d.",
+                             slurm_state, ecode,
                              )
-                # this also recognizes `CANCELLED by ...` as CANCELLED
-                return val
+                return ecode
         # we should never finish the loop, it means we miss a slurm job state
         raise SlurmError("Could not find a matching exitcode for slurm state"
                          + f": {slurm_state}")
 
     # TODO: more _process_ functions?!
     #       exitcode? state?
-    # TODO: do we want functions for state_to_exitcode/exitcode_from_state?
-    #       ...currently we have all the state -> exitcode logic in SlurmProcess
-    #       until we parse exitcodes from sacct here that probably makes sense?!
 
     def _node_fail_heuristic(self, jobid: str, parsed_exitcode: int,
                              slurm_state: str, nodelist: list[str]) -> None:
@@ -454,21 +510,21 @@ class SlurmClusterMediator:
             self._node_job_fails[node] += 1
             if self._node_job_fails[node] >= self.num_fails_for_broken_node:
                 # declare it broken
-                logger.info("Adding node %s to list of broken nodes.", node)
-                if node not in self._broken_nodes:
-                    self._broken_nodes.append(node)
+                logger.info("Adding node %s to list of excluded nodes.", node)
+                if node not in self._exclude_nodes:
+                    self._exclude_nodes.append(node)
                 else:
-                    logger.error("Node %s already in broken node list.", node)
+                    logger.error("Node %s already in exclude node list.", node)
         # failsaves
         all_nodes = len(self._all_nodes)
-        broken_nodes = len(self._broken_nodes)
-        if broken_nodes >= all_nodes / 4:
+        exclude_nodes = len(self._exclude_nodes)
+        if exclude_nodes >= all_nodes / 4:
             logger.error("We already declared 1/4 of the cluster as broken."
                          + "Houston, we might have a problem?")
-            if broken_nodes >= all_nodes / 2:
+            if exclude_nodes >= all_nodes / 2:
                 logger.error("In fact we declared 1/2 of the cluster as broken."
                              + "Houston, we *do* have a problem!")
-                if broken_nodes >= all_nodes * 0.75:
+                if exclude_nodes >= all_nodes * 0.75:
                     raise RuntimeError("Houston? 3/4 of the cluster is broken?")
 
     def _note_job_success_on_nodes(self, nodelist: list[str]) -> None:
@@ -684,9 +740,9 @@ class SlurmProcess:
             #       is writeable?
             sbatch_cmd += f" --input=./{stdin}"
         # get the list of nodes we dont want to run on
-        broken_nodes = self.slurm_cluster_mediator.broken_nodes
-        if len(broken_nodes) > 0:
-            sbatch_cmd += f" --exclude={','.join(broken_nodes)}"
+        exclude_nodes = self.slurm_cluster_mediator.exclude_nodes
+        if len(exclude_nodes) > 0:
+            sbatch_cmd += f" --exclude={','.join(exclude_nodes)}"
         sbatch_cmd += f" --parsable {self.sbatch_script}"
         logger.debug("About to execute sbatch_cmd %s.", sbatch_cmd)
         # 3 file descriptors: stdin,stdout,stderr
@@ -1022,21 +1078,25 @@ async def create_slurmprocess_submit(jobname: str,
     return proc
 
 
-def set_slurm_settings(sinfo_executable: str = "sinfo",
-                       sacct_executable: str = "sacct",
-                       sbatch_executable: str = "sbatch",
-                       scancel_executable: str = "scancel",
-                       min_time_between_sacct_calls: int = 10,
-                       num_fails_for_broken_node: int = 3,
-                       success_to_fail_ratio: int = 50
-                       ) -> None:
+def set_all_slurm_settings(sinfo_executable: str = "sinfo",
+                           sacct_executable: str = "sacct",
+                           sbatch_executable: str = "sbatch",
+                           scancel_executable: str = "scancel",
+                           min_time_between_sacct_calls: int = 10,
+                           num_fails_for_broken_node: int = 3,
+                           success_to_fail_ratio: int = 50,
+                           exclude_nodes: typing.Optional[list[str]] = None,
+                           ) -> None:
     """
     (Re) initialize all settings relevant for SLURM job control.
 
     Call this function if you want to change e.g. the path/name of SLURM
     executables. Note that this is a conviencence function to set all SLURM
-    settings in one central place, you could also set each setting seperately
-    in the `SlurmProcess` and `SlurmClusterMediator` classes.
+    settings in one central place and all at once, i.e. calling this function
+    will overwrite all previous settings.
+    If this is not intended, have a look at the `set_slurm_settings` function
+    which only changes the passed arguments or you can also set/modify each
+    setting separately in the `SlurmProcess` and `SlurmClusterMediator` classes.
 
     Parameters
     ----------
@@ -1057,6 +1117,9 @@ def set_slurm_settings(sinfo_executable: str = "sinfo",
     success_to_fail_ratio : int, optional
         Number of successful jobs we need to observe per node to decrease the
         failed job counter by one, by default 50.
+    exclude_nodes : list[str], optional
+        List of nodes to exclude in job submissions, by default None, which
+        results in no excluded nodes.
     """
     global SlurmProcess
     SlurmProcess._slurm_cluster_mediator = SlurmClusterMediator(
@@ -1064,7 +1127,67 @@ def set_slurm_settings(sinfo_executable: str = "sinfo",
                     sacct_executable=sacct_executable,
                     min_time_between_sacct_calls=min_time_between_sacct_calls,
                     num_fails_for_broken_node=num_fails_for_broken_node,
-                    success_to_fail_ratio=success_to_fail_ratio
+                    success_to_fail_ratio=success_to_fail_ratio,
+                    exclude_nodes=exclude_nodes,
                                                                 )
     SlurmProcess.sbatch_executable = sbatch_executable
     SlurmProcess.scancel_executable = scancel_executable
+
+
+def set_slurm_settings(sinfo_executable: typing.Optional[str] = None,
+                       sacct_executable: typing.Optional[str] = None,
+                       sbatch_executable: typing.Optional[str] = None,
+                       scancel_executable: typing.Optional[str] = None,
+                       min_time_between_sacct_calls: typing.Optional[int] = None,
+                       num_fails_for_broken_node: typing.Optional[int] = None,
+                       success_to_fail_ratio: typing.Optional[int] = None,
+                       exclude_nodes: typing.Optional[list[str]] = None,
+                       ) -> None:
+    """
+    Set single or multiple settings relevant for SLURM job control.
+
+    Call this function if you want to change e.g. the path/name of SLURM
+    executables. This function only modifies thoose settings for which a value
+    other than None is passed. See `set_all_slurm_settings` if you want to set/
+    modify all slurm settings and/or reset them to their defaults.
+
+    Parameters
+    ----------
+    sinfo_executable : str, optional
+        Name of path to the sinfo executable, by default None.
+    sacct_executable : str, optional
+        Name or path to the sacct executable, by default None.
+    sbatch_executable : str, optional
+        Name or path to the sbatch executable, by default None.
+    scancel_executable : str, optional
+        Name or path to the scancel executable, by default None.
+    min_time_between_sacct_calls : int, optional
+        Minimum time (in seconds) between subsequent sacct calls,
+        by default None.
+    num_fails_for_broken_node : int, optional
+        Number of failed jobs we need to observe per node before declaring it
+        to be broken (and not submitting any more jobs to it), by default None.
+    success_to_fail_ratio : int, optional
+        Number of successful jobs we need to observe per node to decrease the
+        failed job counter by one, by default None.
+    exclude_nodes : list[str], optional
+        List of nodes to exclude in job submissions, by default None, which
+        results in no excluded nodes.
+    """
+    global SlurmProcess
+    if sinfo_executable is not None:
+        SlurmProcess._slurm_cluster_mediator.sinfo_executable = sinfo_executable
+    if sacct_executable is not None:
+        SlurmProcess._slurm_cluster_mediator.sacct_executable = sacct_executable
+    if sbatch_executable is not None:
+        SlurmProcess.sbatch_executable = sbatch_executable
+    if scancel_executable is not None:
+        SlurmProcess.scancel_executable = scancel_executable
+    if min_time_between_sacct_calls is not None:
+        SlurmProcess._slurm_cluster_mediator.min_time_between_sacct_calls = min_time_between_sacct_calls
+    if num_fails_for_broken_node is not None:
+        SlurmProcess._slurm_cluster_mediator.num_fails_for_broken_node = num_fails_for_broken_node
+    if success_to_fail_ratio is not None:
+        SlurmProcess._slurm_cluster_mediator.success_to_fail_ratio = success_to_fail_ratio
+    if exclude_nodes is not None:
+        SlurmProcess._slurm_cluster_mediator.exclude_nodes = exclude_nodes
