@@ -20,7 +20,7 @@ import typing
 
 
 from ._config import _GLOBALS, _SEMAPHORES
-from .slurm import set_slurm_settings
+from .slurm import set_slurm_settings, set_all_slurm_settings
 # TODO: Do we want to set the _GLOBALS defaults here? E.g. CACHE_TYPE="npz"?
 
 

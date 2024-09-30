@@ -1078,22 +1078,25 @@ async def create_slurmprocess_submit(jobname: str,
     return proc
 
 
-def set_slurm_settings(sinfo_executable: str = "sinfo",
-                       sacct_executable: str = "sacct",
-                       sbatch_executable: str = "sbatch",
-                       scancel_executable: str = "scancel",
-                       min_time_between_sacct_calls: int = 10,
-                       num_fails_for_broken_node: int = 3,
-                       success_to_fail_ratio: int = 50,
-                       exclude_nodes: typing.Optional[list[str]] = None,
-                       ) -> None:
+def set_all_slurm_settings(sinfo_executable: str = "sinfo",
+                           sacct_executable: str = "sacct",
+                           sbatch_executable: str = "sbatch",
+                           scancel_executable: str = "scancel",
+                           min_time_between_sacct_calls: int = 10,
+                           num_fails_for_broken_node: int = 3,
+                           success_to_fail_ratio: int = 50,
+                           exclude_nodes: typing.Optional[list[str]] = None,
+                           ) -> None:
     """
     (Re) initialize all settings relevant for SLURM job control.
 
     Call this function if you want to change e.g. the path/name of SLURM
     executables. Note that this is a conviencence function to set all SLURM
-    settings in one central place, you could also set each setting seperately
-    in the `SlurmProcess` and `SlurmClusterMediator` classes.
+    settings in one central place and all at once, i.e. calling this function
+    will overwrite all previous settings.
+    If this is not intended, have a look at the `set_slurm_settings` function
+    which only changes the passed arguments or you can also set/modify each
+    setting separately in the `SlurmProcess` and `SlurmClusterMediator` classes.
 
     Parameters
     ----------
@@ -1129,3 +1132,62 @@ def set_slurm_settings(sinfo_executable: str = "sinfo",
                                                                 )
     SlurmProcess.sbatch_executable = sbatch_executable
     SlurmProcess.scancel_executable = scancel_executable
+
+
+def set_slurm_settings(sinfo_executable: typing.Optional[str] = None,
+                       sacct_executable: typing.Optional[str] = None,
+                       sbatch_executable: typing.Optional[str] = None,
+                       scancel_executable: typing.Optional[str] = None,
+                       min_time_between_sacct_calls: typing.Optional[int] = None,
+                       num_fails_for_broken_node: typing.Optional[int] = None,
+                       success_to_fail_ratio: typing.Optional[int] = None,
+                       exclude_nodes: typing.Optional[list[str]] = None,
+                       ) -> None:
+    """
+    Set single or multiple settings relevant for SLURM job control.
+
+    Call this function if you want to change e.g. the path/name of SLURM
+    executables. This function only modifies thoose settings for which a value
+    other than None is passed. See `set_all_slurm_settings` if you want to set/
+    modify all slurm settings and/or reset them to their defaults.
+
+    Parameters
+    ----------
+    sinfo_executable : str, optional
+        Name of path to the sinfo executable, by default None.
+    sacct_executable : str, optional
+        Name or path to the sacct executable, by default None.
+    sbatch_executable : str, optional
+        Name or path to the sbatch executable, by default None.
+    scancel_executable : str, optional
+        Name or path to the scancel executable, by default None.
+    min_time_between_sacct_calls : int, optional
+        Minimum time (in seconds) between subsequent sacct calls,
+        by default None.
+    num_fails_for_broken_node : int, optional
+        Number of failed jobs we need to observe per node before declaring it
+        to be broken (and not submitting any more jobs to it), by default None.
+    success_to_fail_ratio : int, optional
+        Number of successful jobs we need to observe per node to decrease the
+        failed job counter by one, by default None.
+    exclude_nodes : list[str], optional
+        List of nodes to exclude in job submissions, by default None, which
+        results in no excluded nodes.
+    """
+    global SlurmProcess
+    if sinfo_executable is not None:
+        SlurmProcess._slurm_cluster_mediator.sinfo_executable = sinfo_executable
+    if sacct_executable is not None:
+        SlurmProcess._slurm_cluster_mediator.sacct_executable = sacct_executable
+    if sbatch_executable is not None:
+        SlurmProcess.sbatch_executable = sbatch_executable
+    if scancel_executable is not None:
+        SlurmProcess.scancel_executable = scancel_executable
+    if min_time_between_sacct_calls is not None:
+        SlurmProcess._slurm_cluster_mediator.min_time_between_sacct_calls = min_time_between_sacct_calls
+    if num_fails_for_broken_node is not None:
+        SlurmProcess._slurm_cluster_mediator.num_fails_for_broken_node = num_fails_for_broken_node
+    if success_to_fail_ratio is not None:
+        SlurmProcess._slurm_cluster_mediator.success_to_fail_ratio = success_to_fail_ratio
+    if exclude_nodes is not None:
+        SlurmProcess._slurm_cluster_mediator.exclude_nodes = exclude_nodes
