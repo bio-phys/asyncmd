@@ -619,21 +619,21 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
 
     @conditions.setter
     def conditions(self, conditions):
-        # I think it is save to assume each condition has a .__call__() method?
-        # so we just check if it is awaitable
+        # use asyncio.iscorotinefunction to check the conditions
         self._condition_func_is_coroutine = [
-                                        inspect.iscoroutinefunction(c.__call__)
-                                        for c in conditions
+                                (inspect.iscoroutinefunction(c)
+                                 or inspect.iscoroutinefunction(c.__call__))
+                                for c in conditions
                                              ]
         if not all(self._condition_func_is_coroutine):
-            # and warn if it is not
+            # and warn if it is not a corotinefunction
             logger.warning(
                     "It is recommended to use coroutinefunctions for all "
                     + "conditions. This can easily be achieved by wrapping any"
                     + " function in a TrajectoryFunctionWrapper. All "
                     + "non-coroutine condition functions will be blocking when"
-                    + " applied! ([c is coroutine for c in conditions] = "
-                    + f"{self._condition_func_is_coroutine})"
+                    + " applied! ([c is coroutine for c in conditions] = %s)",
+                    self._condition_func_is_coroutine
                            )
         self._conditions = conditions
 
