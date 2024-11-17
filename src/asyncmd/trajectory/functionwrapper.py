@@ -120,10 +120,11 @@ class TrajectoryFunctionWrapper(abc.ABC):
 
 class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
     """
-    Wrap python syncronous functions for use on :class:`asyncmd.Trajectory`.
+    Wrap python functions for use on :class:`asyncmd.Trajectory`.
 
     Turns every python callable into an asyncronous (awaitable) and cached
-    function for application on :class:`asyncmd.Trajectory`.
+    function for application on :class:`asyncmd.Trajectory`. Also works for
+    asyncronous (awaitable) functions, they will be cached.
 
     Attributes
     ----------
@@ -149,6 +150,7 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         super().__init__(**kwargs)
         self._func = None
         self._func_src = None
+        self._func_is_async = None
         # use the properties to directly calculate/get the id
         self.function = function
         if call_kwargs is None:
@@ -185,6 +187,8 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
 
     @function.setter
     def function(self, value):
+        self._func_is_async = (inspect.iscoroutinefunction(value)
+                               or inspect.iscoroutinefunction(value.__call__))
         try:
             src = inspect.getsource(value)
         except OSError:
@@ -215,6 +219,14 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         iterable, usually list or np.ndarray
             The values of the wrapped function when applied on the trajectory.
         """
+        if self._func_is_async:
+            return await self._get_values_for_trajectory_async(traj)
+        return await self._get_values_for_trajectory_sync(traj)
+
+    async def _get_values_for_trajectory_async(self, traj):
+        return await self._func(traj, **self._call_kwargs)
+
+    async def _get_values_for_trajectory_sync(self, traj):
         loop = asyncio.get_running_loop()
         async with _SEMAPHORES["MAX_PROCESS"]:
             # fill in additional kwargs (if any)
@@ -240,29 +252,6 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                                     ) as pool:
                 vals = await loop.run_in_executor(pool, func, traj)
         return vals
-
-    async def __call__(self, value):
-        """
-        Apply wrapped function asyncronously on given trajectory.
-
-        Parameters
-        ----------
-        value : asyncmd.Trajectory
-            Input trajectory.
-
-        Returns
-        -------
-        iterable, usually list or np.ndarray
-            The values of the wrapped function when applied on the trajectory.
-        """
-        if isinstance(value, Trajectory) and self.id is not None:
-            return await value._apply_wrapped_func(self.id, self)
-
-        # NOTE: i think this should never happen?
-        # this will block until func is done, we could use a ProcessPool?!
-        # Can we make sure that we are always able to pickle value for that?
-        # (probably not since it could be Trajectory and we only have no func_src)
-        return self._func(value, **self._call_kwargs)
 
 
 # TODO: document what we fill/replace in the master sbatch script!
