@@ -189,21 +189,9 @@ class GmxEngine(MDEngine):
         # available + executable
         self.mdrun_executable = self.mdrun_executable
         self.grompp_executable = self.grompp_executable
-        # same for output traj type, check if it is in allowed values and
-        self.output_traj_type = self.output_traj_type
-        if not isinstance(mdconfig, MDP):
-            raise TypeError(f"mdp must be of type {MDP}.")
-        if mdconfig["nsteps"] != -1:
-            logger.info("Changing nsteps from %s to -1 (infinte), run length "
-                        "is controlled via run args.",
-                        mdconfig['nsteps'])
-            mdconfig["nsteps"] = -1
-        # check that we get a trajectory of the format we expect with our
-        # current mdp, we do this by using nstout_from_mdp since it throws a
-        # nice error if the mdp does not generate output for given traj-format
-        # TODO: ensure that x-out and v-out/f-out are the same (if applicable)?
-        _ = nstout_from_mdp(mdp=mdconfig, traj_type=self.output_traj_type)
-        self._mdp = mdconfig
+        # basic checks for mdp are done in the property-setter, e.g. if the
+        # output_traj_type is actually written with current mdp-settings
+        self.mdp = mdconfig
         # initialize internal state variables
         self._workdir = None
         self._prepared = False
@@ -351,10 +339,16 @@ class GmxEngine(MDEngine):
     def mdp(self, val: MDP) -> None:
         if not isinstance(val, MDP):
             raise TypeError(f"Value must be of type {MDP}.")
-        if val["nsteps"] != -1:
-            logger.info("Changing nsteps from %s to -1 (infinte), run length "
-                        "is controlled via run args.",
-                        val['nsteps'])
+        try:
+            if val["nsteps"] != -1:
+                logger.info("Changing nsteps from %s to -1 (infinte), the run "
+                            "length is controlled via arguments of the run "
+                            "method.",
+                            val['nsteps'])
+                val["nsteps"] = -1
+        except KeyError:
+            # nsteps not defined
+            logger.info("Setting previously undefined nsteps to -1 (infinite).")
             val["nsteps"] = -1
         # check that we get a trajectory of the format we expect with our
         # current mdp, we do this by using nstout_from_mdp since it throws a
