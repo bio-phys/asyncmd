@@ -177,6 +177,9 @@ class GmxEngine(MDEngine):
                                     + f"mismatching type ({type(value)}). "
                                     + f" Default type is {type(cval)}."
                                     )
+            else:
+                # not previously defined, so warn that we ignore it
+                logger.warning("Ignoring unknown keyword-argument %s.", kwarg)
         # NOTE: after the kwargs setting to be sure they are what we set/expect
         # TODO: store a hash/the file contents for gro, top, ndx?
         #       to check against when we load from storage/restart?
@@ -859,7 +862,10 @@ class GmxEngine(MDEngine):
             stdout, stderr = await self._proc.communicate()
             returncode = self._proc.returncode
         except asyncio.CancelledError as e:
-            self._proc.kill()
+            if self._proc is not None:
+                # make sure _proc is set, it can still be None if we get
+                # canceled while _start_gmx_mdrun is setting up the process
+                self._proc.kill()
             raise e from None  # reraise the error for encompassing coroutines
         else:
             logger.debug("gmx mdrun command returned return code %s.",
