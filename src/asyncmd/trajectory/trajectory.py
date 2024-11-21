@@ -150,6 +150,9 @@ class Trajectory:
         #                        + f"mismatching type ({type(value)}). "
         #                        + f" Default type is {type(cval)}."
         #                        )
+        #    else:
+        #        # not previously defined, so warn that we ignore it
+        #        logger.warning("Ignoring unknown keyword-argument %s.", kwarg)
         # NOTE: self._trajectory_files is set in __new__ because we otherwise
         #       would sanitize the files twice, but we need to check in __new__
         #       to make pickling work

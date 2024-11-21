@@ -63,13 +63,22 @@ class TrajectoryFunctionWrapper(abc.ABC):
                                     + f"mismatching type ({type(value)}). "
                                     + f" Default type is {type(cval)}."
                                     )
+            else:
+                # not previously defined, so warn that we ignore it
+                logger.warning("Ignoring unknown keyword-argument %s.", kwarg)
 
     @property
     def id(self) -> str:
+        """
+        Unique and persistent identifier.
+
+        Takes into account the wrapped function and its calling arguments.
+        """
         return self._id
 
     @property
-    def call_kwargs(self):
+    def call_kwargs(self) -> dict:
+        """Additional calling arguments for the wrapped function/executable."""
         # return a copy to avoid people modifying entries without us noticing
         # TODO/FIXME: this will make unhappy users if they try to set single
         #             items in the dict!
@@ -110,20 +119,23 @@ class TrajectoryFunctionWrapper(abc.ABC):
         iterable, usually list or np.ndarray
             The values of the wrapped function when applied on the trajectory.
         """
-        if isinstance(value, Trajectory) and self.id is not None:
-            return await value._apply_wrapped_func(self.id, self)
-        else:
-            raise TypeError(f"{type(self)} must be called"
-                            + " with an `asyncmd.Trajectory` "
-                            + f"but was called with {type(value)}.")
+        if isinstance(value, Trajectory):
+            if self.id is not None:
+                return await value._apply_wrapped_func(self.id, self)
+            raise RuntimeError(f"{type(self)} must have a unique id, but "
+                               "self.id is None.")
+        raise TypeError(f"{type(self)} must be called with an "
+                        "`asyncmd.Trajectory` but was called with "
+                        f"{type(value)}.")
 
 
 class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
     """
-    Wrap python syncronous functions for use on :class:`asyncmd.Trajectory`.
+    Wrap python functions for use on :class:`asyncmd.Trajectory`.
 
     Turns every python callable into an asyncronous (awaitable) and cached
-    function for application on :class:`asyncmd.Trajectory`.
+    function for application on :class:`asyncmd.Trajectory`. Also works for
+    asyncronous (awaitable) functions, they will be cached.
 
     Attributes
     ----------
@@ -149,6 +161,7 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         super().__init__(**kwargs)
         self._func = None
         self._func_src = None
+        self._func_is_async = None
         # use the properties to directly calculate/get the id
         self.function = function
         if call_kwargs is None:
@@ -185,6 +198,8 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
 
     @function.setter
     def function(self, value):
+        self._func_is_async = (inspect.iscoroutinefunction(value)
+                               or inspect.iscoroutinefunction(value.__call__))
         try:
             src = inspect.getsource(value)
         except OSError:
@@ -215,6 +230,14 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         iterable, usually list or np.ndarray
             The values of the wrapped function when applied on the trajectory.
         """
+        if self._func_is_async:
+            return await self._get_values_for_trajectory_async(traj)
+        return await self._get_values_for_trajectory_sync(traj)
+
+    async def _get_values_for_trajectory_async(self, traj):
+        return await self._func(traj, **self._call_kwargs)
+
+    async def _get_values_for_trajectory_sync(self, traj):
         loop = asyncio.get_running_loop()
         async with _SEMAPHORES["MAX_PROCESS"]:
             # fill in additional kwargs (if any)
@@ -241,34 +264,7 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                 vals = await loop.run_in_executor(pool, func, traj)
         return vals
 
-    async def __call__(self, value):
-        """
-        Apply wrapped function asyncronously on given trajectory.
 
-        Parameters
-        ----------
-        value : asyncmd.Trajectory
-            Input trajectory.
-
-        Returns
-        -------
-        iterable, usually list or np.ndarray
-            The values of the wrapped function when applied on the trajectory.
-        """
-        if isinstance(value, Trajectory) and self.id is not None:
-            return await value._apply_wrapped_func(self.id, self)
-
-        # NOTE: i think this should never happen?
-        # this will block until func is done, we could use a ProcessPool?!
-        # Can we make sure that we are always able to pickle value for that?
-        # (probably not since it could be Trajectory and we only have no func_src)
-        return self._func(value, **self._call_kwargs)
-
-
-# TODO: document what we fill/replace in the master sbatch script!
-# TODO: document what we expect from the executable!
-#       -> accept struct, traj, outfile
-#       -> write numpy npy files! (or pass custom load func!)
 class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
     """
     Wrap executables to use on :class:`asyncmd.Trajectory` via SLURM.
@@ -300,10 +296,12 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         Used as name for the job in slurm and also as part of the filename for
         the submission script that will be written (and deleted if everything
         goes well) for every trajectory.
+        NOTE: If you modify it, ensure that each SlurmTrajectoryWrapper has a
+        unique slurm_jobname.
     executable : str
         Name of or path to the wrapped executable.
     call_kwargs : dict
-        Keyword arguments for wrapped function.
+        Keyword arguments for wrapped executable.
     """
 
     def __init__(self, executable, sbatch_script,
@@ -361,16 +359,20 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         self.load_results_func = load_results_func
 
     @property
-    def slurm_jobname(self):
+    def slurm_jobname(self) -> str:
         """
         The jobname of the slurm job used to compute the function results.
+
+        Must be unique for each :class:`SlurmTrajectoryFunctionWrapper`
+        instance. Will by default include the persistent unique ID :meth:`id`.
+        To (re)set to the default set it to None.
         """
         if self._slurm_jobname is None:
             return f"CVfunc_id_{self.id}"
         return self._slurm_jobname
 
     @slurm_jobname.setter
-    def slurm_jobname(self, val):
+    def slurm_jobname(self, val: str | None):
         self._slurm_jobname = val
 
     def __repr__(self) -> str:
@@ -457,8 +459,8 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         sbatch_fname = os.path.join(tra_dir,
                                     tra_name + "_" + self.slurm_jobname + ".slurm")
         if os.path.exists(sbatch_fname):
-            # TODO: should we raise an error?
-            logger.error("Overwriting existing submission file (%s).",
+            logger.error("Overwriting existing submission file (%s)."
+                         " Are you sure your `slurm_jobname` is unique?",
                          sbatch_fname,
                          )
         async with _SEMAPHORES["MAX_FILES_OPEN"]:

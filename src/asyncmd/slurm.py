@@ -145,6 +145,9 @@ class SlurmClusterMediator:
                                     + f"mismatching type ({type(value)}). "
                                     + f" Default type is {type(cval)}."
                                     )
+            else:
+                # not previously defined, so warn that we ignore it
+                logger.warning("Ignoring unknown keyword-argument %s.", kwarg)
         # this either checks for our defaults or whatever we just set via kwargs
         self.sacct_executable = ensure_executable_available(self.sacct_executable)
         self.sinfo_executable = ensure_executable_available(self.sinfo_executable)
@@ -646,6 +649,9 @@ class SlurmProcess:
                                     + f"mismatching type ({type(value)}). "
                                     + f" Default type is {type(cval)}."
                                     )
+            else:
+                # not previously defined, so warn that we ignore it
+                logger.warning("Ignoring unknown keyword-argument %s.", kwarg)
         # this either checks for our defaults or whatever we just set via kwargs
         ensure_executable_available(self.sbatch_executable)
         ensure_executable_available(self.scancel_executable)

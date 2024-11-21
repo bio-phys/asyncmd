@@ -70,7 +70,8 @@ def nstout_from_mdp(mdp: MDP, traj_type: str = "TRR") -> int:
 
     nstout = min(vals, default=None)
     if (nstout is None) or (nstout == float("inf")):
-        raise ValueError("The MDP you passed results in no trajectory output.")
+        raise ValueError(f"The MDP you passed results in no {traj_type} "
+                         +"trajectory output.")
     return nstout
 
 

@@ -45,6 +45,8 @@ class _descriptor_on_instance_and_class:
     # overwrites the descriptor and does not call __set__
     # Setting from an instance calls __set__ and therefore only sets
     # the attribute for the given instance (and also runs our checks)
+    # also see the python docs:
+    #  https://docs.python.org/3/howto/descriptor.html#customized-names
     def __set_name__(self, owner, name):
         self.public_name = name
         self.private_name = "_" + name
@@ -130,14 +132,19 @@ class GmxEngine(MDEngine):
     # NOTE: this will be the traj we count frames for and check the mdp, etc.
     #       However this does not mean that no other trajs will/can be written,
     #       we simply ignore them
-    _output_traj_type = "trr"
+    _output_traj_type = "xtc"
     output_traj_type = _descriptor_output_traj_type()
     # See the notes below for the SlurmGmxEngine on why this conversion factor
     # is needed (there), here we have it only for consistency
     _mdrun_time_conversion_factor = 1.  # run mdrun for 1. * time-limit
 
 
-    def __init__(self, mdconfig, gro_file, top_file, ndx_file=None, **kwargs):
+    def __init__(self,
+                 mdconfig: MDP,
+                 gro_file: str,
+                 top_file: str,
+                 ndx_file: str | None = None,
+                 **kwargs) -> None:
         """
         Initialize a :class:`GmxEngine`.
 
@@ -170,15 +177,10 @@ class GmxEngine(MDEngine):
                                     + f"mismatching type ({type(value)}). "
                                     + f" Default type is {type(cval)}."
                                     )
+            else:
+                # not previously defined, so warn that we ignore it
+                logger.warning("Ignoring unknown keyword-argument %s.", kwarg)
         # NOTE: after the kwargs setting to be sure they are what we set/expect
-        if not isinstance(mdconfig, MDP):
-            raise TypeError(f"mdp must be of type {MDP}.")
-        if mdconfig["nsteps"] != -1:
-            logger.info(f"Changing nsteps from {mdconfig['nsteps']} to -1 "
-                        + "(infinte), run length is controlled via run args.")
-            mdconfig["nsteps"] = -1
-        # TODO: ensure that x-out and v-out/f-out are the same (if applicable)?
-        self._mdp = mdconfig
         # TODO: store a hash/the file contents for gro, top, ndx?
         #       to check against when we load from storage/restart?
         #       if we do this do it in the property!
@@ -190,10 +192,10 @@ class GmxEngine(MDEngine):
         # available + executable
         self.mdrun_executable = self.mdrun_executable
         self.grompp_executable = self.grompp_executable
-        # same for output traj type, check if it is in allowed values and
-        # TODO: in the future we want to possibly check if that traj type is
-        # actually written with current mdp settings?
-        self.output_traj_type = self.output_traj_type
+        # basic checks for mdp are done in the property-setter, e.g. if the
+        # output_traj_type is actually written with current mdp-settings
+        self.mdp = mdconfig
+        # initialize internal state variables
         self._workdir = None
         self._prepared = False
         # NOTE: frames_done and steps_done do not have an easy relation!
@@ -213,15 +215,14 @@ class GmxEngine(MDEngine):
         # tpr for trajectory (part), will become the structure/topology file
         self._tpr = None
 
-    def __getstate__(self):
+    def __getstate__(self) -> dict:
         state = self.__dict__.copy()
-        if isinstance(self._proc, asyncio.subprocess.Process):
-            # cant pickle the process, + its probably dead when we unpickle :)
-            state["_proc"] = None
+        # cant pickle the process, + its probably dead when we unpickle :)
+        state["_proc"] = None
         return state
 
     @property
-    def current_trajectory(self):
+    def current_trajectory(self) -> Trajectory | None:
         """
         Return the last finished trajectory (part).
 
@@ -244,8 +245,8 @@ class GmxEngine(MDEngine):
             # but checking for self._simulation_part == 0 also just makes sure
             # we never started a run (i.e. same as checking self._proc)
             return None
-        elif (all(v is not None for v in [self._tpr, self._deffnm])
-              and not self.running):
+        if (all(v is not None for v in [self._tpr, self._deffnm])
+            and not self.running):
             # self._tpr and self._deffnm are set in prepare, i.e. having them
             # set makes sure that we have at least prepared running the traj
             # but it might not be done yet
@@ -261,15 +262,16 @@ class GmxEngine(MDEngine):
                     nstout=self.nstout,
                               )
             return traj
-        else:
-            return None
+        return None
 
     @property
-    def ready_for_run(self):
+    def ready_for_run(self) -> bool:
+        """Whether this engine is ready to run, i.e. generate a trajectory."""
         return self._prepared and not self.running
 
     @property
-    def running(self):
+    def running(self) -> bool:
+        """Whether this engine is currently running/generating a trajectory."""
         if self._proc is None:
             # this happens when we did not call run() yet
             return False
@@ -281,44 +283,48 @@ class GmxEngine(MDEngine):
         return False
 
     @property
-    def workdir(self):
+    def workdir(self) -> str:
+        """The current woring directory of the engine."""
         return self._workdir
 
     @workdir.setter
-    def workdir(self, value):
+    def workdir(self, value: str) -> None:
         if not os.path.isdir(value):
             raise TypeError(f"Not a directory ({value}).")
         value = os.path.relpath(value)
         self._workdir = value
 
     @property
-    def gro_file(self):
+    def gro_file(self) -> str:
+        """The (path to the) gro file this engine uses/used to call grompp."""
         return self._gro_file
 
     @gro_file.setter
-    def gro_file(self, val):
+    def gro_file(self, val: str) -> str:
         if not os.path.isfile(val):
             raise FileNotFoundError(f"gro file not found: {val}")
         val = os.path.relpath(val)
         self._gro_file = val
 
     @property
-    def top_file(self):
+    def top_file(self) -> str:
+        """The (path to the) top file this engine uses/used to call grompp."""
         return self._top_file
 
     @top_file.setter
-    def top_file(self, val):
+    def top_file(self, val: str) -> None:
         if not os.path.isfile(val):
             raise FileNotFoundError(f"top file not found: {val}")
         val = os.path.relpath(val)
         self._top_file = val
 
     @property
-    def ndx_file(self):
+    def ndx_file(self) -> str | None:
+        """The (path to the) ndx file this engine uses/used to call grompp."""
         return self._ndx_file
 
     @ndx_file.setter
-    def ndx_file(self, val):
+    def ndx_file(self, val: str | None) -> None:
         if val is not None:
             # GMX does not require an ndx file, so we accept None
             if not os.path.isfile(val):
@@ -328,12 +334,42 @@ class GmxEngine(MDEngine):
         self._ndx_file = val
 
     @property
-    def dt(self):
+    def mdp(self) -> MDP:
+        """The configuration of this engine as a :class:`MDP` object."""
+        return self._mdp
+
+    @mdp.setter
+    def mdp(self, val: MDP) -> None:
+        if not isinstance(val, MDP):
+            raise TypeError(f"Value must be of type {MDP}.")
+        try:
+            if val["nsteps"] != -1:
+                logger.info("Changing nsteps from %s to -1 (infinte), the run "
+                            "length is controlled via arguments of the run "
+                            "method.",
+                            val['nsteps'])
+                val["nsteps"] = -1
+        except KeyError:
+            # nsteps not defined
+            logger.info("Setting previously undefined nsteps to -1 (infinite).")
+            val["nsteps"] = -1
+        # check that we get a trajectory of the format we expect with our
+        # current mdp, we do this by using nstout_from_mdp since it throws a
+        # nice error if the mdp does not generate output for given traj-format
+        # TODO: ensure that x-out and v-out/f-out are the same (if applicable)?
+        _ = nstout_from_mdp(mdp=val, traj_type=self.output_traj_type)
+        self._mdp = val
+
+    # alias for mdp to mdconfig (since some users may expect mdconfig)
+    mdconfig = mdp
+
+    @property
+    def dt(self) -> float:
         """Integration timestep in ps."""
         return self._mdp["dt"]
 
     @property
-    def time_done(self):
+    def time_done(self) -> float:
         """
         Integration time since last call to prepare in ps.
 
@@ -349,7 +385,7 @@ class GmxEngine(MDEngine):
     #             smallest when determing the number of frames etc
     # TODO: check that nstxout == nstvout?!
     @property
-    def nstout(self):
+    def nstout(self) -> int:
         """Smallest output frequency for current output_traj_type."""
         if self._nstout is None:
             nstout = nstout_from_mdp(self._mdp,
@@ -358,7 +394,7 @@ class GmxEngine(MDEngine):
         return self._nstout
 
     @property
-    def steps_done(self):
+    def steps_done(self) -> int:
         """
         Number of integration steps done since last call to :meth:`prepare`.
 
@@ -381,7 +417,7 @@ class GmxEngine(MDEngine):
         return self._steps_done
 
     @property
-    def frames_done(self):
+    def frames_done(self) -> int:
         """
         Number of frames produced since last call to :meth:`prepare`.
 
@@ -492,7 +528,9 @@ class GmxEngine(MDEngine):
         cmd_str = self._mdrun_cmd(tpr=os.path.join(swdir, f"{run_name}.tpr"),
                                   workdir=swdir,
                                   deffnm=run_name)
-        logger.debug(f"{cmd_str}")
+        logger.debug("About to execute gmx mdrun command for constraints and"
+                     "/or velocity generation: %s",
+                     cmd_str)
         returncode = None
         stderr = bytes()
         stdout = bytes()
@@ -543,6 +581,12 @@ class GmxEngine(MDEngine):
         """
         Prepare a fresh simulation (starting with part0001).
 
+        Can also be used to continue a simulation from a checkpoint file with
+        matching name ('deffnm.cpt'). In that case, the `simulation-part` mdp
+        option must match the number of the next part to be generated, e.g. it
+        must be 2 if the last part generated was part0001. The previously
+        generated trajectory files do not need to exist.
+
         Parameters
         ----------
         starting_configuration : asyncmd.Trajectory or None
@@ -579,9 +623,15 @@ class GmxEngine(MDEngine):
                 if not os.path.isfile(cpt_fname):
                     raise ValueError("'simulation-part' > 1 is only possible "
                                      + "if starting from a checkpoint, but "
-                                     + f"{cpt_fname} does not exists."
+                                     + f"{cpt_fname} does not exist."
                                      )
-                logger.warning(f"Starting value for 'simulation-part' > 1 (={sim_part}).")
+                starting_configuration = cpt_fname
+                logger.warning("Starting value for 'simulation-part' > 1 (=%s)"
+                               " and existing checkpoint file found (%s). "
+                               "Using the checkpoint file as "
+                               "`starting_configuration`.",
+                               sim_part, cpt_fname)
+            # always substract one from sim_part so we get 0 if it was 1
             self._simulation_part = sim_part - 1
         # check for previous runs with the same deffnm in workdir
         # NOTE: we only check for checkpoint files and trajectory parts as gmx
@@ -592,23 +642,31 @@ class GmxEngine(MDEngine):
                                             deffnm=deffnm,
                                             traj_type=self.output_traj_type,
                                                           )
-        if (len(trajs_with_same_deffnm) > 0
-                or (await aiofiles.ospath.isfile(cpt_fname)
-                    and self._simulation_part == 0)):
+        # NOTE: it is enough to check if we have more trajectories than the
+        #       starting simulation_part, because we assume that if we find a
+        #       checkpoint file (above) and simulation_part > 0 that the
+        #       checkpoint file matches the correct part-number
+        if len(trajs_with_same_deffnm) > self._simulation_part:
             raise ValueError(f"There are files in workdir ({self.workdir}) "
-                             + f"with the same deffnm ({deffnm}). Use "
+                             + f"with the same deffnm ({deffnm}). Use the "
                              + "`prepare_from_files()` method to continue an "
-                             + "existing MD run or change the workdir and or "
+                             + "existing MD run or change the workdir and/or "
                              + "deffnm.")
         # actucal preparation of MDrun: sort out starting configuration...
-        if starting_configuration is None:
-            # enable to start from the initial structure file ('-c' option)
-            trr_in = None
+        if ((starting_configuration is None)
+            # None enables start from the initial structure file ('-c' option)
+            or isinstance(starting_configuration, str)
+            # str enables passing the path to the full precision trajectory
+            # directly, i.e. trr, cpt, or tng
+            ):
+            trr_in = starting_configuration
         elif isinstance(starting_configuration, Trajectory):
+            # enable passing of asyncmd.Trajectories as starting_configuration
             trr_in = starting_configuration.trajectory_files[0]
         else:
-            raise TypeError("Starting_configuration must be None or a wrapped "
-                            + f"trr ({Trajectory}).")
+            raise TypeError("Starting_configuration must be None, a wrapped "
+                            "full precission trajectrtory, or the path to a "
+                            "full precission trajectory (trr, cpt, or tng).")
         # ...and call grompp to get a tpr
         # remember the path to use as structure file for out trajs
         self._tpr = os.path.join(self.workdir, deffnm + ".tpr")
@@ -639,7 +697,7 @@ class GmxEngine(MDEngine):
         cmd_str = self._grompp_cmd(mdp_in=mdp_in, tpr_out=tpr_out,
                                    workdir=workdir,
                                    trr_in=trr_in, mdp_out=mdp_out)
-        logger.debug(f"About to execute command: {cmd_str}")
+        logger.debug("About to execute gmx grompp command: %s", cmd_str)
         # 3 file descriptors: stdin, stdout, stderr
         # NOTE: The max open files semaphores counts for 3 open files, so we
         #       only need it once
@@ -653,10 +711,10 @@ class GmxEngine(MDEngine):
                                                                )
             stdout, stderr = await grompp_proc.communicate()
             return_code = grompp_proc.returncode
-            logger.debug(f"grompp command returned {return_code}.")
-            logger.debug(f"grompp stdout:\n{stdout.decode()}")
-            # gromacs likes to talk on stderr ;)
-            logger.debug(f"grompp stderr:\n{stderr.decode()}")
+            logger.debug("gmx grompp command returned return code %s.",
+                         return_code)
+            #logger.debug("grompp stdout:\n%s", stdout.decode())
+            #logger.debug("grompp stderr:\n%s", stderr.decode())
             if return_code != 0:
                 # this assumes POSIX
                 raise RuntimeError("grompp had non-zero return code "
@@ -779,7 +837,8 @@ class GmxEngine(MDEngine):
                 # while loops, i.e. we can just call traj = e.run(...) and then
                 # while traj is not None: traj = e.run()
                 # TODO: this will make it complicated to ever use the GmxEngine
-                #       for zero-step simulations to only apply constraints
+                #       for zero-step simulations to only apply constraints,
+                #       but we do have the _0_step_md methods for that...?!
                 return None
             elif nsteps < 0:
                 raise ValueError(f"nsteps is too small ({nsteps} steps for "
@@ -791,7 +850,7 @@ class GmxEngine(MDEngine):
                                   deffnm=self._deffnm,
                                   # TODO: use more/any other kwargs?
                                   maxh=walltime, nsteps=nsteps)
-        logger.debug(f"{cmd_str}")
+        logger.debug("About to execute gmx mdrun command: %s", cmd_str)
         returncode = None
         stderr = bytes()
         stdout = bytes()
@@ -802,12 +861,17 @@ class GmxEngine(MDEngine):
             # self._proc is set by _start_gmx_mdrun!
             stdout, stderr = await self._proc.communicate()
             returncode = self._proc.returncode
-        except asyncio.CancelledError:
-            self._proc.kill()
-            raise  # reraise the error for encompassing coroutines
+        except asyncio.CancelledError as e:
+            if self._proc is not None:
+                # make sure _proc is set, it can still be None if we get
+                # canceled while _start_gmx_mdrun is setting up the process
+                self._proc.kill()
+            raise e from None  # reraise the error for encompassing coroutines
         else:
-            #logger.debug(f"gmx mdrun stdout: {stdout.decode()}")
-            #logger.debug(f"gmx mdrun stderr: {stderr.decode()}")
+            logger.debug("gmx mdrun command returned return code %s.",
+                         returncode)
+            #logger.debug("gmx mdrun stdout:\n%s", stdout.decode())
+            #logger.debug("gmx mdrun stderr:\n%s", stderr.decode())
             if returncode == 0:
                 self._frames_done += len(self.current_trajectory)
                 # dont care if we did a little more and only the checkpoint knows
@@ -856,7 +920,7 @@ class GmxEngine(MDEngine):
 
     def _num_suffix(self, sim_part: int) -> str:
         # construct gromacs num part suffix from simulation_part
-        num_suffix = ".part{:04d}".format(sim_part)
+        num_suffix = f".part{sim_part:04d}"
         return num_suffix
 
     def _grompp_cmd(self, mdp_in, tpr_out, workdir, trr_in=None, mdp_out=None):
@@ -928,7 +992,6 @@ class GmxEngine(MDEngine):
         return cmd
 
 
-# TODO: DOCUMENT!
 class SlurmGmxEngine(GmxEngine):
     __doc__ = GmxEngine.__doc__
     # use local prepare (i.e. grompp) of GmxEngine then submit run to slurm
@@ -1055,9 +1118,10 @@ class SlurmGmxEngine(GmxEngine):
         except FileNotFoundError:
             pass
 
-    # TODO: do we even need/want that?
+    # TODO: do we even need/want this?
     @property
-    def slurm_job_state(self):
+    def slurm_job_state(self) -> str | None:
+        """The state of the slurm job as reported by slurm."""
         if self._proc is None:
             return None
         return self._proc.slurm_job_state
