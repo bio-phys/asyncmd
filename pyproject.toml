@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools >= 64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "asyncmd"
+dynamic = ["version"]
+dependencies = ["aiofiles",
+                "mdanalysis",
+                "numpy",
+                ]
+requires-python = ">=3.10"
+authors = [{ name = "Hendrik Jung", email = "hendrik.jung@biophys.mpg.de"}]
+maintainers = [{ name = "Hendrik Jung", email = "hendrik.jung@biophys.mpg.de"}]
+description = """asyncmd is a library to write concurrent code to run and \
+analyze molecular dynamics simulations using pythons async/await synthax."""
+readme = "README.md"
+keywords = ["molecular dynamics", "molecular-dynamics", "MD",
+            "high performance computing", "HPC",
+            "slurm", "SLURM",
+            "gromacs", "GROMACS",
+            ]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Natural Language :: English",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.optional-dependencies]
+docs = ["sphinx"]
+tests = ["pytest", "pytest-asyncio"]
+dev = ["asyncmd[docs,tests]", "h5py", "coverage", "pytest-cov"]
+
+[project.urls]
+#Documentation =
+Repository = "https://github.com/bio-phys/asyncmd.git"
+Issues = "https://github.com/bio-phys/asyncmd/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.dynamic]
+version = {attr = "asyncmd.__about__.__version__"}
