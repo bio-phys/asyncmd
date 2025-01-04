@@ -115,8 +115,7 @@ cd asyncmd
 pip install -e .\[dev\]
 ```
 
-This will in addition to the requirements to run the tests and to build the documentation install [flake8] and some of its plugins, such that you get yelled at to write nicely formated code.
-It will also install [coverage] and its [pytest-cov] plugin such that you have an idea of the test coverage for your newly added code. To get a nice html coverage report you can run the tests as
+This will in addition to the requirements to run the tests and to build the documentation install [coverage] and its [pytest-cov] plugin such that you have an idea of the test coverage for your newly added code. To get a nice html coverage report you can run the tests as
 
 ```bash
 pytest --cov=asyncmd --cov-report=html
@@ -134,7 +133,6 @@ asyncmd is under the terms of the GNU general public license version 3 or later,
 <sub>This README.md is printed from 100% recycled electrons.</sub>
 
 [coverage]: https://pypi.org/project/coverage/
-[flake8]: https://pypi.org/project/flake8/
 [git-lfs]: https://git-lfs.com/
 [pytest]: https://docs.pytest.org/en/latest/
 [pytest-cov]: https://pypi.org/project/pytest-cov/

@@ -37,7 +37,8 @@ classifiers = [
 [project.optional-dependencies]
 docs = ["sphinx"]
 tests = ["pytest", "pytest-asyncio"]
-dev = ["asyncmd[docs,tests]", "h5py", "coverage", "pytest-cov"]
+tests-all = ["asyncmd[tests]", "h5py", "coverage", "pytest-cov"]
+dev = ["asyncmd[docs,tests-all]"]
 
 [project.urls]
 #Documentation =
