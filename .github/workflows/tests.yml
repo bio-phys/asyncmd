@@ -26,6 +26,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
       - uses: conda-incubator/setup-miniconda@v3
         with:
           auto-update-conda: true
@@ -38,4 +40,6 @@ jobs:
           conda list
           python -c "import asyncmd; print('asyncmd version is: ', asyncmd.__about__.__version__)"
       - name: Unit tests
+        env:
+          PY_COLORS: "1"
         run: pytest -vv --cov=asyncmd --cov-report=term-missing
