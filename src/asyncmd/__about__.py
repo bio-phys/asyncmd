@@ -53,15 +53,9 @@ def _get_git_version():
     return git_revision
 
 
-__description__ = ("asyncmd is a library to write concurrent code to run and "
-                   + "analyze molecular dynamics simulations using pythons "
-                   + "async/await synthax"
-                   )
-__url__ = "https://github.com/bio-phys/asyncmd.git"
 __author__ = "Hendrik Jung"
-__author_email__ = "hendrik.jung@biophys.mpg.de"
 __license__ = "GNU General Public License v3 or later (GPLv3+)"
-__copyright__ = "2022 {:s}".format(__author__)
+__copyright__ = f"2022 {__author__}"
 # sort out if we have a git (commit) version
 base_version = "0.3.0"
 git_version = _get_git_version()
