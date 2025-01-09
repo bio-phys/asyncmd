@@ -5,9 +5,10 @@ on:
     branches: ["main"]
   push:
     branches: ["main"]
+    tags: ["v*"]
   schedule:
-    # run test automatically every month on th 4th at 3
-    - cron: "0 3 4 * *"
+    # run test automatically every day at 3
+    - cron: "0 3 * * *"
 
 defaults:
   run:
@@ -38,7 +39,7 @@ jobs:
       - name: List versions
         run: |
           conda list
-          python -c "import asyncmd; print('asyncmd version is: ', asyncmd.__about__.__version__)"
+          python -c "import asyncmd; print('asyncmd version is: ', asyncmd.__version__)"
       - name: Unit tests
         env:
           PY_COLORS: "1"
