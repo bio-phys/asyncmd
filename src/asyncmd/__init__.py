@@ -12,7 +12,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
-from .__about__ import __author__, __copyright__, __license__, __version__
+from ._version import __version__, __git_hash__
 
 from . import config
 from .trajectory.trajectory import Trajectory

@@ -123,7 +123,7 @@ pytest --cov=asyncmd --cov-report=html
 
 ### Contributors
 
-This project was originally conceived and started by Hendrik Jung in 2021/2022. You can also see the file ```__about__.py``` or check the string ```asyncmd.__author__```. When you contribute code dont forget to add your name there to claim the credit for your work!
+This project was originally conceived and started by Hendrik Jung in 2021/2022. For more check the `pyproject.toml` file. When you contribute code dont forget to add your name there to claim the credit for your work!
 
 ## License
 

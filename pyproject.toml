@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "asyncmd"
-dynamic = ["version"]
+version = "0.3.0"
 dependencies = ["aiofiles",
                 "mdanalysis",
                 "numpy",
@@ -47,6 +47,3 @@ Issues = "https://github.com/bio-phys/asyncmd/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools.dynamic]
-version = {attr = "asyncmd.__about__.__version__"}
