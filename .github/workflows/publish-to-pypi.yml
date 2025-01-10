@@ -36,7 +36,7 @@ jobs:
     name: >-
       Publish asyncmd to PyPI
     needs:
-    - test-testpypi-install
+    - build
     runs-on: ubuntu-latest
     environment:
       name: pypi
