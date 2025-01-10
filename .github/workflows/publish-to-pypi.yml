@@ -2,7 +2,7 @@ name: Publish asyncmd to PyPI and TestPyPI
 
 on:
   push:
-    branches: ["main"]
+    tags: ["v*"]  # run only on version-tag pushes
 
 jobs:
   build:
@@ -35,9 +35,8 @@ jobs:
   publish-to-pypi:
     name: >-
       Publish asyncmd to PyPI
-    if: startsWith(github.ref, 'refs/tags/')  # only publish to PyPI on tag pushes
     needs:
-    - build
+    - test-testpypi-install
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -120,3 +119,21 @@ jobs:
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         repository-url: https://test.pypi.org/legacy/
+
+  test-testpypi-install:
+    name: Test TestPyPi Installation
+    needs:
+    - publish-to-testpypi
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.x"
+    - name: Install asyncmd from TestPyPi (no-deps)
+      run: >-
+        python3 -m
+        pip install
+        --index-url https://test.pypi.org/simple/
+        --no-deps
