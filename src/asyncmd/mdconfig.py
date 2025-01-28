@@ -386,8 +386,8 @@ class LineBasedMDConfig(MDConfig):
                     else:
                         # warn that we will only keep the last occurenc of key
                         logger.warning("Parsed duplicate configuration option "
-                                       + f"({key}). Last values encountered "
-                                       + "take precedence.")
+                                       "(%s). Last values encountered take "
+                                       "precedence.", key)
                 parsed.update(line_parsed)
         # convert the known types
         self._config = {key: self._type_dispatch[key](value)
