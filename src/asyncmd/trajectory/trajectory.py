@@ -820,9 +820,9 @@ class Trajectory:
                 # default cache is set to h5py (as above)
                 logger.warning("Trying to unpickle %s with cache_type "
                                "'h5py' not possible without a registered "
-                               "cache. Falling back to global default type."
-                               "See 'asyncmd.config.register_h5py_cache' and"
-                               " 'asyncmd.config.set_default_cache_type'.",
+                               "cache. Falling back to global default type. "
+                               "See 'asyncmd.config.register_h5py_cache' and "
+                               "'asyncmd.config.set_default_cache_type'.",
                                 self
                                )
                 self.cache_type = None  # this calls _setup_cache
@@ -949,9 +949,9 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
         # now if the old npz did not match we should remove it
         # then we will rewrite it with the first cached CV values
         if not existing_npz_matches:
-            logger.debug("Found existing npz file (%s) but the"
-                         " trajectory hash does not match."
-                         " Recreating the npz cache from scratch.",
+            logger.debug("Found existing npz file (%s) but the "
+                         "trajectory hash does not match. "
+                         "Recreating the npz cache from scratch.",
                          self.fname_npz
                          )
             os.unlink(self.fname_npz)

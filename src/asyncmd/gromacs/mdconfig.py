@@ -302,7 +302,7 @@ class MDP(LineBasedMDConfig):
             # option 2 (and 3 if the comment is before the equal sign)
             # comment sign is the first letter, so the whole line is
             # (most probably) a comment line
-            logger.debug(f"mdp line parsed as comment: {line}")
+            logger.debug("mdp line parsed as comment: %s", line)
             return {}
         if ((len(splits_at_equal) == 2 and len(splits_at_comment) == 1)  # option 1
             # or option 3 with equal sign before comment sign

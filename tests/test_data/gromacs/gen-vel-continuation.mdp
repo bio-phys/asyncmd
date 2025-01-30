@@ -1,0 +1,7 @@
+; Example MDP file to cover different cases for ensure_mdp_options function
+
+; Case 1: gen-vel is set to "yes"
+gen-vel = yes
+
+; Case 2: continuation is set to "no"
+continuation = no
