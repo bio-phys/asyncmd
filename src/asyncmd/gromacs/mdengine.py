@@ -712,7 +712,7 @@ class GmxEngine(MDEngine):
             stdout, stderr = await grompp_proc.communicate()
             return_code = grompp_proc.returncode
             logger.debug("gmx grompp command returned return code %s.",
-                         str(return_code) if not None else "not available")
+                         str(return_code) if return_code is not None else "not available")
             #logger.debug("grompp stdout:\n%s", stdout.decode())
             #logger.debug("grompp stderr:\n%s", stderr.decode())
             if return_code != 0:
@@ -869,7 +869,7 @@ class GmxEngine(MDEngine):
             raise e from None  # reraise the error for encompassing coroutines
         else:
             logger.debug("gmx mdrun command returned return code %s.",
-                         str(returncode) if not None else "not available")
+                         str(returncode) if returncode is not None else "not available")
             #logger.debug("gmx mdrun stdout:\n%s", stdout.decode())
             #logger.debug("gmx mdrun stderr:\n%s", stderr.decode())
             if returncode == 0:

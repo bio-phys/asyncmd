@@ -393,7 +393,7 @@ class SlurmClusterMediator:
                     logger.debug("Parsed slurm state %s for job %s as "
                                  "returncode %s. Removing job from sacct calls "
                                  "because its state will not change anymore.",
-                                 state, jobid, str(parsed_ec) if not None
+                                 state, jobid, str(parsed_ec) if parsed_ec is not None
                                  else "not available",
                                  )
                     self._jobids_sacct.remove(jobid)
@@ -445,7 +445,7 @@ class SlurmClusterMediator:
             if regexp.search(slurm_state):
                 # regexp matches the given slurm_state
                 logger.debug("Parsed SLURM state %s as exitcode %s.",
-                             slurm_state, str(ecode) if not None
+                             slurm_state, str(ecode) if ecode is not None
                              else "not available",
                              )
                 return ecode
