@@ -626,8 +626,8 @@ class GmxEngine(MDEngine):
                                      + f"{cpt_fname} does not exist."
                                      )
                 starting_configuration = cpt_fname
-                logger.warning("Starting value for 'simulation-part' > 1 (=%s)"
-                               " and existing checkpoint file found (%s). "
+                logger.warning("Starting value for 'simulation-part' > 1 (=%s) "
+                               "and existing checkpoint file found (%s). "
                                "Using the checkpoint file as "
                                "`starting_configuration`.",
                                sim_part, cpt_fname)
@@ -712,7 +712,7 @@ class GmxEngine(MDEngine):
             stdout, stderr = await grompp_proc.communicate()
             return_code = grompp_proc.returncode
             logger.debug("gmx grompp command returned return code %s.",
-                         return_code)
+                         str(return_code) if return_code is not None else "not available")
             #logger.debug("grompp stdout:\n%s", stdout.decode())
             #logger.debug("grompp stderr:\n%s", stderr.decode())
             if return_code != 0:
@@ -754,9 +754,9 @@ class GmxEngine(MDEngine):
         last_partnum = int(last_trajname[len(deffnm) + 5:len(deffnm) + 9])
         if last_partnum != len(previous_trajs):
             logger.warning("Not all previous trajectory parts seem to be "
-                           + "present in the current workdir. Assuming the "
-                           + "highest part number corresponds to the "
-                           + "checkpoint file and continuing anyway."
+                           "present in the current workdir. Assuming the "
+                           "highest part number corresponds to the "
+                           "checkpoint file and continuing anyway."
                            )
         # load the 'old' mdp_in
         async with _SEMAPHORES["MAX_FILES_OPEN"]:
@@ -869,7 +869,7 @@ class GmxEngine(MDEngine):
             raise e from None  # reraise the error for encompassing coroutines
         else:
             logger.debug("gmx mdrun command returned return code %s.",
-                         returncode)
+                         str(returncode) if returncode is not None else "not available")
             #logger.debug("gmx mdrun stdout:\n%s", stdout.decode())
             #logger.debug("gmx mdrun stderr:\n%s", stderr.decode())
             if returncode == 0:

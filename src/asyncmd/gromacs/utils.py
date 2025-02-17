@@ -172,12 +172,12 @@ def ensure_mdp_options(mdp: MDP, genvel: str = "no", continuation: str = "yes") 
         # make sure we do not generate velocities with gromacs
         genvel_test = mdp["gen-vel"]
     except KeyError:
-        logger.info(f"Setting 'gen-vel = {genvel}' in mdp.")
+        logger.info("Setting 'gen-vel = %s' in mdp.", genvel)
         mdp["gen-vel"] = genvel
     else:
         if genvel_test != genvel:
-            logger.warning(f"Setting 'gen-vel = {genvel}' in mdp "
-                           + f"(was '{genvel_test}').")
+            logger.warning("Setting 'gen-vel = %s' in mdp "
+                           "(was '%s').", genvel, genvel_test)
             mdp["gen-vel"] = genvel
     try:
         # TODO/FIXME: this could also be 'unconstrained-start'!
@@ -186,12 +186,12 @@ def ensure_mdp_options(mdp: MDP, genvel: str = "no", continuation: str = "yes") 
         #            so I think we can ignore that for now?!
         continuation_test = mdp["continuation"]
     except KeyError:
-        logger.info(f"Setting 'continuation = {continuation}' in mdp.")
+        logger.info("Setting 'continuation = %s' in mdp.", continuation)
         mdp["continuation"] = continuation
     else:
         if continuation_test != continuation:
-            logger.warning(f"Setting 'continuation = {continuation}' in mdp "
-                           + f"(was '{continuation_test}').")
+            logger.warning("Setting 'continuation = %s' in mdp "
+                           "(was '%s').", continuation, continuation_test)
             mdp["continuation"] = continuation
 
     return mdp

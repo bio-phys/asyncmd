@@ -599,14 +599,14 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
         # sort out if we use max_frames or max_steps
         if max_frames is not None and max_steps is not None:
             logger.warning("Both max_steps and max_frames given. Note that "
-                           + "max_steps will take precedence.")
+                           "max_steps will take precedence.")
         if max_steps is not None:
             self.max_steps = max_steps
         elif max_frames is not None:
             self.max_steps = max_frames * nstout
         else:
             logger.info("Neither max_frames nor max_steps given. "
-                        + "Setting max_steps to infinity.")
+                        "Setting max_steps to infinity.")
             # this is a float but can be compared to ints
             self.max_steps = np.inf
 
@@ -629,10 +629,10 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
             # and warn if it is not a corotinefunction
             logger.warning(
                     "It is recommended to use coroutinefunctions for all "
-                    + "conditions. This can easily be achieved by wrapping any"
-                    + " function in a TrajectoryFunctionWrapper. All "
-                    + "non-coroutine condition functions will be blocking when"
-                    + " applied! ([c is coroutine for c in conditions] = %s)",
+                    "conditions. This can easily be achieved by wrapping any "
+                    "function in a TrajectoryFunctionWrapper. All "
+                    "non-coroutine condition functions will be blocking when "
+                    "applied! ([c is coroutine for c in conditions] = %s)",
                     self._condition_func_is_coroutine
                            )
         self._conditions = conditions
@@ -744,9 +744,10 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
             # gets the frame with the lowest idx where any condition is True
             min_idx = np.argmin(frame_nums)
             first_condition_fullfilled = conds_fullfilled[min_idx]
-            logger.error(f"Starting configuration ({starting_configuration}) "
-                         + "is already fullfilling the condition with idx"
-                         + f" {first_condition_fullfilled}.")
+            logger.error("Starting configuration (%s) is already fullfilling "
+                         "the condition with idx %s.",
+                         starting_configuration, first_condition_fullfilled,
+                        )
             # we just return the starting configuration/trajectory
             trajs = [starting_configuration]
             return trajs, first_condition_fullfilled

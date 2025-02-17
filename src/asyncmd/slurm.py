@@ -383,17 +383,18 @@ class SlurmClusterMediator:
                 self._jobinfo[jobid]["nodelist"] = nodelist
                 self._jobinfo[jobid]["exitcode"] = exitcode
                 self._jobinfo[jobid]["state"] = state
-                logger.debug(f"Extracted from sacct output: jobid {jobid},"
-                             + f" state {state}, exitcode {exitcode} and "
-                             + f"nodelist {nodelist}.")
+                logger.debug("Extracted from sacct output: jobid %s, state %s, "
+                             "exitcode %s and nodelist %s.",
+                             jobid, state, exitcode, nodelist,
+                            )
                 parsed_ec = self._parse_exitcode_from_slurm_state(slurm_state=state)
                 self._jobinfo[jobid]["parsed_exitcode"] = parsed_ec
                 if parsed_ec is not None:
-                    logger.debug("Parsed slurm state %s for job %s"
-                                 " as returncode %s. Removing job"
-                                 "from sacct calls because its state will"
-                                 " not change anymore.",
-                                 state, jobid, parsed_ec,
+                    logger.debug("Parsed slurm state %s for job %s as "
+                                 "returncode %s. Removing job from sacct calls "
+                                 "because its state will not change anymore.",
+                                 state, jobid, str(parsed_ec) if parsed_ec is not None
+                                 else "not available",
                                  )
                     self._jobids_sacct.remove(jobid)
                     self._node_fail_heuristic(jobid=jobid,
@@ -443,8 +444,9 @@ class SlurmClusterMediator:
         for ecode, regexp in self._ecode_for_slurmstate_regexps.items():
             if regexp.search(slurm_state):
                 # regexp matches the given slurm_state
-                logger.debug("Parsed SLURM state %s as exitcode %d.",
-                             slurm_state, ecode,
+                logger.debug("Parsed SLURM state %s as exitcode %s.",
+                             slurm_state, str(ecode) if ecode is not None
+                             else "not available",
                              )
                 return ecode
         # we should never finish the loop, it means we miss a slurm job state
@@ -522,11 +524,11 @@ class SlurmClusterMediator:
         all_nodes = len(self._all_nodes)
         exclude_nodes = len(self._exclude_nodes)
         if exclude_nodes >= all_nodes / 4:
-            logger.error("We already declared 1/4 of the cluster as broken."
-                         + "Houston, we might have a problem?")
+            logger.error("We already declared 1/4 of the cluster as broken. "
+                         "Houston, we might have a problem?")
             if exclude_nodes >= all_nodes / 2:
-                logger.error("In fact we declared 1/2 of the cluster as broken."
-                             + "Houston, we *do* have a problem!")
+                logger.error("In fact we declared 1/2 of the cluster as broken. "
+                             "Houston, we *do* have a problem!")
                 if exclude_nodes >= all_nodes * 0.75:
                     raise RuntimeError("Houston? 3/4 of the cluster is broken?")
 
@@ -581,9 +583,9 @@ class SlurmProcess:
         _slurm_cluster_mediator = None
         # we raise a ValueError if sacct/sinfo are not available
         logger.warning("Could not initialize SLURM cluster handling. "
-                       "If you are sure SLURM (sinfo/sacct/etc) is available"
-                       " try calling `asyncmd.config.set_slurm_settings()`"
-                       " with the appropriate arguments.")
+                       "If you are sure SLURM (sinfo/sacct/etc) is available "
+                       "try calling `asyncmd.config.set_slurm_settings()` "
+                       "with the appropriate arguments.")
     # we can not simply wait for the subprocess, since slurm exits directly
     # so we will sleep for this long between checks if slurm-job completed
     sleep_time = 15  # TODO: heuristic? dynamically adapt?
@@ -1012,8 +1014,10 @@ class SlurmProcess:
                         + f" and output {e.output}."
                         ) from e
             # if we got until here the job is successfuly canceled....
-            logger.debug(f"Canceled SLURM job with jobid {self.slurm_jobid}."
-                         + f"scancel returned {scancel_out}.")
+            logger.debug("Canceled SLURM job with jobid %s. "
+                         "scancel returned %s.",
+                         self.slurm_jobid, scancel_out,
+                         )
             # remove the job from the monitoring
             self.slurm_cluster_mediator.monitor_remove_job(jobid=self._jobid)
             if (self._stdfiles_removal == "yes"
