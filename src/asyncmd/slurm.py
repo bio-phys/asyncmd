@@ -863,6 +863,11 @@ class SlurmProcess:
         exclude_nodes = self.slurm_cluster_mediator.exclude_nodes
         if len(exclude_nodes) > 0:
             sbatch_cmd += f" --exclude={','.join(exclude_nodes)}"
+        for key, val in self.sbatch_options.items():
+            if val == "":
+                sbatch_cmd += f" --{key}"
+            else:
+                sbatch_cmd += f" --{key}={val}"
         sbatch_cmd += f" --parsable {self.sbatch_script}"
         logger.debug("About to execute sbatch_cmd %s.", sbatch_cmd)
         # 3 file descriptors: stdin,stdout,stderr
