@@ -23,7 +23,7 @@ How to use the molecular dynamics engines in `asyncmd`. The subfolders are for t
 
 - `ConditionalTrajectoryPropagator.ipynb`: Learn how to terminate your simulations automatically as soon as any of a list of predefined conditions are fullfilled, e.g. a state is reached, a mean converged or similar. This is especially useful when implementing more complex enhanced sampling schemes like transition path sampling. Also learn about `asyncmd.trajectory.FrameExtractor` classes and the `asyncmd.trajectory.TrajectoryConcatenator` class.
 
-- **TODO!** `FrameExtractors.ipynb`: Extract and possibly modify configurations from `asyncmd.Trajectory` objects to e.g. use them as new initial configurations for additional molecular dynamcis simulations. This is an essential building block for many enhanced sampling schemes, e.g. the weighted ensemble method, transition path sampling or the string method.
+- `FrameExtractors.ipynb`: Extract and possibly modify configurations from `asyncmd.Trajectory` objects to e.g. use them as new initial configurations for additional molecular dynamcis simulations. This is an essential building block for many enhanced sampling schemes, e.g. the weighted ensemble method, transition path sampling or the string method.
 
 ## `04_application_examples`
 
