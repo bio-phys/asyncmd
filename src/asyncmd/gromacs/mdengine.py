@@ -16,6 +16,7 @@ import os
 import copy
 import shlex
 import random
+import re
 import string
 import shutil
 import typing
@@ -1025,7 +1026,7 @@ class SlurmGmxEngine(GmxEngine):
     #       although the mdrun was successfull.
 
     def __init__(self, mdconfig, gro_file, top_file, sbatch_script, ndx_file=None,
-                 **kwargs):
+                 sbatch_placeholders_values=None, **kwargs):
         """
         Initialize a :class:`SlurmGmxEngine`.
 
@@ -1047,6 +1048,15 @@ class SlurmGmxEngine(GmxEngine):
 
         ndx_file: str or None
             Optional, absolute or relative path to a gromacs index file.
+        sbatch_placeholders_values : dict or None
+            A dictionary containing values for placeholders defined in the 
+            `sbatch_script`.
+
+            - Keys must match the placeholders in `sbatch_script` (e.g., `"mem"`
+              corresponds to `{mem}` and `"nodes"` to `{nodes}`).
+            - Values should be strings or numbers that will replace the 
+              placeholders when preparing the script for `gmx mdrun`.
+            - If `None`, only `{mdrun_cmd}` will be replaced.
 
         Note that all attributes can be set at intialization by passing keyword
         arguments with their name, e.g. mdrun_extra_args="-ntomp 2" to instruct
@@ -1062,7 +1072,15 @@ class SlurmGmxEngine(GmxEngine):
             # probably path to a file, lets try to read it
             with open(sbatch_script, 'r') as f:
                 sbatch_script = f.read()
+        # check if all placeholders exist in submit script
+        if sbatch_placeholders_values is not None:
+            existing_placeholders = set(re.findall(r"\{(\w+)\}", sbatch_script))
+            for key in sbatch_placeholders_values.keys():
+                if key not in existing_placeholders:
+                    logger.error("Specified key '%s' doesn't exist in Slurm sbatch script!", key)  
+                    raise RuntimeError("Invalid Slurm sbatch script placeholders specified")
         self.sbatch_script = sbatch_script
+        self.sbatch_placeholders_values = sbatch_placeholders_values
 
     def _name_from_name_or_none(self, run_name: typing.Optional[str]) -> str:
         if run_name is not None:
@@ -1076,7 +1094,11 @@ class SlurmGmxEngine(GmxEngine):
                                run_name=None, **kwargs):
         name = self._name_from_name_or_none(run_name=run_name)
         # substitute placeholders in submit script
-        script = self.sbatch_script.format(mdrun_cmd=cmd_str)
+        try:
+            script = self.sbatch_script.format(mdrun_cmd=cmd_str, **self.sbatch_placeholders_values)
+        except KeyError as k:
+            logger.error(f"Specified key '%s' doesn't have a value defined!", k.args[0])  
+            RuntimeError("Invalid Slurm sbatch script placeholders specified")
         # write it out
         fname = os.path.join(workdir, name + ".slurm")
         if await aiofiles.ospath.exists(fname):
@@ -1117,6 +1139,9 @@ class SlurmGmxEngine(GmxEngine):
             await aiofiles.os.remove(fname)
         except FileNotFoundError:
             pass
+
+    def slum_set_variable_value(self, placeholder, value):
+        self.sbatch_placeholders_values[placeholder] = value
 
     # TODO: do we even need/want this?
     @property
