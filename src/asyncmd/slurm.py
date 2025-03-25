@@ -130,7 +130,7 @@ class SlurmClusterMediator:
     #             (here forever means until we reinitialize SlurmClusterMediator)
 
     def __init__(self, **kwargs) -> None:
-        self._exclude_nodes = []
+        self._exclude_nodes: list[str] = []
         # make it possible to set any attribute via kwargs
         # check the type for attributes with default values
         dval = object()
@@ -151,17 +151,17 @@ class SlurmClusterMediator:
         # this either checks for our defaults or whatever we just set via kwargs
         self.sacct_executable = ensure_executable_available(self.sacct_executable)
         self.sinfo_executable = ensure_executable_available(self.sinfo_executable)
-        self._node_job_fails = collections.Counter()
-        self._node_job_successes = collections.Counter()
+        self._node_job_fails: dict[str,int] = collections.Counter()
+        self._node_job_successes: dict[str,int] = collections.Counter()
         self._all_nodes = self.list_all_nodes()
-        self._jobids = []  # list of jobids of jobs we know about
-        self._jobids_sacct = []  # list of jobids we monitor actively via sacct
+        self._jobids: list[str] = []  # list of jobids of jobs we know about
+        self._jobids_sacct: list[str] = []  # list of jobids we monitor actively via sacct
         # we will store the info about jobs in a dict keys are jobids
         # values are dicts with key queried option and value the (parsed)
         # return value
         # currently queried options are: state, exitcode and nodelist
-        self._jobinfo = {}
-        self._last_sacct_call = 0  # make sure we dont call sacct too often
+        self._jobinfo: dict[str,dict] = {}
+        self._last_sacct_call = 0.  # make sure we dont call sacct too often
         # make sure we can only call sacct once at a time
         # (since there is only one ClusterMediator at a time we can create
         #  the semaphore here in __init__)
@@ -435,8 +435,8 @@ class SlurmClusterMediator:
             # make the string a list of single node hostnames
             hostnameprefix, nums = nodelist.split("[")
             nums = nums.rstrip("]")
-            nums = nums.split(",")
-            return [f"{hostnameprefix}{num}" for num in nums]
+            nums_list = nums.split(",")
+            return [f"{hostnameprefix}{num}" for num in nums_list]
 
     def _parse_exitcode_from_slurm_state(self,
                                          slurm_state: str,
@@ -683,11 +683,12 @@ class SlurmProcess:
             sbatch_options = {}
         self.sbatch_options = sbatch_options
         self.stdfiles_removal = stdfiles_removal
-        self._jobid = None
-        self._jobinfo = {}  # dict with jobinfo cached from slurm cluster mediator
-        self._stdout_data = None
-        self._stderr_data = None
-        self._stdin = None
+        self._jobid: None | str = None
+        # dict with jobinfo cached from slurm cluster mediator
+        self._jobinfo: dict[str,typing.Any] = {}
+        self._stdout_data: None | bytes = None
+        self._stderr_data: None | bytes = None
+        self._stdin: None | str = None
 
     def _sanitize_sbatch_options(self, sbatch_options: dict) -> dict:
         """
@@ -728,6 +729,26 @@ class SlurmProcess:
 
         return new_sbatch_options
 
+    def _slurm_timelimit_str_from_time_in_hours(self, time: float) -> str:
+        """
+        Create timelimit in SLURM compatible format from time in hours.
+
+        Parameters
+        ----------
+        timelimit : float
+            Timelimit for job in hours
+
+        Returns
+        -------
+        str
+            Timelimit for job as SLURM compatible string.
+        """
+        timelimit = time * 60
+        timelimit_min = int(timelimit)  # take only the full minutes
+        timelimit_sec = round(60 * (timelimit - timelimit_min))
+        timelimit_str = f"{timelimit_min}:{timelimit_sec}"
+        return timelimit_str
+
     @property
     def time(self) -> float | None:
         """
@@ -740,7 +761,7 @@ class SlurmProcess:
     @time.setter
     def time(self, val: float | None) -> None:
         self._time = val
-        self._sbatch_options = self._sanitize_sbatch_options(self._sbatch_options)
+        self._sbatch_options: dict = self._sanitize_sbatch_options(self._sbatch_options)
 
     @property
     def sbatch_options(self) -> dict:
@@ -848,10 +869,7 @@ class SlurmProcess:
         sbatch_cmd += f" --output=./{self._stdout_name(use_slurm_symbols=True)}"
         sbatch_cmd += f" --error=./{self._stderr_name(use_slurm_symbols=True)}"
         if self.time is not None:
-            timelimit = self.time * 60
-            timelimit_min = int(timelimit)  # take only the full minutes
-            timelimit_sec = round(60 * (timelimit - timelimit_min))
-            timelimit_str = f"{timelimit_min}:{timelimit_sec}"
+            timelimit_str = self._slurm_timelimit_str_from_time_in_hours(self.time)
             sbatch_cmd += f" --time={timelimit_str}"
         # keep a ref to the stdin value, we need it in communicate
         self._stdin = stdin
@@ -1027,7 +1045,7 @@ class SlurmProcess:
         RuntimeError
             If the job has never been submitted.
         """
-        if self._jobid is None:
+        if self.slurm_jobid is None:
             # make sure we can only wait after submitting, otherwise we would
             # wait indefinitively if we call wait() before submit()
             raise RuntimeError("Can only wait for submitted SLURM jobs with "
