@@ -13,9 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import pytest
-import os.path as path
+import os.path as ospath
 import logging
-from unittest.mock import patch, Mock
+from unittest.mock import patch, PropertyMock
 
 import asyncmd
 from asyncmd.slurm import SlurmClusterMediator, SlurmProcess
@@ -50,8 +50,8 @@ class Test_SlurmProcess:
             # same here, dont use += 1
             expected_opt_len = expected_opt_len + 1
         with monkeypatch.context() as m:
-            m.setattr(path, "isfile", lambda _: True)
-            m.setattr(path, "abspath", lambda _: "/usr/bin/true")
+            m.setattr(ospath, "isfile", lambda _: True)
+            m.setattr(ospath, "abspath", lambda _: "/usr/bin/true")
             with caplog.at_level(logging.WARNING):
                 slurm_proc = SlurmProcess(jobname="test",
                                           sbatch_script="/usr/bin/true",
@@ -76,8 +76,8 @@ class Test_SlurmProcess:
                                                   expect_warn,
                                                   caplog, monkeypatch):
         with monkeypatch.context() as m:
-            m.setattr(path, "isfile", lambda _: True)
-            m.setattr(path, "abspath", lambda _: "/usr/bin/true")
+            m.setattr(ospath, "isfile", lambda _: True)
+            m.setattr(ospath, "abspath", lambda _: "/usr/bin/true")
             with caplog.at_level(logging.DEBUG):
                 slurm_proc = SlurmProcess(jobname="test",
                                           sbatch_script="/usr/bin/true",
