@@ -93,6 +93,9 @@ Tests use [pytest]. To run them just install asycmd with the test requirements
 git clone https://github.com/bio-phys/asyncmd.git
 cd asyncmd
 pip install .\[tests\]
+# or use
+pip install .\[tests-all\]
+# to also install optional dependencies needed to run all tests
 ```
 
 And then run the tests (against the installed version) as
