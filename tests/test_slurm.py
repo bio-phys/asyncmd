@@ -50,6 +50,8 @@ class Test_SlurmProcess:
             # same here, dont use += 1
             expected_opt_len = expected_opt_len + 1
         with monkeypatch.context() as m:
+            # monkeypatch to make sure we can execute the tests without slurm
+            # (SlurmProcess checks if sbatch and friends are executable at init)
             m.setattr(ospath, "isfile", lambda _: True)
             m.setattr(ospath, "abspath", lambda _: "/usr/bin/true")
             with caplog.at_level(logging.WARNING):
@@ -76,6 +78,8 @@ class Test_SlurmProcess:
                                                   expect_warn,
                                                   caplog, monkeypatch):
         with monkeypatch.context() as m:
+            # monkeypatch to make sure we can execute the tests without slurm
+            # (SlurmProcess checks if sbatch and friends are executable at init)
             m.setattr(ospath, "isfile", lambda _: True)
             m.setattr(ospath, "abspath", lambda _: "/usr/bin/true")
             with caplog.at_level(logging.DEBUG):
@@ -95,6 +99,30 @@ class Test_SlurmProcess:
         if time is None and not expect_warn:
             debug_str = "Using 'time' from 'sbatch_options' because self.time is None."
             assert debug_str in caplog.text
+
+    @pytest.mark.parametrize(["time_in_h", "beauty"],
+                             [(0.25, "15:0"),
+                              (1, "60:0"),
+                              (10, "600:0"),
+                              (1/3600, "0:1"),
+                              (15/3600, "0:15"),
+                              (1/60, "1:0"),
+                              (5/60, "5:0"),
+                              ]
+                             )
+    def test__slurm_timelimit_from_time_in_hours(self, time_in_h, beauty,
+                                                 monkeypatch):
+        with monkeypatch.context() as m:
+            # monkeypatch to make sure we can execute the tests without slurm
+            # (SlurmProcess checks if sbatch and friends are executable at init)
+            m.setattr(ospath, "isfile", lambda _: True)
+            m.setattr(ospath, "abspath", lambda _: "/usr/bin/true")
+            slurm_proc = SlurmProcess(jobname="test",
+                                      sbatch_script="/usr/bin/true",
+                                      time=time_in_h)
+        slurm_timelimit = slurm_proc._slurm_timelimit_from_time_in_hours(
+                                                                time=time_in_h)
+        assert slurm_timelimit == beauty
 
 
 class MockSlurmExecCompleted:

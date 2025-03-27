@@ -729,7 +729,7 @@ class SlurmProcess:
 
         return new_sbatch_options
 
-    def _slurm_timelimit_str_from_time_in_hours(self, time: float) -> str:
+    def _slurm_timelimit_from_time_in_hours(self, time: float) -> str:
         """
         Create timelimit in SLURM compatible format from time in hours.
 
@@ -869,7 +869,7 @@ class SlurmProcess:
         sbatch_cmd += f" --output=./{self._stdout_name(use_slurm_symbols=True)}"
         sbatch_cmd += f" --error=./{self._stderr_name(use_slurm_symbols=True)}"
         if self.time is not None:
-            timelimit_str = self._slurm_timelimit_str_from_time_in_hours(self.time)
+            timelimit_str = self._slurm_timelimit_from_time_in_hours(self.time)
             sbatch_cmd += f" --time={timelimit_str}"
         # keep a ref to the stdin value, we need it in communicate
         self._stdin = stdin
