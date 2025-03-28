@@ -1025,6 +1025,7 @@ class SlurmGmxEngine(GmxEngine):
     #       although the mdrun was successfull.
 
     def __init__(self, mdconfig, gro_file, top_file, sbatch_script, ndx_file=None,
+                 sbatch_options: dict | None = None,
                  **kwargs):
         """
         Initialize a :class:`SlurmGmxEngine`.
@@ -1047,6 +1048,19 @@ class SlurmGmxEngine(GmxEngine):
 
         ndx_file: str or None
             Optional, absolute or relative path to a gromacs index file.
+        sbatch_options : dict or None
+            Dictionary of sbatch options, keys are long names for options,
+            values are the correponding values. The keys/long names are given
+            without the dashes, e.g. to specify "--mem=1024" the dictionary
+            needs to be {"mem": "1024"}. To specify options without values use
+            keys with empty strings as values, e.g. to specify "--contiguous"
+            the dictionary needs to be {"contiguous": ""}.
+            See the SLURM documentation for a full list of sbatch options
+            (https://slurm.schedmd.com/sbatch.html).
+            Note: This argument is passed as is to the `SlurmProcess` in which
+            the computation is performed. Each call to the engines `run` method
+            triggers the creation of a new `SlurmProcess` and will use the then
+            current `sbatch_options`.
 
         Note that all attributes can be set at intialization by passing keyword
         arguments with their name, e.g. mdrun_extra_args="-ntomp 2" to instruct
@@ -1063,6 +1077,7 @@ class SlurmGmxEngine(GmxEngine):
             with open(sbatch_script, 'r') as f:
                 sbatch_script = f.read()
         self.sbatch_script = sbatch_script
+        self.sbatch_options = sbatch_options
 
     def _name_from_name_or_none(self, run_name: typing.Optional[str]) -> str:
         if run_name is not None:
@@ -1089,12 +1104,13 @@ class SlurmGmxEngine(GmxEngine):
             async with aiofiles.open(fname, 'w') as f:
                 await f.write(script)
         self._proc = await slurm.create_slurmprocess_submit(
-                                                jobname=name,
-                                                sbatch_script=fname,
-                                                workdir=workdir,
-                                                time=walltime,
-                                                stdfiles_removal="success",
-                                                stdin=None,
+                                        jobname=name,
+                                        sbatch_script=fname,
+                                        workdir=workdir,
+                                        time=walltime,
+                                        sbatch_options=self.sbatch_options,
+                                        stdfiles_removal="success",
+                                        stdin=None,
                                                             )
 
     async def _acquire_resources_gmx_mdrun(self, **kwargs):

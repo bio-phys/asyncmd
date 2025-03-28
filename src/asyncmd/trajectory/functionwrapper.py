@@ -305,6 +305,7 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
     """
 
     def __init__(self, executable, sbatch_script,
+                 sbatch_options: dict | None = None,
                  call_kwargs: typing.Optional[dict] = None,
                  load_results_func=None, **kwargs):
         """
@@ -325,6 +326,19 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
 
              - {cmd_str} : Replaced by the command to call the executable on a given trajectory.
 
+        sbatch_options : dict or None
+            Dictionary of sbatch options, keys are long names for options,
+            values are the correponding values. The keys/long names are given
+            without the dashes, e.g. to specify "--mem=1024" the dictionary
+            needs to be {"mem": "1024"}. To specify options without values use
+            keys with empty strings as values, e.g. to specify "--contiguous"
+            the dictionary needs to be {"contiguous": ""}.
+            See the SLURM documentation for a full list of sbatch options
+            (https://slurm.schedmd.com/sbatch.html).
+            Note: This argument is passed as is to the `SlurmProcess` in which
+            the computation is performed. Each call of the TrajectoryFunction
+            triggers the creation of a new `SlurmProcess` and will use the then
+            current `sbatch_options`.
         call_kwargs : dict, optional
             Dictionary of additional arguments to pass to the executable, they
             will be added to the call as pair ' {key} {val}', note that in case
@@ -352,6 +366,7 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                 sbatch_script = f.read()
         # (possibly) use properties to calc the id directly
         self.sbatch_script = sbatch_script
+        self.sbatch_options = sbatch_options
         self.executable = executable
         if call_kwargs is None:
             call_kwargs = {}
@@ -529,13 +544,14 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             await _SEMAPHORES["SLURM_MAX_JOB"].acquire()
         try:  # this try is just to make sure we always release the semaphore
             slurm_proc = await slurm.create_slurmprocess_submit(
-                                                jobname=self.slurm_jobname,
-                                                sbatch_script=sbatch_fname,
-                                                workdir=slurm_workdir,
-                                                stdfiles_removal="success",
-                                                stdin=None,
-                                                # sleep 5 s between checking
-                                                sleep_time=5,
+                                        jobname=self.slurm_jobname,
+                                        sbatch_script=sbatch_fname,
+                                        workdir=slurm_workdir,
+                                        sbatch_options=self.sbatch_options,
+                                        stdfiles_removal="success",
+                                        stdin=None,
+                                        # sleep 5 s between checking
+                                        sleep_time=5,
                                                                 )
             # wait for the slurm job to finish
             # also cancel the job when this future is canceled
