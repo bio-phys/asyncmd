@@ -11,7 +11,7 @@ This library addresses the tedious, error-prone and boring part of setting up ma
 
 ## Code Example
 
-Run `N` gromacs engines concurently from configurations randomly picked up along a trajectory (`traj.trr`) for `n_steps` integration steps each, drawing random Maxwell-Boltzmann velocities for each configuration on the way. Finally turn the python function `func` (which acts on `Trajectory` objects) into an asyncronous and cached function by wrapping it and apply it on all generated trajectories concurrently:
+Run `N` [GROMACS] engines concurently from configurations randomly picked up along a trajectory (`traj.trr`) for `n_steps` integration steps each, drawing random Maxwell-Boltzmann velocities for each configuration on the way. Finally turn the python function `func` (which acts on `Trajectory` objects) into an asyncronous and cached function by wrapping it and apply it on all generated trajectories concurrently:
 
 ```python
 import asyncio
@@ -64,6 +64,14 @@ For an in-depth introduction see also the `examples` folder in this repository w
 
 ## Installation
 
+### pip install from PyPi
+
+asyncmd is published on [PyPi] (since v0.3.2), installing is as easy as:
+
+```bash
+pip install asyncmd
+```
+
 ### pip install directly from the repository
 
 Please note that you need to have [git-lfs] (an open source git extension) setup to get all input files needed to run the notebooks in the `examples` folder. However, no [git-lfs] is needed to get a working version of the library.
@@ -74,7 +82,7 @@ cd asyncmd
 pip install .
 ```
 
-## API Reference
+## Documentation and API Reference
 
 The documentation can be build with [sphinx], use e.g. the following to build it in html format:
 
@@ -134,6 +142,8 @@ asyncmd is under the terms of the GNU general public license version 3 or later,
 
 [coverage]: https://pypi.org/project/coverage/
 [git-lfs]: https://git-lfs.com/
+[GROMACS]: https://www.gromacs.org/
+[PyPi]: https://pypi.org/project/asyncmd/
 [pytest]: https://docs.pytest.org/en/latest/
 [pytest-cov]: https://pypi.org/project/pytest-cov/
 [SLURM]: https://slurm.schedmd.com/documentation.html
