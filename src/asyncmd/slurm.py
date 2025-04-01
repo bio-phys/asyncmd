@@ -130,7 +130,7 @@ class SlurmClusterMediator:
     #             (here forever means until we reinitialize SlurmClusterMediator)
 
     def __init__(self, **kwargs) -> None:
-        self._exclude_nodes = []
+        self._exclude_nodes: list[str] = []
         # make it possible to set any attribute via kwargs
         # check the type for attributes with default values
         dval = object()
@@ -151,17 +151,17 @@ class SlurmClusterMediator:
         # this either checks for our defaults or whatever we just set via kwargs
         self.sacct_executable = ensure_executable_available(self.sacct_executable)
         self.sinfo_executable = ensure_executable_available(self.sinfo_executable)
-        self._node_job_fails = collections.Counter()
-        self._node_job_successes = collections.Counter()
+        self._node_job_fails: dict[str,int] = collections.Counter()
+        self._node_job_successes: dict[str,int] = collections.Counter()
         self._all_nodes = self.list_all_nodes()
-        self._jobids = []  # list of jobids of jobs we know about
-        self._jobids_sacct = []  # list of jobids we monitor actively via sacct
+        self._jobids: list[str] = []  # list of jobids of jobs we know about
+        self._jobids_sacct: list[str] = []  # list of jobids we monitor actively via sacct
         # we will store the info about jobs in a dict keys are jobids
         # values are dicts with key queried option and value the (parsed)
         # return value
         # currently queried options are: state, exitcode and nodelist
-        self._jobinfo = {}
-        self._last_sacct_call = 0  # make sure we dont call sacct too often
+        self._jobinfo: dict[str,dict] = {}
+        self._last_sacct_call = 0.  # make sure we dont call sacct too often
         # make sure we can only call sacct once at a time
         # (since there is only one ClusterMediator at a time we can create
         #  the semaphore here in __init__)
@@ -435,8 +435,8 @@ class SlurmClusterMediator:
             # make the string a list of single node hostnames
             hostnameprefix, nums = nodelist.split("[")
             nums = nums.rstrip("]")
-            nums = nums.split(",")
-            return [f"{hostnameprefix}{num}" for num in nums]
+            nums_list = nums.split(",")
+            return [f"{hostnameprefix}{num}" for num in nums_list]
 
     def _parse_exitcode_from_slurm_state(self,
                                          slurm_state: str,
@@ -599,8 +599,9 @@ class SlurmProcess:
     scancel_executable = "scancel"
 
     def __init__(self, jobname: str, sbatch_script: str,
-                 workdir: typing.Optional[str] = None,
-                 time: typing.Optional[float] = None,
+                 workdir: str | None = None,
+                 time: float | None = None,
+                 sbatch_options: dict | None = None,
                  stdfiles_removal: str = "success",
                  **kwargs) -> None:
         """
@@ -621,6 +622,15 @@ class SlurmProcess:
         time : float or None
             Timelimit for the job in hours. None will result in using the
             default as either specified in the sbatch script or the partition.
+        sbatch_options : dict or None
+            Dictionary of sbatch options, keys are long names for options,
+            values are the correponding values. The keys/long names are given
+            without the dashes, e.g. to specify "--mem=1024" the dictionary
+            needs to be {"mem": "1024"}. To specify options without values use
+            keys with empty strings as values, e.g. to specify "--contiguous"
+            the dictionary needs to be {"contiguous": ""}.
+            See the SLURM documentation for a full list of sbatch options
+            (https://slurm.schedmd.com/sbatch.html).
         stdfiles_removal : str
             Whether to remove the stdout, stderr (and possibly stdin) files.
             Possible values are:
@@ -666,13 +676,136 @@ class SlurmProcess:
         if workdir is None:
             workdir = os.getcwd()
         self.workdir = os.path.abspath(workdir)
-        self.time = time
+        self._time = time
+        # Use the property to directly call _sanitize_sbatch_options when assigning
+        # Do this **after** setting self._time to ensure consistency
+        if sbatch_options is None:
+            sbatch_options = {}
+        self.sbatch_options = sbatch_options
         self.stdfiles_removal = stdfiles_removal
-        self._jobid = None
-        self._jobinfo = {}  # dict with jobinfo cached from slurm cluster mediator
-        self._stdout_data = None
-        self._stderr_data = None
-        self._stdin = None
+        self._jobid: None | str = None
+        # dict with jobinfo cached from slurm cluster mediator
+        self._jobinfo: dict[str,typing.Any] = {}
+        self._stdout_data: None | bytes = None
+        self._stderr_data: None | bytes = None
+        self._stdin: None | str = None
+
+    def _sanitize_sbatch_options(self, sbatch_options: dict) -> dict:
+        """
+        Return sane sbatch_options dictionary to be consistent (with self).
+
+        Parameters
+        ----------
+        sbatch_options : dict
+            Dictionary of sbatch options.
+
+        Returns
+        -------
+        dict
+            Dictionary with sanitized sbatch options.
+        """
+        # NOTE: this should be called every time we modify sbatch_options or self.time!
+        # This is the list of sbatch options we use ourself, they should not
+        # be in the dict to avoid unforseen effects. We treat 'time' special
+        # because we want to allow for it to be specified via sbtach_options if
+        # it is not set via the attribute self.time.
+        reserved_sbatch_options = ["job-name", "chdir", "output", "error",
+                                   "input", "exclude", "parsable"]
+        new_sbatch_options = sbatch_options.copy()
+        if "time" in sbatch_options:
+            if self._time is not None:
+                logger.warning("Removing sbatch option 'time' from 'sbatch_options'. "
+                               "Using the 'time' argument instead.")
+                del new_sbatch_options["time"]
+            else:
+                logger.debug("Using 'time' from 'sbatch_options' because "
+                             "self.time is None.")
+        for option in reserved_sbatch_options:
+            if option in sbatch_options:
+                logger.warning("Removing sbatch option '%s' from "
+                               "'sbatch_options' because it is used internaly "
+                               "by the `SlurmProcess`.", option)
+                del new_sbatch_options[option]
+
+        return new_sbatch_options
+
+    def _slurm_timelimit_from_time_in_hours(self, time: float) -> str:
+        """
+        Create timelimit in SLURM compatible format from time in hours.
+
+        Parameters
+        ----------
+        timelimit : float
+            Timelimit for job in hours
+
+        Returns
+        -------
+        str
+            Timelimit for job as SLURM compatible string.
+        """
+        timelimit = time * 60
+        timelimit_min = int(timelimit)  # take only the full minutes
+        timelimit_sec = round(60 * (timelimit - timelimit_min))
+        timelimit_str = f"{timelimit_min}:{timelimit_sec}"
+        return timelimit_str
+
+    @property
+    def time(self) -> float | None:
+        """
+        Timelimit for SLURM job in hours.
+
+        Can be a float or None (meaning do not specify a timelimit).
+        """
+        return self._time
+
+    @time.setter
+    def time(self, val: float | None) -> None:
+        self._time = val
+        self._sbatch_options: dict = self._sanitize_sbatch_options(self._sbatch_options)
+
+    @property
+    def sbatch_options(self) -> dict:
+        """
+        A copy of the sbatch_options dictionary.
+
+        Note that modifying single key, value pairs has no effect, to modify
+        (single) sbatch_options either use the `set_sbatch_option` and
+        `del_sbatch_option` methods or (re)assign a dictionary to
+        `sbatch_options`.
+        """
+        return self._sbatch_options.copy()
+
+    @sbatch_options.setter
+    def sbatch_options(self, val: dict) -> None:
+        self._sbatch_options = self._sanitize_sbatch_options(val)
+
+    def set_sbatch_option(self, key: str, value: str) -> None:
+        """
+        Set sbatch option with given key to value.
+
+        I.e. add/modify single key, value pair in sbatch_options.
+
+        Parameters
+        ----------
+        key : str
+            The name of the sbatch option.
+        value : str
+            The value for the sbatch option.
+        """
+        self._sbatch_options[key] = value
+        self._sbatch_options = self._sanitize_sbatch_options(self._sbatch_options)
+
+    def del_sbatch_option(self, key: str) -> None:
+        """
+        Delete sbatch option with given key from sbatch_options.
+
+        Parameters
+        ----------
+        key : str
+            The name of the sbatch option to delete.
+        """
+        del self._sbatch_options[key]
+        self._sbatch_options = self._sanitize_sbatch_options(self._sbatch_options)
 
     @property
     def stdfiles_removal(self) -> str:
@@ -736,10 +869,7 @@ class SlurmProcess:
         sbatch_cmd += f" --output=./{self._stdout_name(use_slurm_symbols=True)}"
         sbatch_cmd += f" --error=./{self._stderr_name(use_slurm_symbols=True)}"
         if self.time is not None:
-            timelimit = self.time * 60
-            timelimit_min = int(timelimit)  # take only the full minutes
-            timelimit_sec = round(60 * (timelimit - timelimit_min))
-            timelimit_str = f"{timelimit_min}:{timelimit_sec}"
+            timelimit_str = self._slurm_timelimit_from_time_in_hours(self.time)
             sbatch_cmd += f" --time={timelimit_str}"
         # keep a ref to the stdin value, we need it in communicate
         self._stdin = stdin
@@ -751,6 +881,11 @@ class SlurmProcess:
         exclude_nodes = self.slurm_cluster_mediator.exclude_nodes
         if len(exclude_nodes) > 0:
             sbatch_cmd += f" --exclude={','.join(exclude_nodes)}"
+        for key, val in self.sbatch_options.items():
+            if val == "":
+                sbatch_cmd += f" --{key}"
+            else:
+                sbatch_cmd += f" --{key}={val}"
         sbatch_cmd += f" --parsable {self.sbatch_script}"
         logger.debug("About to execute sbatch_cmd %s.", sbatch_cmd)
         # 3 file descriptors: stdin,stdout,stderr
@@ -910,7 +1045,7 @@ class SlurmProcess:
         RuntimeError
             If the job has never been submitted.
         """
-        if self._jobid is None:
+        if self.slurm_jobid is None:
             # make sure we can only wait after submitting, otherwise we would
             # wait indefinitively if we call wait() before submit()
             raise RuntimeError("Can only wait for submitted SLURM jobs with "
@@ -1038,6 +1173,7 @@ async def create_slurmprocess_submit(jobname: str,
                                      sbatch_script: str,
                                      workdir: str,
                                      time: typing.Optional[float] = None,
+                                     sbatch_options: dict | None = None,
                                      stdfiles_removal: str = "success",
                                      stdin: typing.Optional[str] = None,
                                      **kwargs,
@@ -1059,6 +1195,15 @@ async def create_slurmprocess_submit(jobname: str,
     time : float or None
         Timelimit for the job in hours. None will result in using the
         default as either specified in the sbatch script or the partition.
+    sbatch_options : dict or None
+        Dictionary of sbatch options, keys are long names for options,
+        values are the correponding values. The keys/long names are given
+        without the dashes, e.g. to specify "--mem=1024" the dictionary
+        needs to be {"mem": "1024"}. To specify options without values use
+        keys with empty strings as values, e.g. to specify "--contiguous"
+        the dictionary needs to be {"contiguous": ""}.
+        See the SLURM documentation for a full list of sbatch options
+        (https://slurm.schedmd.com/sbatch.html).
     stdfiles_removal : str
         Whether to remove the stdout, stderr (and possibly stdin) files.
         Possible values are:
@@ -1082,6 +1227,7 @@ async def create_slurmprocess_submit(jobname: str,
     """
     proc = SlurmProcess(jobname=jobname, sbatch_script=sbatch_script,
                         workdir=workdir, time=time,
+                        sbatch_options=sbatch_options,
                         stdfiles_removal=stdfiles_removal,
                         **kwargs)
     await proc.submit(stdin=stdin)
