@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2025-05-06
+
 ### Added
 
 - Add `CHANGELOG.md` file
@@ -26,5 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - First release on PyPi
 
-[unreleased]: https://github.com/bio-phys/asyncmd/compare/v0.3.2...HEAD
+[unreleased]: https://github.com/bio-phys/asyncmd/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/bio-phys/asyncmd/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/bio-phys/asyncmd/releases/tag/v0.3.2
