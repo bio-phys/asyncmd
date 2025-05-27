@@ -85,6 +85,16 @@ class _descriptor_check_executable(_descriptor_on_instance_and_class):
         return super().__set__(obj, val)
 
 
+class _descriptor_mdrun_time_conversion_factor(_descriptor_on_instance_and_class):
+    # check that the given time conversion factor is 0 < factor <= 1
+    def __set__(self, obj, val):
+        if val > 1.:
+            raise ValueError("`mdrun_time_conversion_factor` must be <= 1.")
+        if val <= 0:
+            raise ValueError("`mdrun_time_conversion_factor` must be > 0.")
+        return super().__set__(obj, val)
+
+
 # NOTE: with tra we usually mean trr, i.e. a full precision trajectory with velocities
 class GmxEngine(MDEngine):
     """
@@ -115,6 +125,13 @@ class GmxEngine(MDEngine):
         Note that we simply ignore all other trajectories, i.e. depending on
         the MDP settings we will still write xtc and trr, but return only the
         trajectories with matching ending.
+    mdrun_time_conversion_factor : float
+        When running gmx mdrun with a given `time_limit`, run it for
+        `mdrun_time_conversion_factor * time_limit`.
+        This option is relevant only for the :class:`SlurmGmxEngine` and here
+        ensures that gmx mdrun finishes during the slurm time limit (which will
+        be set to `time_limit`).
+        The default value for the :class:`SlurmGmxEngine` is 0.99.
     """
 
     # local prepare and option to run a local gmx (mainly for testing)
@@ -137,7 +154,7 @@ class GmxEngine(MDEngine):
     # See the notes below for the SlurmGmxEngine on why this conversion factor
     # is needed (there), here we have it only for consistency
     _mdrun_time_conversion_factor = 1.  # run mdrun for 1. * time-limit
-
+    mdrun_time_conversion_factor = _descriptor_mdrun_time_conversion_factor()
 
     def __init__(self,
                  mdconfig: MDP,
@@ -284,7 +301,7 @@ class GmxEngine(MDEngine):
 
     @property
     def workdir(self) -> str:
-        """The current woring directory of the engine."""
+        """The current working directory of the engine."""
         return self._workdir
 
     @workdir.setter
@@ -300,7 +317,7 @@ class GmxEngine(MDEngine):
         return self._gro_file
 
     @gro_file.setter
-    def gro_file(self, val: str) -> str:
+    def gro_file(self, val: str) -> None:
         if not os.path.isfile(val):
             raise FileNotFoundError(f"gro file not found: {val}")
         val = os.path.relpath(val)
@@ -358,6 +375,21 @@ class GmxEngine(MDEngine):
         # nice error if the mdp does not generate output for given traj-format
         # TODO: ensure that x-out and v-out/f-out are the same (if applicable)?
         _ = nstout_from_mdp(mdp=val, traj_type=self.output_traj_type)
+        # check if we do an energy minimization: in this case gromacs writes no
+        # compressed trajectory (even if so requested by the mdp-file), so we
+        # check that self.output_traj_type == trr and generate an error if not
+        try:
+            integrator = val["integrator"]
+        except KeyError:
+            # integrator not defined, although this probably seldomly happens,
+            # gmx grompp does use the (implicit) default "integrator=md" in
+            # that case
+            integrator = "md"
+        if any(integrator == em_algo for em_algo in ["steep", "cg", "l-bfgs"]):
+            if not self.output_traj_type.lower() == "trr":
+                raise ValueError("Gromacs only writes full precission (trr) "
+                                 "trajectories when performing an energy "
+                                 "minimization.")
         self._mdp = val
 
     # alias for mdp to mdconfig (since some users may expect mdconfig)
@@ -983,7 +1015,7 @@ class GmxEngine(MDEngine):
         cmd += f" -o {deffnm}.trr -x {deffnm}.xtc -c {deffnm}.confout.gro"
         cmd += f" -e {deffnm}.edr -g {deffnm}.log"
         if maxh is not None:
-            maxh = self._mdrun_time_conversion_factor * maxh
+            maxh = self.mdrun_time_conversion_factor * maxh
             cmd += f" -maxh {maxh}"
         if nsteps is not None:
             cmd += f" -nsteps {nsteps}"
