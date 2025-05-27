@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `SlurmGmxEngine` (and `GmxEngine`) now expose the `mdrun_time_conversion_factor` to enable users to control the expected time of setting up the slurm jobs environment. Both engines also have improved consistency checks for mdp options when performing energy minimization.
+- `SlurmGmxEngine` (and `GmxEngine`) now expose the `mdrun_time_conversion_factor` to enable users to control the expected time it takes to set up the environment inside the slurm job. Both engines also have improved consistency checks for mdp options when performing energy minimization.
 
 ## [0.3.3] - 2025-05-06
 
