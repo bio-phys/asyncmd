@@ -66,14 +66,16 @@ class MDEngine(abc.ABC):
         # NOTE: make sure we can run multiple times after preparing once!
         raise NotImplementedError
 
-    @abc.abstractproperty
-    def current_trajectory(self) -> Trajectory:
+    @property
+    @abc.abstractmethod
+    def current_trajectory(self) -> Trajectory | None:
         # return current trajectory: Trajectory or None
         # if we retun a Trajectory it is either what we are working on atm
         # or the trajectory we finished last
         raise NotImplementedError
 
-    @abc.abstractproperty
+    @property
+    @abc.abstractmethod
     def output_traj_type(self) -> str:
         # return a string with the ending (without ".") of the trajectory
         # type this engine uses
@@ -88,13 +90,7 @@ class MDEngine(abc.ABC):
         #        a thing in python)
         raise NotImplementedError
 
-    # TODO/FIXME: remove this function?
-    # NOTE: I think we wont really need/use this anyway since the run_ funcs
-    #       are all awaitable
-    @abc.abstractproperty
-    def running(self) -> bool:
-        raise NotImplementedError
-
-    @abc.abstractproperty
+    @property
+    @abc.abstractmethod
     def steps_done(self) -> int:
         raise NotImplementedError

@@ -95,7 +95,6 @@ class _descriptor_mdrun_time_conversion_factor(_descriptor_on_instance_and_class
         return super().__set__(obj, val)
 
 
-# NOTE: with tra we usually mean trr, i.e. a full precision trajectory with velocities
 class GmxEngine(MDEngine):
     """
     Steer gromacs molecular dynamics simulation from python.
@@ -134,7 +133,7 @@ class GmxEngine(MDEngine):
         The default value for the :class:`SlurmGmxEngine` is 0.99.
     """
 
-    # local prepare and option to run a local gmx (mainly for testing)
+    # local prepare (gmx grompp) and option to run a local gmx mdrun
     _grompp_executable = "gmx grompp"
     grompp_executable = _descriptor_check_executable()
     _mdrun_executable = "gmx mdrun"
@@ -1006,6 +1005,9 @@ class GmxEngine(MDEngine):
         #       however gromacs -deffnm is deprecated (and buggy),
         #       so we just make our own 'deffnm', i.e. we name all files the same
         #       except for the ending but do so explicitly
+        # TODO/FIXME: we dont specify the names for e.g. pull outputfiles,
+        #             so they will have their default names and will collide
+        #             when running multiple engines in the same folder!
         cmd = f"{self.mdrun_executable} -noappend -s {tpr}"
         # always add the -cpi option, this lets gmx figure out if it wants
         # to start from a checkpoint (if there is one with deffnm)
@@ -1037,14 +1039,6 @@ class SlurmGmxEngine(GmxEngine):
     #       I (hejung) think probably not by much because we already use
     #       asyncios subprocess for grompp (i.e. do it asyncronous) and grompp
     #       will most likely not take much resources on the login (local) node
-
-    # NOTE: these are possible options, but they result in added dependencies
-    #        - jinja2 templates for slurm submission scripts?
-    #          (does not look like we gain flexibility but we get more work,
-    #           so probably not?!)
-    #        - pyslurm for job status checks?!
-    #          (it seems submission is frickly/impossible in pyslurm,
-    #           so also probably not?!)
 
     _mdrun_executable = "gmx_mpi mdrun"  # MPI as default for clusters
     _mdrun_time_conversion_factor = 0.99  # run mdrun for 0.99 * time-limit
