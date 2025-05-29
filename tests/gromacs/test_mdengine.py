@@ -95,6 +95,21 @@ class Test_GmxEngine:
                                    gro_file=self.gro,
                                    top_file=self.top)
 
+    @pytest.mark.parametrize("conversion_factor", [-1., 1.1, 0.])
+    def test_check_invalid_mdrun_time_conversion_factor(self, monkeypatch,
+                                                        conversion_factor):
+        # init should already fail
+        with monkeypatch.context() as m:
+            # monkeypatch so we dont need to find a gromacs executable
+            m.setattr("asyncmd.gromacs.mdengine.ensure_executable_available",
+                      lambda _: "/usr/bin/true")
+            with pytest.raises(ValueError):
+                engine = GmxEngine(mdconfig=self.mdp_md_compressed_out,
+                                   gro_file=self.gro,
+                                   top_file=self.top,
+                                   mdrun_time_conversion_factor=conversion_factor,
+                                   )
+
     @pytest.mark.slow
     @needs_gmx_install
     @pytest.mark.parametrize("starting_conf",
