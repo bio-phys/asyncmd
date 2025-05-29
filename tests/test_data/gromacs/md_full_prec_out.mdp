@@ -1,0 +1,26 @@
+integrator               = md 
+dt                       = 0.002
+nsteps                   = -1  ;  unlimited steps
+nstxout                  = 10
+nstvout                  = 10
+nstlog                   = 0
+nstenergy                = 10
+nstxout-compressed       = 0
+cutoff-scheme            = Verlet
+verlet-buffer-tolerance  = 0.001  ; kJ/mol/ps (default=0.005)
+rlist                    = 1.3
+coulombtype              = PME
+rcoulomb                 = 1.1
+rvdw                     = 1.1
+Tcoupl                   = v-rescale
+tc-grps                  = Protein      SOL
+tau-t                    = 0.5  0.5
+ref-t                    = 300  300
+Pcoupl                   = C-rescale  ; requires gromacs 2021?
+;Pcoupl                   = Berendsen
+tau-p                    = 1.0
+compressibility          = 4.5e-5
+ref-p                    = 1.0
+gen-vel                  = no
+constraints              = h-bonds
+;lincs-iter               = 1  ; 1 is the default
