@@ -226,7 +226,7 @@ class GmxEngine(MDEngine):
         # Popen handle for gmx mdrun, used to check if we are running
         self._proc = None
         # these are set by prepare() and used by run_XX()
-        self._simulation_part = None
+        self._simulation_part = 0
         self._deffnm = None
         # tpr for trajectory (part), will become the structure/topology file
         self._tpr = None
@@ -247,25 +247,16 @@ class GmxEngine(MDEngine):
         Trajectory
             Last complete trajectory produced by this engine.
         """
-        if self._simulation_part == 0:
-            # we could check if self_proc is set (which prepare sets to None)
-            # this should make sure that calling current trajectory after
-            # calling prepare does not return a traj, as soon as we called
-            # run self._proc will be set, i.e. there is still no gurantee that
-            # the traj is done, but it will be started always
-            # (even when accessing simulataneous to the call to run),
-            # i.e. it is most likely done
-            # we can also check for simulation part, since it seems
-            # gmx ignores that if no checkpoint is passed, i.e. we will
-            # **always** start with part0001 anyways!
-            # but checking for self._simulation_part == 0 also just makes sure
-            # we never started a run (i.e. same as checking self._proc)
-            return None
         if (all(v is not None for v in [self._tpr, self._deffnm])
-            and not self.running):
+            and self._prepared
+            and self._simulation_part > 0
+            ):
             # self._tpr and self._deffnm are set in prepare, i.e. having them
             # set makes sure that we have at least prepared running the traj
             # but it might not be done yet
+            # also check if we ever started a run, i.e. if there might be a
+            # trajectory to return. If simulation_part == 0 we never executed a
+            # run method (where it is increased) and also did not (re)start a run
             traj = Trajectory(
                     trajectory_files=os.path.join(
                                         self.workdir,
@@ -279,24 +270,6 @@ class GmxEngine(MDEngine):
                               )
             return traj
         return None
-
-    @property
-    def ready_for_run(self) -> bool:
-        """Whether this engine is ready to run, i.e. generate a trajectory."""
-        return self._prepared and not self.running
-
-    @property
-    def running(self) -> bool:
-        """Whether this engine is currently running/generating a trajectory."""
-        if self._proc is None:
-            # this happens when we did not call run() yet
-            return False
-        if self._proc.returncode is None:
-            # no return code means it is still running
-            return True
-        # dont care for the value of the exit code,
-        # we are not running anymore if we crashed ;)
-        return False
 
     @property
     def workdir(self) -> str:
@@ -850,9 +823,9 @@ class GmxEngine(MDEngine):
             counted, default False.
         """
         # generic run method is actually easier to implement for gmx :D
-        if not self.ready_for_run:
+        if not self._prepared:
             raise RuntimeError("Engine not ready for run. Call self.prepare() "
-                               + "and/or check if it is still running.")
+                               + "before calling a run method.")
         if all(kwarg is None for kwarg in [nsteps, walltime]):
             raise ValueError("Neither steps nor walltime given.")
         if nsteps is not None:
