@@ -85,7 +85,16 @@ class _descriptor_check_executable(_descriptor_on_instance_and_class):
         return super().__set__(obj, val)
 
 
-# NOTE: with tra we usually mean trr, i.e. a full precision trajectory with velocities
+class _descriptor_mdrun_time_conversion_factor(_descriptor_on_instance_and_class):
+    # check that the given time conversion factor is 0 < factor <= 1
+    def __set__(self, obj, val):
+        if val > 1.:
+            raise ValueError("`mdrun_time_conversion_factor` must be <= 1.")
+        if val <= 0:
+            raise ValueError("`mdrun_time_conversion_factor` must be > 0.")
+        return super().__set__(obj, val)
+
+
 class GmxEngine(MDEngine):
     """
     Steer gromacs molecular dynamics simulation from python.
@@ -115,9 +124,16 @@ class GmxEngine(MDEngine):
         Note that we simply ignore all other trajectories, i.e. depending on
         the MDP settings we will still write xtc and trr, but return only the
         trajectories with matching ending.
+    mdrun_time_conversion_factor : float
+        When running gmx mdrun with a given `time_limit`, run it for
+        `mdrun_time_conversion_factor * time_limit`.
+        This option is relevant only for the :class:`SlurmGmxEngine` and here
+        ensures that gmx mdrun finishes during the slurm time limit (which will
+        be set to `time_limit`).
+        The default value for the :class:`SlurmGmxEngine` is 0.99.
     """
 
-    # local prepare and option to run a local gmx (mainly for testing)
+    # local prepare (gmx grompp) and option to run a local gmx mdrun
     _grompp_executable = "gmx grompp"
     grompp_executable = _descriptor_check_executable()
     _mdrun_executable = "gmx mdrun"
@@ -137,7 +153,7 @@ class GmxEngine(MDEngine):
     # See the notes below for the SlurmGmxEngine on why this conversion factor
     # is needed (there), here we have it only for consistency
     _mdrun_time_conversion_factor = 1.  # run mdrun for 1. * time-limit
-
+    mdrun_time_conversion_factor = _descriptor_mdrun_time_conversion_factor()
 
     def __init__(self,
                  mdconfig: MDP,
@@ -210,7 +226,7 @@ class GmxEngine(MDEngine):
         # Popen handle for gmx mdrun, used to check if we are running
         self._proc = None
         # these are set by prepare() and used by run_XX()
-        self._simulation_part = None
+        self._simulation_part = 0
         self._deffnm = None
         # tpr for trajectory (part), will become the structure/topology file
         self._tpr = None
@@ -231,25 +247,16 @@ class GmxEngine(MDEngine):
         Trajectory
             Last complete trajectory produced by this engine.
         """
-        if self._simulation_part == 0:
-            # we could check if self_proc is set (which prepare sets to None)
-            # this should make sure that calling current trajectory after
-            # calling prepare does not return a traj, as soon as we called
-            # run self._proc will be set, i.e. there is still no gurantee that
-            # the traj is done, but it will be started always
-            # (even when accessing simulataneous to the call to run),
-            # i.e. it is most likely done
-            # we can also check for simulation part, since it seems
-            # gmx ignores that if no checkpoint is passed, i.e. we will
-            # **always** start with part0001 anyways!
-            # but checking for self._simulation_part == 0 also just makes sure
-            # we never started a run (i.e. same as checking self._proc)
-            return None
         if (all(v is not None for v in [self._tpr, self._deffnm])
-            and not self.running):
+            and self._prepared
+            and self._simulation_part > 0
+            ):
             # self._tpr and self._deffnm are set in prepare, i.e. having them
             # set makes sure that we have at least prepared running the traj
             # but it might not be done yet
+            # also check if we ever started a run, i.e. if there might be a
+            # trajectory to return. If simulation_part == 0 we never executed a
+            # run method (where it is increased) and also did not (re)start a run
             traj = Trajectory(
                     trajectory_files=os.path.join(
                                         self.workdir,
@@ -265,26 +272,8 @@ class GmxEngine(MDEngine):
         return None
 
     @property
-    def ready_for_run(self) -> bool:
-        """Whether this engine is ready to run, i.e. generate a trajectory."""
-        return self._prepared and not self.running
-
-    @property
-    def running(self) -> bool:
-        """Whether this engine is currently running/generating a trajectory."""
-        if self._proc is None:
-            # this happens when we did not call run() yet
-            return False
-        if self._proc.returncode is None:
-            # no return code means it is still running
-            return True
-        # dont care for the value of the exit code,
-        # we are not running anymore if we crashed ;)
-        return False
-
-    @property
     def workdir(self) -> str:
-        """The current woring directory of the engine."""
+        """The current working directory of the engine."""
         return self._workdir
 
     @workdir.setter
@@ -300,7 +289,7 @@ class GmxEngine(MDEngine):
         return self._gro_file
 
     @gro_file.setter
-    def gro_file(self, val: str) -> str:
+    def gro_file(self, val: str) -> None:
         if not os.path.isfile(val):
             raise FileNotFoundError(f"gro file not found: {val}")
         val = os.path.relpath(val)
@@ -358,6 +347,21 @@ class GmxEngine(MDEngine):
         # nice error if the mdp does not generate output for given traj-format
         # TODO: ensure that x-out and v-out/f-out are the same (if applicable)?
         _ = nstout_from_mdp(mdp=val, traj_type=self.output_traj_type)
+        # check if we do an energy minimization: in this case gromacs writes no
+        # compressed trajectory (even if so requested by the mdp-file), so we
+        # check that self.output_traj_type == trr and generate an error if not
+        try:
+            integrator = val["integrator"]
+        except KeyError:
+            # integrator not defined, although this probably seldomly happens,
+            # gmx grompp does use the (implicit) default "integrator=md" in
+            # that case
+            integrator = "md"
+        if any(integrator == em_algo for em_algo in ["steep", "cg", "l-bfgs"]):
+            if not self.output_traj_type.lower() == "trr":
+                raise ValueError("Gromacs only writes full precission (trr) "
+                                 "trajectories when performing an energy "
+                                 "minimization.")
         self._mdp = val
 
     # alias for mdp to mdconfig (since some users may expect mdconfig)
@@ -819,9 +823,9 @@ class GmxEngine(MDEngine):
             counted, default False.
         """
         # generic run method is actually easier to implement for gmx :D
-        if not self.ready_for_run:
+        if not self._prepared:
             raise RuntimeError("Engine not ready for run. Call self.prepare() "
-                               + "and/or check if it is still running.")
+                               + "before calling a run method.")
         if all(kwarg is None for kwarg in [nsteps, walltime]):
             raise ValueError("Neither steps nor walltime given.")
         if nsteps is not None:
@@ -974,6 +978,9 @@ class GmxEngine(MDEngine):
         #       however gromacs -deffnm is deprecated (and buggy),
         #       so we just make our own 'deffnm', i.e. we name all files the same
         #       except for the ending but do so explicitly
+        # TODO/FIXME: we dont specify the names for e.g. pull outputfiles,
+        #             so they will have their default names and will collide
+        #             when running multiple engines in the same folder!
         cmd = f"{self.mdrun_executable} -noappend -s {tpr}"
         # always add the -cpi option, this lets gmx figure out if it wants
         # to start from a checkpoint (if there is one with deffnm)
@@ -983,7 +990,7 @@ class GmxEngine(MDEngine):
         cmd += f" -o {deffnm}.trr -x {deffnm}.xtc -c {deffnm}.confout.gro"
         cmd += f" -e {deffnm}.edr -g {deffnm}.log"
         if maxh is not None:
-            maxh = self._mdrun_time_conversion_factor * maxh
+            maxh = self.mdrun_time_conversion_factor * maxh
             cmd += f" -maxh {maxh}"
         if nsteps is not None:
             cmd += f" -nsteps {nsteps}"
@@ -1005,14 +1012,6 @@ class SlurmGmxEngine(GmxEngine):
     #       I (hejung) think probably not by much because we already use
     #       asyncios subprocess for grompp (i.e. do it asyncronous) and grompp
     #       will most likely not take much resources on the login (local) node
-
-    # NOTE: these are possible options, but they result in added dependencies
-    #        - jinja2 templates for slurm submission scripts?
-    #          (does not look like we gain flexibility but we get more work,
-    #           so probably not?!)
-    #        - pyslurm for job status checks?!
-    #          (it seems submission is frickly/impossible in pyslurm,
-    #           so also probably not?!)
 
     _mdrun_executable = "gmx_mpi mdrun"  # MPI as default for clusters
     _mdrun_time_conversion_factor = 0.99  # run mdrun for 0.99 * time-limit

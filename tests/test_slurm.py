@@ -13,7 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import pytest
-import os.path as ospath
 import logging
 from unittest.mock import patch, PropertyMock
 
@@ -52,8 +51,8 @@ class Test_SlurmProcess:
         with monkeypatch.context() as m:
             # monkeypatch to make sure we can execute the tests without slurm
             # (SlurmProcess checks if sbatch and friends are executable at init)
-            m.setattr(ospath, "isfile", lambda _: True)
-            m.setattr(ospath, "abspath", lambda _: "/usr/bin/true")
+            m.setattr("asyncmd.slurm.ensure_executable_available",
+                      lambda _: "/user/bin/true")
             with caplog.at_level(logging.WARNING):
                 slurm_proc = SlurmProcess(jobname="test",
                                           sbatch_script="/usr/bin/true",
@@ -80,8 +79,8 @@ class Test_SlurmProcess:
         with monkeypatch.context() as m:
             # monkeypatch to make sure we can execute the tests without slurm
             # (SlurmProcess checks if sbatch and friends are executable at init)
-            m.setattr(ospath, "isfile", lambda _: True)
-            m.setattr(ospath, "abspath", lambda _: "/usr/bin/true")
+            m.setattr("asyncmd.slurm.ensure_executable_available",
+                      lambda _: "/user/bin/true")
             with caplog.at_level(logging.DEBUG):
                 slurm_proc = SlurmProcess(jobname="test",
                                           sbatch_script="/usr/bin/true",
@@ -115,8 +114,8 @@ class Test_SlurmProcess:
         with monkeypatch.context() as m:
             # monkeypatch to make sure we can execute the tests without slurm
             # (SlurmProcess checks if sbatch and friends are executable at init)
-            m.setattr(ospath, "isfile", lambda _: True)
-            m.setattr(ospath, "abspath", lambda _: "/usr/bin/true")
+            m.setattr("asyncmd.slurm.ensure_executable_available",
+                      lambda _: "/user/bin/true")
             slurm_proc = SlurmProcess(jobname="test",
                                       sbatch_script="/usr/bin/true",
                                       time=time_in_h)
