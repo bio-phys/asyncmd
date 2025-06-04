@@ -52,7 +52,7 @@ class Test_SlurmProcess:
             # monkeypatch to make sure we can execute the tests without slurm
             # (SlurmProcess checks if sbatch and friends are executable at init)
             m.setattr("asyncmd.slurm.ensure_executable_available",
-                      lambda _: "/user/bin/true")
+                      lambda _: "/usr/bin/true")
             with caplog.at_level(logging.WARNING):
                 slurm_proc = SlurmProcess(jobname="test",
                                           sbatch_script="/usr/bin/true",
@@ -80,7 +80,7 @@ class Test_SlurmProcess:
             # monkeypatch to make sure we can execute the tests without slurm
             # (SlurmProcess checks if sbatch and friends are executable at init)
             m.setattr("asyncmd.slurm.ensure_executable_available",
-                      lambda _: "/user/bin/true")
+                      lambda _: "/usr/bin/true")
             with caplog.at_level(logging.DEBUG):
                 slurm_proc = SlurmProcess(jobname="test",
                                           sbatch_script="/usr/bin/true",
@@ -115,7 +115,7 @@ class Test_SlurmProcess:
             # monkeypatch to make sure we can execute the tests without slurm
             # (SlurmProcess checks if sbatch and friends are executable at init)
             m.setattr("asyncmd.slurm.ensure_executable_available",
-                      lambda _: "/user/bin/true")
+                      lambda _: "/usr/bin/true")
             slurm_proc = SlurmProcess(jobname="test",
                                       sbatch_script="/usr/bin/true",
                                       time=time_in_h)
