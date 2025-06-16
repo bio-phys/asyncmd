@@ -238,22 +238,14 @@ class TypedFlagChangeList(FlagChangeList):
         self._changed = True
 
     def __add__(self, other: typing.Iterable):
-        ## check that the types can match (if defined for other)
-        #other_type = getattr(other, "_dtype", None)
-        #if other_type is not None:
-        #    try:
-        #        self._dtype(other_type())
-        #    except ValueError as exc:
-        #        raise ValueError(f"Can not cast other type ({other_type}) to "
-        #                         f"our type ({self._dtype}).") from exc
-        # cast other to an iterable as we expect it (excluding strings)
+        # cast other to an iterable as we expect it (excluding the strings)
         other = self._ensure_iterable(other)
         ret = TypedFlagChangeList(data=self._data + list(other),
                                   dtype=self._dtype)
         return ret
 
     def __iadd__(self, other: typing.Iterable):
-        # cast other to an iterable as we expect it (excluding strings)
+        # cast other to an iterable as we expect it (excluding the strings)
         other = self._ensure_iterable(other)
         for val in other:
             self.append(val)
