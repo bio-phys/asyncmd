@@ -30,6 +30,7 @@ from ..utils import (get_all_traj_parts,
                      )
 from ..tools import (remove_file_if_exist,
                      remove_file_if_exist_async,
+                     FlagChangeList,
                      )
 
 
@@ -181,11 +182,11 @@ class _TrajectoryPropagator:
     async def remove_parts(self, workdir: str, deffnm: str,
                            file_endings_to_remove: list[str] = ["trajectories",
                                                                 "log"],
-                            remove_mda_offset_and_lock_files: bool = True,
-                            remove_asyncmd_npz_caches: bool = True,
+                           remove_mda_offset_and_lock_files: bool = True,
+                           remove_asyncmd_npz_caches: bool = True,
                            ) -> None:
         """
-        Remove all `$deffnm.part$num.$file_ending` files for given file_endings
+        Remove all `$deffnm.part$num.$file_ending` files for file_endings.
 
         Can be useful to clean the `workdir` from temporary files if e.g. only
         the concatenate trajectory is of interesst (like in TPS).
@@ -582,8 +583,8 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
         ``max_steps = max_frames * output_frequency``, if both are given
         max_steps takes precedence.
         """
-        self._conditions = None
-        self._condition_func_is_coroutine = None
+        self._conditions = FlagChangeList([])
+        self._condition_func_is_coroutine: list[bool] = []
         self.conditions = conditions
         self.engine_cls = engine_cls
         self.engine_kwargs = engine_kwargs
@@ -610,22 +611,28 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
             # this is a float but can be compared to ints
             self.max_steps = np.inf
 
-    # TODO/FIXME: self._conditions is a list...that means users can change
-    #            single elements without using the setter!
-    #            we could use a list subclass as for the MDconfig?!
     @property
-    def conditions(self):
+    def conditions(self) -> FlagChangeList:
+        """List of condition functions."""
         return self._conditions
 
     @conditions.setter
-    def conditions(self, conditions):
+    def conditions(self, conditions: typing.Sequence):
+        if len(conditions) < 1:
+            raise ValueError("Must supply at least one termination condition.")
+        self._condition_func_is_coroutine = self._check_condition_funcs(
+                                                        conditions=conditions
+                                                                        )
+        self._conditions = FlagChangeList(conditions)
+
+    def _check_condition_funcs(self, conditions) -> list[bool]:
         # use asyncio.iscorotinefunction to check the conditions
-        self._condition_func_is_coroutine = [
+        condition_func_is_coroutine = [
                                 (inspect.iscoroutinefunction(c)
                                  or inspect.iscoroutinefunction(c.__call__))
                                 for c in conditions
-                                             ]
-        if not all(self._condition_func_is_coroutine):
+                                       ]
+        if not all(condition_func_is_coroutine):
             # and warn if it is not a corotinefunction
             logger.warning(
                     "It is recommended to use coroutinefunctions for all "
@@ -633,9 +640,9 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
                     "function in a TrajectoryFunctionWrapper. All "
                     "non-coroutine condition functions will be blocking when "
                     "applied! ([c is coroutine for c in conditions] = %s)",
-                    self._condition_func_is_coroutine
+                    condition_func_is_coroutine
                            )
-        self._conditions = conditions
+        return condition_func_is_coroutine
 
     async def propagate_and_concatenate(self,
                                         starting_configuration: Trajectory,
@@ -899,39 +906,32 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
                                                                      )
         return full_traj, first_condition_fullfilled
 
-    async def _condition_vals_for_traj(self, traj):
+    async def _condition_vals_for_traj(self, traj: Trajectory
+                                       ) -> list[np.ndarray]:
         # return a list of condition_func results,
         # one for each condition func in conditions
-        if all(self._condition_func_is_coroutine):
-            # easy, all coroutines
-            return await asyncio.gather(*(c(traj) for c in self.conditions))
-        elif not any(self._condition_func_is_coroutine):
-            # also easy (but blocking), none is coroutine
-            return [c(traj) for c in self.conditions]
-        else:
-            # need to piece it together
-            # first the coroutines concurrently
-            coros = [c(traj) for c, c_is_coro
-                     in zip(self.conditions, self._condition_func_is_coroutine)
-                     if c_is_coro
-                     ]
-            coro_res = await asyncio.gather(*coros)
-            # now either take the result from coro execution or calculate it
-            all_results = []
+        if self.conditions.changed:
+            # first check if the conditions (single entries) have been modified
+            # if yes just reassign to the property so we recheck which of them
+            # are coroutines
+            self.conditions = self.conditions
+        # we wrap the non-coroutines into tasks to schedule all together
+        all_conditions_as_coro = [
+            c(traj) if c_is_coro else asyncio.to_thread(c, traj)
             for c, c_is_coro in zip(self.conditions,
-                                    self._condition_func_is_coroutine):
-                if c_is_coro:
-                    all_results.append(coro_res.pop(0))
-                else:
-                    all_results.append(c(traj))
-            return all_results
-            # NOTE: this would be elegant, but to_thread() is py v>=3.9
-            # we wrap the non-coroutines into tasks to schedule all together
-            #all_conditions_as_coro = [
-            #    c(traj) if c_is_cor else asyncio.to_thread(c, traj)
-            #    for c, c_is_cor in zip(self.conditions, self._condition_func_is_coroutine)
-            #                      ]
-            #return await asyncio.gather(*all_conditions_as_coro)
+                                    self._condition_func_is_coroutine)
+                                  ]
+        results = await asyncio.gather(*all_conditions_as_coro)
+        cond_eq_traj_len = [len(traj) == len(r) for r in results]
+        if not all(cond_eq_traj_len):
+            bad_condition_idx_str = ", ".join([f"{idx}" for idx, good
+                                               in enumerate(cond_eq_traj_len)
+                                               if not good])
+            raise ValueError("At least one of the conditions does not return "
+                             "an array of shape (len(traj), ) when applied to "
+                             "the trajectory traj. The conditions in question "
+                             "have indexes " + bad_condition_idx_str + " .")
+        return results
 
 
 # alias for people coming from the path sampling community :)

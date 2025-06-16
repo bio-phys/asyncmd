@@ -14,135 +14,14 @@
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import os
 import abc
-import typing
 import shutil
 import logging
 import collections
 
+from .tools import TypedFlagChangeList
+
 
 logger = logging.getLogger(__name__)
-
-
-class FlagChangeList(collections.abc.MutableSequence):
-    """A list that knows if it has been changed after initializing."""
-
-    def __init__(self, data: list) -> None:
-        """
-        Initialize a `FlagChangeList`.
-
-        Parameters
-        ----------
-        data : list
-            The data this `FlagChangeList` will hold.
-
-        Raises
-        ------
-        TypeError
-            Raised when data is not a :class:`list`.
-        """
-        if not isinstance(data, list):
-            raise TypeError("FlagChangeList must be initialized with a list.")
-        self._data = data
-        self._changed = False
-
-    @property
-    def changed(self) -> bool:
-        """
-        Whether this `FlagChangeList` has been modified since creation.
-
-        Returns
-        -------
-        bool
-        """
-        return self._changed
-
-    def __repr__(self) -> str:
-        return self._data.__repr__()
-
-    def __getitem__(self, index: int) -> typing.Any:
-        return self._data.__getitem__(index)
-
-    def __len__(self) -> int:
-        return self._data.__len__()
-
-    def __setitem__(self, index: int, value) -> None:
-        self._data.__setitem__(index, value)
-        self._changed = True
-
-    def __delitem__(self, index: int) -> None:
-        self._data.__delitem__(index)
-        self._changed = True
-
-    def insert(self, index: int, value: typing.Any):
-        """
-        Insert `value` at position given by `index`.
-
-        Parameters
-        ----------
-        index : int
-            The index of the new value in the `FlagChangeList`.
-        value : typing.Any
-            The value to insert into this `FlagChangeList`.
-        """
-        self._data.insert(index, value)
-        self._changed = True
-
-
-class TypedFlagChangeList(FlagChangeList):
-    """
-    A :class:`FlagChangeList` with an ensured type for individual list items.
-    """
-
-    def __init__(self, data: typing.Iterable, dtype) -> None:
-        """
-        Initialize a `TypedFlagChangeList`.
-
-        Parameters
-        ----------
-        data : Iterable
-            (Initial) data for this `TypedFlagChangeList`.
-        dtype : Callable datatype
-            The datatype for all entries in this `TypedFlagChangeList`. Will be
-            called on every value seperately and is expected to convert to the
-            desired datatype.
-        """
-        self._dtype = dtype  # set first to use in _convert_type method
-        if getattr(data, '__len__', None) is None:
-            # convienience for singular options,
-            # if it has no len attribute we assume it is the only item
-            data = [data]
-        elif isinstance(data, str):
-            # strings have a length but we still do not want to split them into
-            # single letters, so just put a list around
-            data = [data]
-        typed_data = [self._convert_type(v, index=i)
-                      for i, v in enumerate(data)]
-        super().__init__(data=typed_data)
-
-    def _convert_type(self, value, index=None):
-        # here we ignore index, but passing it should in principal make it
-        # possible to use different dtypes for different indices
-        return self._dtype(value)
-
-    def __setitem__(self, index: int, value) -> None:
-        typed_value = self._convert_type(value, index=index)
-        self._data.__setitem__(index, typed_value)
-        self._changed = True
-
-    def insert(self, index: int, value) -> None:
-        """
-        Insert `value` at position given by `index`.
-
-        Parameters
-        ----------
-        index : int
-            The index of the new value in the `TypedFlagChangeList`.
-        value : typing.Any
-            The value to insert into this `TypedFlagChangeList`.
-        """
-        typed_value = self._convert_type(value, index=index)
-        self._data.insert(index, typed_value)
-        self._changed = True
 
 
 # NOTE: only to define the interface
