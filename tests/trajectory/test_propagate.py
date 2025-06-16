@@ -200,7 +200,6 @@ class Test_ConditionalPropagator:
                     trajectory_files="tests/test_data/trajectory/ala_traj.xtc",
                     structure_file="tests/test_data/trajectory/ala.tpr"
                           )
-        print("traj len", len(traj))
         if error:
             with pytest.raises(ValueError):
                 _ = await propa._condition_vals_for_traj(traj=traj)
