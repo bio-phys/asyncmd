@@ -13,6 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import pytest
+import os
+import logging
 import pickle
 import shlex
 
@@ -205,3 +207,34 @@ class Test_LineBasedMDConfig:
                                                   )
         self.compare_mdconf_vals_to_beauty(mdconf=mdconf_parsed_modified,
                                            beauty=beauty)
+
+    def test_no_file_raises(self, tmpdir):
+        no_file = os.path.join(tmpdir, "false")
+        assert not os.path.exists(no_file)  # make sure it does not exist
+        with pytest.raises(ValueError):
+            self.dummy_class(original_file=no_file)
+
+    @pytest.mark.parametrize(["infile_to_parse", "beauty"],
+                             [("tests/test_data/mdconfig/dummy_mdconfig.dat",
+                               {"param_sans_dtype": ["test", "test123", "12.3"],
+                                "float_param": [1.0, 1.1, 1.2, 10.1],
+                                "float_singleton_param": 2.0,
+                                "int_param": [1, 2, 3, 4, 5, 6],
+                                "int_singleton_param": 6,
+                                "str_singleton_param": "1string",
+                                "empty_param": [],
+                                }
+                               ),
+                              ]
+                             )
+    def test_warning_duplicate_option(self, infile_to_parse, beauty, caplog):
+        # NOTE: our standard test file has a duplicate configuration option
+        #       it is "float_singleton_param"
+        with caplog.at_level(logging.WARNING):
+            mdconf = self.dummy_class(original_file=infile_to_parse)
+        warn_txt = "Parsed duplicate configuration option "
+        warn_txt += "(float_singleton_param). Last values encountered take "
+        warn_txt += "precedence."
+        assert warn_txt in caplog.text
+        # compare values to beauty just for good measure
+        self.compare_mdconf_vals_to_beauty(mdconf=mdconf, beauty=beauty)

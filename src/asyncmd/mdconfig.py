@@ -189,14 +189,14 @@ class LineBasedMDConfig(MDConfig):
     def __len__(self) -> int:
         return self._config.__len__()
 
-    def __repr__(self) -> str:
+    def __repr__(self) -> str:  # pragma: no cover
         return str({"changed": self._changed,
                     "original_file": self.original_file,
                     "content": self._config.__repr__(),
                     }
                    )
 
-    def __str__(self) -> str:
+    def __str__(self) -> str:  # pragma: no cover
         repr_str = (f"{type(self)} has been changed since parsing: "
                     + f"{self._changed}\n"
                     )
@@ -301,14 +301,13 @@ class LineBasedMDConfig(MDConfig):
             for key, value in self._config.items():
                 line = f"{key}{self._KEY_VALUE_SEPARATOR}"
                 try:
-                    if len(value) >= 0:
-                        if isinstance(value, str):
-                            # it is a string singleton option
-                            line += f"{value}"
-                        else:
-                            line += self._INTER_VALUE_CHAR.join(str(v)
-                                                                for v in value
-                                                                )
+                    if isinstance(value, str):
+                        # it is a string singleton option
+                        line += f"{value}"
+                    else:
+                        line += self._INTER_VALUE_CHAR.join(str(v)
+                                                            for v in value
+                                                            )
                 except TypeError:
                     # not a Sequence/Iterable or string,
                     # i.e. (probably) one of the float/int singleton options
