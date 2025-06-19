@@ -13,10 +13,38 @@
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import pytest
+import os
 import numpy as np
 
 
-from asyncmd.tools import FlagChangeList, TypedFlagChangeList
+from asyncmd.tools import (FlagChangeList, TypedFlagChangeList,
+                           remove_file_if_exist, remove_file_if_exist_async,
+                           )
+
+
+class Test_remove_file_if_exist:
+    @pytest.mark.parametrize("file_exists", [True, False])
+    def test_sync(self, tmpdir, file_exists):
+        file_path = os.path.join(tmpdir, "test_file.dat")
+        if file_exists:
+            # make a file
+            os.mknod(file_path)
+        # remove it
+        remove_file_if_exist(file_path)
+        # and make sure it is gone
+        assert not os.path.exists(file_path)
+
+    @pytest.mark.parametrize("file_exists", [True, False])
+    @pytest.mark.asyncio
+    async def test_async(self, tmpdir, file_exists):
+        file_path = os.path.join(tmpdir, "test_file.dat")
+        if file_exists:
+            # make a file
+            os.mknod(file_path)
+        # remove it
+        await remove_file_if_exist_async(file_path)
+        # and make sure it is gone
+        assert not os.path.exists(file_path)
 
 
 class Test_FlagChangeList:
@@ -170,7 +198,6 @@ class Test_TypedFlagChangeList:
                               ([1, 2, 3, 4], int),
                               # the ints should become floats!
                               ([1, 2., 3, 4], float),
-                              ([1], int),
                               ]
                              )
     def test_changed_setitem_delitem_insert(self, test_data, data_dtype):
@@ -180,11 +207,25 @@ class Test_TypedFlagChangeList:
         _ = flag_list[0]
         assert not flag_list.changed
         # modify and see that we do set changed=True
-        flag_list[0] = "1234"  # can be converted to int, float and str
+        test_insert = "1234"  # can be converted to int, float and str
+        flag_list[0] = test_insert
         assert flag_list.changed
+        # check that we have set it as expected
+        assert flag_list[0] == data_dtype("1234")
         # reininit to get a new list with changed=False
         flag_list = TypedFlagChangeList(data=test_data, dtype=data_dtype)
         assert not flag_list.changed  # as it should be
+        # modify using a slice
+        test_insert = ["1234", 1234]
+        flag_list[0:2] = test_insert
+        assert flag_list.changed
+        # check that we have set the values in the list as expected
+        assert all(v == data_dtype(beauty) for v, beauty
+                   in zip(flag_list[0:2], test_insert)
+                   )
+        # reininit to test delete
+        flag_list = TypedFlagChangeList(data=test_data, dtype=data_dtype)
+        assert not flag_list.changed
         # now delete an item and check again
         del flag_list[0]
         assert flag_list.changed

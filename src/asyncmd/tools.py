@@ -119,7 +119,7 @@ class FlagChangeList(collections.abc.MutableSequence):
         """
         return self._changed
 
-    def __repr__(self) -> str:
+    def __repr__(self) -> str:  # pragma: no cover
         return self._data.__repr__()
 
     def __getitem__(self, index: int | slice) -> typing.Any:
