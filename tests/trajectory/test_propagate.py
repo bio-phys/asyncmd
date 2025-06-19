@@ -87,6 +87,19 @@ class Test_ConditionalPropagator:
                                                               )
         assert propa.max_steps == beauty_max_steps
 
+    def test_conditions_setter_no_condition_raises(self, monkeypatch):
+        with monkeypatch.context() as m:
+            m.setattr("asyncmd.trajectory.propagate.nstout_from_mdconfig",
+                      lambda mdconfig, output_traj_type: 1)
+            propa = asynctraj.ConditionalTrajectoryPropagator(
+                        conditions=[self.cond_wrap_1frame_true1],
+                        engine_cls=asyncgmx.GmxEngine,
+                        engine_kwargs={"mdconfig": self.empty_mdp},
+                        walltime_per_part=0.01,
+                                                                )
+        with pytest.raises(ValueError):
+            propa.conditions = []
+
     def test_conditions_setter_not_all_coro(self, monkeypatch, caplog):
         with monkeypatch.context() as m:
             m.setattr("asyncmd.trajectory.propagate.nstout_from_mdconfig",
@@ -206,6 +219,41 @@ class Test_ConditionalPropagator:
         else:
             condition_vals = await propa._condition_vals_for_traj(traj=traj)
             assert len(condition_vals) == len(propa.conditions)
+
+    @pytest.mark.asyncio
+    async def test__condition_vals_for_traj_single_condition_changed(
+                        self, monkeypatch,
+                                                                      ):
+        conditions = [asynctraj.PyTrajectoryFunctionWrapper(
+                                  dummy_condition_func,
+                                  call_kwargs={"return_len": 18,
+                                               "true_on_frames": [17]}),
+                      asynctraj.PyTrajectoryFunctionWrapper(
+                                  dummy_condition_func,
+                                  call_kwargs={"return_len": 18,
+                                               "true_on_frames": []}),
+                      ]
+        with monkeypatch.context() as m:
+            m.setattr("asyncmd.trajectory.propagate.nstout_from_mdconfig",
+                      lambda mdconfig, output_traj_type: 1)
+            propa = asynctraj.ConditionalTrajectoryPropagator(
+                        conditions=conditions,
+                        engine_cls=asyncgmx.GmxEngine,
+                        engine_kwargs={"mdconfig": self.empty_mdp},
+                        walltime_per_part=0.01,
+                                                                )
+        # change one of the conditions
+        propa.conditions[1] = asynctraj.PyTrajectoryFunctionWrapper(
+                                  dummy_condition_func,
+                                  call_kwargs={"return_len": 18,
+                                               "true_on_frames": [1]})
+        traj = Trajectory(
+                    trajectory_files="tests/test_data/trajectory/ala_traj.xtc",
+                    structure_file="tests/test_data/trajectory/ala.tpr"
+                          )
+        # and call it
+        condition_vals = await propa._condition_vals_for_traj(traj=traj)
+        assert len(condition_vals) == len(propa.conditions)
 
 
 @pytest.mark.asyncio
