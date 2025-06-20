@@ -14,17 +14,14 @@
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import pytest
 import logging
-import shutil
 
 import numpy as np
 
 from asyncmd.gromacs import GmxEngine, MDP
 from asyncmd import Trajectory
 
-
-# Decorator for test that need gmx grompp and/or gmx mdrun
-needs_gmx_install = pytest.mark.skipif(shutil.which("gmx") is None,
-                                       reason="Need gromacs (gmx) executable.")
+# custom decorator for tests that need gromacs installed
+from conftest import needs_gmx_install
 
 
 class Test_GmxEngine:
@@ -119,12 +116,12 @@ class Test_GmxEngine:
                               ]
                              )
     @pytest.mark.asyncio
-    async def test_run_MD_compressed_out(self, tmpdir, starting_conf):
+    async def test_run_MD_compressed_out(self, tmp_path, starting_conf):
         engine = GmxEngine(mdconfig=self.mdp_md_compressed_out,
                            gro_file=self.gro,
                            top_file=self.top)
         await engine.prepare(starting_configuration=starting_conf,
-                             workdir=tmpdir,
+                             workdir=tmp_path,
                              deffnm="test")
         nsteps = 10
         traj = await engine.run(nsteps=nsteps)
@@ -142,13 +139,13 @@ class Test_GmxEngine:
                               ]
                              )
     @pytest.mark.asyncio
-    async def test_run_MD_full_prec_out(self, tmpdir, starting_conf):
+    async def test_run_MD_full_prec_out(self, tmp_path, starting_conf):
         engine = GmxEngine(mdconfig=self.mdp_md_full_prec_out,
                            gro_file=self.gro,
                            top_file=self.top,
                            output_traj_type="trr")
         await engine.prepare(starting_configuration=starting_conf,
-                             workdir=tmpdir,
+                             workdir=tmp_path,
                              deffnm="test")
         nsteps = 10
         traj = await engine.run(nsteps=nsteps)
