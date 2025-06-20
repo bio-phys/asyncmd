@@ -24,8 +24,8 @@ from asyncmd.tools import (FlagChangeList, TypedFlagChangeList,
 
 class Test_remove_file_if_exist:
     @pytest.mark.parametrize("file_exists", [True, False])
-    def test_sync(self, tmpdir, file_exists):
-        file_path = os.path.join(tmpdir, "test_file.dat")
+    def test_sync(self, tmp_path, file_exists):
+        file_path = os.path.join(tmp_path, "test_file.dat")
         if file_exists:
             # make a file
             os.mknod(file_path)
@@ -36,8 +36,8 @@ class Test_remove_file_if_exist:
 
     @pytest.mark.parametrize("file_exists", [True, False])
     @pytest.mark.asyncio
-    async def test_async(self, tmpdir, file_exists):
-        file_path = os.path.join(tmpdir, "test_file.dat")
+    async def test_async(self, tmp_path, file_exists):
+        file_path = os.path.join(tmp_path, "test_file.dat")
         if file_exists:
             # make a file
             os.mknod(file_path)
