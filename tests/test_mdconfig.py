@@ -208,8 +208,8 @@ class Test_LineBasedMDConfig:
         self.compare_mdconf_vals_to_beauty(mdconf=mdconf_parsed_modified,
                                            beauty=beauty)
 
-    def test_no_file_raises(self, tmpdir):
-        no_file = os.path.join(tmpdir, "false")
+    def test_no_file_raises(self, tmp_path):
+        no_file = os.path.join(tmp_path, "false")
         assert not os.path.exists(no_file)  # make sure it does not exist
         with pytest.raises(ValueError):
             self.dummy_class(original_file=no_file)
