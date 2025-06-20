@@ -397,11 +397,11 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
                                              )
             if len(trajs) > 0:
                 # can only continue if we find the previous trajs
+                await engine.prepare_from_files(workdir=workdir, deffnm=deffnm)
                 step_counter = engine.steps_done
                 if step_counter >= self.n_steps:
                     # already longer than what we want to do, bail out
                     return trajs
-                await engine.prepare_from_files(workdir=workdir, deffnm=deffnm)
             else:
                 # no previous trajs, prepare engine from scratch
                 continuation = False
@@ -431,7 +431,7 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
                                   trajs: list[Trajectory],
                                   tra_out: str,
                                   overwrite: bool = False,
-                                  ) -> Trajectory:
+                                  ) -> Trajectory | None:
         """
         Cut and concatenate the trajectory until it has length n_steps.
 
@@ -439,6 +439,7 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
         containing n_steps integration steps. The expected input
         is a list of trajectories, e.g. the output of the :meth:`propagate`
         method.
+        Returns None if `self.n_steps` is zero.
 
         Parameters
         ----------
@@ -463,14 +464,14 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
         """
         # trajs is a list of trajectories, e.g. the return of propagate
         # tra_out and overwrite are passed directly to the Concatenator
-        if len(trajs) == 0:
-            # no trajectories to concatenate, happens e.g. if self.n_steps=0
-            # we return None (TODO: is this what we want?)
+        if self.n_steps == 0:
+            # no trajectories to concatenate, since self.n_steps=0
+            # we return None
             return None
         if self.n_steps > trajs[-1].last_step:
             # not enough steps in trajectories
             raise ValueError("The given trajectories are to short (< self.n_steps).")
-        elif self.n_steps == trajs[-1].last_step:
+        if self.n_steps == trajs[-1].last_step:
             # all good, we just take all trajectory parts fully
             slices = [(0, None, 1) for _ in range(len(trajs))]
             last_part_idx = len(trajs) - 1
@@ -491,12 +492,10 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
             last_part_len_steps = (trajs[last_part_idx].last_step
                                    - trajs[last_part_idx].first_step)
             steps_per_frame = last_part_len_steps / last_part_len_frames
-            frames_in_last_part = 0
-            while ((trajs[last_part_idx].first_step
-                    + frames_in_last_part * steps_per_frame) < self.n_steps):
-                # I guess we stay with the < (instead of <=) and rather have
-                # one frame too much?
-                frames_in_last_part += 1
+            frames_in_last_part = round((self.n_steps
+                                         - trajs[last_part_idx].first_step
+                                         )
+                                        / steps_per_frame)
             # build slices
             slices = [(0, None, 1) for _ in range(last_part_idx)]
             slices += [(0, frames_in_last_part + 1, 1)]

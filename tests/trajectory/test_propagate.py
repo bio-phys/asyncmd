@@ -12,15 +12,21 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
-
+import pytest
 import logging
+import os
 
 import numpy as np
-import pytest
 
 from asyncmd import Trajectory
 from asyncmd import gromacs as asyncgmx
-from asyncmd import trajectory as asynctraj
+from asyncmd.trajectory import (PyTrajectoryFunctionWrapper,
+                                InPartsTrajectoryPropagator,
+                                ConditionalTrajectoryPropagator,
+                                )
+
+# marker for tests that need gromacs installed
+from conftest import needs_gmx_install
 
 
 def dummy_condition_func(traj, return_len, true_on_frames):
@@ -48,21 +54,84 @@ def dummy_condition_func(traj, return_len, true_on_frames):
     return ret
 
 
+class Test_InPartsTrajectoryPropagator:
+    def setup_method(self):
+        self.empty_mdp = asyncgmx.MDP("tests/test_data/gromacs/empty.mdp")
+        self.xtc_mdp = asyncgmx.MDP("tests/test_data/gromacs/md_compressed_out.mdp")
+        self.ala_gro = "tests/test_data/gromacs/conf.gro"
+        self.ala_top = "tests/test_data/gromacs/topol_amber99sbildn.top"
+
+    @pytest.mark.slow
+    @needs_gmx_install
+    @pytest.mark.parametrize(["n_steps", "continuation_n_steps"],
+                             [(0, 0), (10, 10),
+                              (0, 10), (0, 200),
+                              (10, 0), (200, 0),
+                              (10, 100),
+                              (300, 100),
+                              ])
+    @pytest.mark.parametrize("starting_conf",
+                             [Trajectory("tests/test_data/trajectory/ala_traj.trr",
+                                         "tests/test_data/trajectory/ala.tpr")
+                              ])
+    @pytest.mark.asyncio
+    async def test_run_continue_remove_with_gromacs(
+                self, tmp_path, starting_conf, n_steps, continuation_n_steps,
+                                                    ):
+        propa = InPartsTrajectoryPropagator(
+                        n_steps=n_steps,
+                        engine_cls=asyncgmx.GmxEngine,
+                        engine_kwargs={"mdconfig": self.xtc_mdp,
+                                       "gro_file": self.ala_gro,
+                                       "top_file": self.ala_top,
+                                       },
+                        walltime_per_part=1 / (60 * 60 * 100),  # 0.01 s
+                                            )
+        traj = await propa.propagate_and_concatenate(
+                                starting_configuration=starting_conf,
+                                workdir=tmp_path,
+                                deffnm="test",
+                                tra_out=os.path.join(tmp_path, "out_traj.xtc"),
+                                )
+        if n_steps == 0:
+            assert traj is None
+        else:
+            assert len(traj) == ((n_steps / self.xtc_mdp["nstxout-compressed"])
+                                 + 1)
+        # reset n_steps
+        propa.n_steps = continuation_n_steps
+        # and do a continuation
+        traj_cont = await propa.propagate_and_concatenate(
+                            starting_configuration=starting_conf,
+                            workdir=tmp_path,
+                            deffnm="test",
+                            tra_out=os.path.join(tmp_path, "out_traj2.xtc"),
+                            continuation=True,
+                            )
+        if continuation_n_steps == 0:
+            assert traj_cont is None
+        else:
+            assert len(traj_cont) == ((continuation_n_steps
+                                       / self.xtc_mdp["nstxout-compressed"]
+                                       )
+                                      + 1)
+
+
 class Test_ConditionalPropagator:
     def setup_method(self):
         self.empty_mdp = asyncgmx.MDP("tests/test_data/gromacs/empty.mdp")
-        self.cond_wrap_1frame_true1 = asynctraj.PyTrajectoryFunctionWrapper(
+        self.cond_wrap_1frame_true1 = PyTrajectoryFunctionWrapper(
                                             function=dummy_condition_func,
                                             call_kwargs={"return_len": 1,
                                                          "true_on_frames": [0],
                                                          }
-                                                                            )
-        self.cond_wrap_1frame_never_true = asynctraj.PyTrajectoryFunctionWrapper(
+                                                                  )
+        self.cond_wrap_1frame_never_true = PyTrajectoryFunctionWrapper(
                                             function=dummy_condition_func,
                                             call_kwargs={"return_len": 1,
                                                          "true_on_frames": [],
                                                          }
-                                                                              )
+                                                                       )
 
     @pytest.mark.parametrize(["max_frames", "max_steps", "beauty_max_steps"],
                              [(None, None, float("inf")),  # no max steps/frames
@@ -76,7 +145,7 @@ class Test_ConditionalPropagator:
             # monkeypatch to make sure nstout will be equal to 1
             m.setattr("asyncmd.trajectory.propagate.nstout_from_mdconfig",
                       lambda mdconfig, output_traj_type: 1)
-            propa = asynctraj.ConditionalTrajectoryPropagator(
+            propa = ConditionalTrajectoryPropagator(
                         conditions=[self.cond_wrap_1frame_true1,
                                     self.cond_wrap_1frame_never_true],
                         engine_cls=asyncgmx.GmxEngine,
@@ -84,19 +153,19 @@ class Test_ConditionalPropagator:
                         walltime_per_part=0.01,
                         max_steps=max_steps,
                         max_frames=max_frames,
-                                                              )
+                                                    )
         assert propa.max_steps == beauty_max_steps
 
     def test_conditions_setter_no_condition_raises(self, monkeypatch):
         with monkeypatch.context() as m:
             m.setattr("asyncmd.trajectory.propagate.nstout_from_mdconfig",
                       lambda mdconfig, output_traj_type: 1)
-            propa = asynctraj.ConditionalTrajectoryPropagator(
+            propa = ConditionalTrajectoryPropagator(
                         conditions=[self.cond_wrap_1frame_true1],
                         engine_cls=asyncgmx.GmxEngine,
                         engine_kwargs={"mdconfig": self.empty_mdp},
                         walltime_per_part=0.01,
-                                                                )
+                                                    )
         with pytest.raises(ValueError):
             propa.conditions = []
 
@@ -104,12 +173,12 @@ class Test_ConditionalPropagator:
         with monkeypatch.context() as m:
             m.setattr("asyncmd.trajectory.propagate.nstout_from_mdconfig",
                       lambda mdconfig, output_traj_type: 1)
-            propa = asynctraj.ConditionalTrajectoryPropagator(
+            propa = ConditionalTrajectoryPropagator(
                         conditions=[self.cond_wrap_1frame_true1],
                         engine_cls=asyncgmx.GmxEngine,
                         engine_kwargs={"mdconfig": self.empty_mdp},
                         walltime_per_part=0.01,
-                                                                )
+                                                    )
         with caplog.at_level(logging.WARNING):
             # just add one func that is not a coroutine to the list
             propa.conditions = (propa.conditions
@@ -128,11 +197,11 @@ class Test_ConditionalPropagator:
                              # length 18 frames
                              [
                               # two wrapped conditions
-                              ([asynctraj.PyTrajectoryFunctionWrapper(
+                              ([PyTrajectoryFunctionWrapper(
                                   dummy_condition_func,
                                   call_kwargs={"return_len": 18,
                                                "true_on_frames": [17]}),
-                                asynctraj.PyTrajectoryFunctionWrapper(
+                                PyTrajectoryFunctionWrapper(
                                   dummy_condition_func,
                                   call_kwargs={"return_len": 18,
                                                "true_on_frames": []}),
@@ -140,15 +209,15 @@ class Test_ConditionalPropagator:
                                False
                                ),
                               # three wrapped conditions
-                              ([asynctraj.PyTrajectoryFunctionWrapper(
+                              ([PyTrajectoryFunctionWrapper(
                                   dummy_condition_func,
                                   call_kwargs={"return_len": 18,
                                                "true_on_frames": [16]}),
-                                asynctraj.PyTrajectoryFunctionWrapper(
+                                PyTrajectoryFunctionWrapper(
                                   dummy_condition_func,
                                   call_kwargs={"return_len": 18,
                                                "true_on_frames": [17]}),
-                                asynctraj.PyTrajectoryFunctionWrapper(
+                                PyTrajectoryFunctionWrapper(
                                   dummy_condition_func,
                                   call_kwargs={"return_len": 18,
                                                "true_on_frames": []}),
@@ -156,7 +225,7 @@ class Test_ConditionalPropagator:
                                False
                                ),
                               # one wrapped func, one blocking/non-wrapped func
-                              ([asynctraj.PyTrajectoryFunctionWrapper(
+                              ([PyTrajectoryFunctionWrapper(
                                   dummy_condition_func,
                                   call_kwargs={"return_len": 18,
                                                "true_on_frames": [17]}),
@@ -185,11 +254,11 @@ class Test_ConditionalPropagator:
                               # These two funcs do not have the same return len
                               # so we expect a (hopefully helpful) error
                               # that the length does not match the trajectory
-                              ([asynctraj.PyTrajectoryFunctionWrapper(
+                              ([PyTrajectoryFunctionWrapper(
                                   dummy_condition_func,
                                   call_kwargs={"return_len": 18,
                                                "true_on_frames": [1]}),
-                                asynctraj.PyTrajectoryFunctionWrapper(
+                                PyTrajectoryFunctionWrapper(
                                     dummy_condition_func,
                                   call_kwargs={"return_len": 2,
                                                "true_on_frames": []}),
@@ -203,12 +272,12 @@ class Test_ConditionalPropagator:
         with monkeypatch.context() as m:
             m.setattr("asyncmd.trajectory.propagate.nstout_from_mdconfig",
                       lambda mdconfig, output_traj_type: 1)
-            propa = asynctraj.ConditionalTrajectoryPropagator(
+            propa = ConditionalTrajectoryPropagator(
                         conditions=conditions,
                         engine_cls=asyncgmx.GmxEngine,
                         engine_kwargs={"mdconfig": self.empty_mdp},
                         walltime_per_part=0.01,
-                                                                )
+                                                    )
         traj = Trajectory(
                     trajectory_files="tests/test_data/trajectory/ala_traj.xtc",
                     structure_file="tests/test_data/trajectory/ala.tpr"
@@ -224,11 +293,11 @@ class Test_ConditionalPropagator:
     async def test__condition_vals_for_traj_single_condition_changed(
                         self, monkeypatch,
                                                                       ):
-        conditions = [asynctraj.PyTrajectoryFunctionWrapper(
+        conditions = [PyTrajectoryFunctionWrapper(
                                   dummy_condition_func,
                                   call_kwargs={"return_len": 18,
                                                "true_on_frames": [17]}),
-                      asynctraj.PyTrajectoryFunctionWrapper(
+                      PyTrajectoryFunctionWrapper(
                                   dummy_condition_func,
                                   call_kwargs={"return_len": 18,
                                                "true_on_frames": []}),
@@ -236,14 +305,14 @@ class Test_ConditionalPropagator:
         with monkeypatch.context() as m:
             m.setattr("asyncmd.trajectory.propagate.nstout_from_mdconfig",
                       lambda mdconfig, output_traj_type: 1)
-            propa = asynctraj.ConditionalTrajectoryPropagator(
+            propa = ConditionalTrajectoryPropagator(
                         conditions=conditions,
                         engine_cls=asyncgmx.GmxEngine,
                         engine_kwargs={"mdconfig": self.empty_mdp},
                         walltime_per_part=0.01,
-                                                                )
+                                                    )
         # change one of the conditions
-        propa.conditions[1] = asynctraj.PyTrajectoryFunctionWrapper(
+        propa.conditions[1] = PyTrajectoryFunctionWrapper(
                                   dummy_condition_func,
                                   call_kwargs={"return_len": 18,
                                                "true_on_frames": [1]})
@@ -262,12 +331,12 @@ async def test_propagate():
     mdp["nstxout-compressed"] = 1
     mdp["nstxtcout"] = 1
 
-    condition_function_wrapped = asynctraj.PyTrajectoryFunctionWrapper(
+    condition_function_wrapped = PyTrajectoryFunctionWrapper(
         dummy_condition_func,
         call_kwargs={"return_len": 18,
                      "true_on_frames": [17]}
     )
-    propa_somewhere = asynctraj.ConditionalTrajectoryPropagator(
+    propa_somewhere = ConditionalTrajectoryPropagator(
         conditions=[condition_function_wrapped],
         engine_cls=asyncgmx.GmxEngine,
         engine_kwargs={
@@ -275,7 +344,7 @@ async def test_propagate():
         },
         walltime_per_part=0.01,
     )
-    starting_configuration = asynctraj.trajectory.Trajectory(
+    starting_configuration = Trajectory(
         trajectory_files="tests/test_data/trajectory/ala_traj.xtc",
         structure_file="tests/test_data/trajectory/ala.gro",
     )
