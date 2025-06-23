@@ -470,7 +470,7 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
             return None
         if self.n_steps > trajs[-1].last_step:
             # not enough steps in trajectories
-            raise ValueError("The given trajectories are to short (< self.n_steps).")
+            raise ValueError("The given trajectories are too short (< self.n_steps).")
         if self.n_steps == trajs[-1].last_step:
             # all good, we just take all trajectory parts fully
             slices = [(0, None, 1) for _ in range(len(trajs))]
