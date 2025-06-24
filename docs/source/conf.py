@@ -11,8 +11,8 @@
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 import os
-# import sys
-# sys.path.insert(0, os.path.abspath('.'))
+import sys
+sys.path.insert(0, os.path.abspath('../../src/'))
 
 
 # -- Project information -----------------------------------------------------
@@ -20,8 +20,9 @@ import os
 # read the version from the pyproject.toml
 def _get_version_from_pyproject():
     """Get version string from pyproject.toml file."""
-    pyproject_toml = os.path.join(os.path.dirname(__file__),
-                                  "../../pyproject.toml")
+    pyproject_toml = os.path.abspath(os.path.join(os.path.dirname(__file__),
+                                                  "../../pyproject.toml")
+                                     )
     with open(pyproject_toml) as f:
         line = f.readline()
         while line:
