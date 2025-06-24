@@ -74,7 +74,7 @@ pip install asyncmd
 
 ### pip install directly from the repository
 
-Please note that you need to have [git-lfs] (an open source git extension) setup to get all input files needed to run the notebooks in the `examples` folder. However, no [git-lfs] is needed to get a working version of the library.
+**Please note that you need to have [git-lfs] (an open source git extension) setup to get all input files needed to run the notebooks in the `examples` folder.** However, no [git-lfs] is needed to get a working version of the library.
 
 ```bash
 git clone https://github.com/bio-phys/asyncmd.git
@@ -95,7 +95,7 @@ Use ```pip install .\[docs\]``` to install the requirements needed to build the 
 
 ## Tests
 
-Tests use [pytest]. To run them just install asycmd with the test requirements
+Tests use [pytest]. To run them just install asycmd with the test requirements. **Please note that you need [git-lfs] to get all (input) files used in the tests.**
 
 ```bash
 git clone https://github.com/bio-phys/asyncmd.git
