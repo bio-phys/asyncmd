@@ -10,19 +10,35 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
-# import os
+import os
 # import sys
 # sys.path.insert(0, os.path.abspath('.'))
 
 
 # -- Project information -----------------------------------------------------
 
+# read the version from the pyproject.toml
+def _get_version_from_pyproject():
+    """Get version string from pyproject.toml file."""
+    pyproject_toml = os.path.join(os.path.dirname(__file__),
+                                  "../../pyproject.toml")
+    with open(pyproject_toml) as f:
+        line = f.readline()
+        while line:
+            if line.startswith("version ="):
+                version_line = line
+                break
+            line = f.readline()
+    version = version_line.strip().split(" = ")[1]
+    version = version.replace('"', '').replace("'", "")
+    return version
+
 project = 'asyncmd'
-copyright = '2022, Hendrik Jung'
+copyright = '2022-now, Hendrik Jung'
 author = 'Hendrik Jung'
 
 # The full version, including alpha/beta/rc tags
-release = '0.1.0'
+version = release = _get_version_from_pyproject()
 
 
 # -- General configuration ---------------------------------------------------
