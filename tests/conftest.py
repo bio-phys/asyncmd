@@ -13,7 +13,13 @@
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import pytest
+import shutil
 
+
+# common markers
+# Decorator for test that need gmx grompp and/or gmx mdrun
+needs_gmx_install = pytest.mark.skipif(shutil.which("gmx") is None,
+                                       reason="Need gromacs (gmx) executable.")
 
 
 def pytest_addoption(parser):

@@ -118,7 +118,7 @@ If you discover any issues or want to propose a new feature please feel free to 
 
 ### Developer install
 
-For the developer install I recommend:
+For the developer install it is recommended to use the dev extra:
 
 ```bash
 git clone https://github.com/bio-phys/asyncmd.git
@@ -126,7 +126,7 @@ cd asyncmd
 pip install -e .\[dev\]
 ```
 
-This will in addition to the requirements to run the tests and to build the documentation install [coverage] and its [pytest-cov] plugin such that you have an idea of the test coverage for your newly added code. To get a nice html coverage report you can run the tests as
+This will, in addition to the requirements to run the tests and to build the documentation, install [coverage] and its [pytest-cov] plugin such that you have an idea of the test coverage for your newly added code. To get a nice html coverage report you can run the tests as
 
 ```bash
 pytest --cov=asyncmd --cov-report=html

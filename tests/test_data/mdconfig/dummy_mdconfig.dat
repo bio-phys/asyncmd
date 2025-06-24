@@ -1,7 +1,8 @@
 param_sans_dtype = test  test123 12.3
 float_param = 1. 1.1 1.2 10.1
-float_singleton_param = 2.
+float_singleton_param = 4.  ; duplicate option! must be parsed to the value below!
 int_param = 1 2 3 4 5  6
 int_singleton_param = 6
 str_singleton_param = 1string
 empty_param =
+float_singleton_param = 2.  ; duplicate option, this is the actual "truth" vale, see above, keep the two values distinct

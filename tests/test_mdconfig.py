@@ -13,158 +13,13 @@
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import pytest
+import os
+import logging
 import pickle
 import shlex
-import numpy as np
 
 
-from asyncmd.mdconfig import (FlagChangeList, TypedFlagChangeList,
-                              LineBasedMDConfig,
-                              )
-
-
-class Test_FlagChangeList:
-    @pytest.mark.parametrize("no_list_data",
-                             [(1, 2, 3),
-                              "123",
-                              1,
-                              ]
-                             )
-    def test_init_errs(self, no_list_data):
-        with pytest.raises(TypeError):
-            _ = FlagChangeList(data=no_list_data)
-
-    @pytest.mark.parametrize(["test_data", "data_len"],
-                             [(["test", "1", "2", "3"], 4),
-                              (["test", 1, 2, 3], 4),
-                              ([1., 2., 3., 4.], 4),
-                              ([1, 2, 3, 4], 4),
-                              ([1], 1),
-                              ([], 0),
-                              ]
-                             )
-    def test_len_getitem(self, test_data, data_len):
-        flag_list = FlagChangeList(data=test_data)
-        # check that length is correct
-        assert len(flag_list) == data_len
-        # and check that all items are what we expect
-        for idx in range(len(flag_list)):
-            assert flag_list[idx] == test_data[idx]
-
-    @pytest.mark.parametrize("test_data",
-                             [["test", "1", "2", "3"],
-                              ["test", 1, 2, 3],
-                              [1., 2., 3., 4.],
-                              [1, 2, 3, 4],
-                              [1],
-                              ]
-                             )
-    def test_changed_setitem_delitem_insert(self, test_data):
-        flag_list = FlagChangeList(data=test_data)
-        assert not flag_list.changed
-        # get an item and check that everything is still good
-        _ = flag_list[0]
-        assert not flag_list.changed
-        # modify and see that we do set changed=True
-        flag_list[0] = "1234"
-        assert flag_list.changed
-        # reininit to get a new list with changed=False
-        flag_list = FlagChangeList(data=test_data)
-        assert not flag_list.changed  # as it should be
-        # now delete an item and check again
-        del flag_list[0]
-        assert flag_list.changed
-        # again reinit, this time to test insert
-        flag_list = FlagChangeList(data=test_data)
-        assert not flag_list.changed
-        obj_to_insert = object()
-        # get a random index to insert at
-        if len(flag_list) > 0:
-            idx = np.random.randint(low=0, high=len(flag_list))
-        else:
-            idx = 0
-        flag_list.insert(idx, obj_to_insert)
-        assert flag_list[idx] is obj_to_insert
-
-
-class Test_TypedFlagChangeList:
-    @pytest.mark.parametrize("no_list_data",
-                             [(1, 2, 3),
-                              "123",
-                              1,
-                              ]
-                             )
-    def test_init(self, no_list_data):
-        # all data are castable to int!
-        dtype = int
-        flag_list = TypedFlagChangeList(data=no_list_data, dtype=dtype)
-        if (getattr(no_list_data, "__len__", None) is None or isinstance(no_list_data, str)):
-            # strings have a length but are considered 'singletons'
-            # data has no length, so it must be the first idx
-            assert flag_list[0] == dtype(no_list_data)
-        else:
-            # data must be an iterable
-            for idx, val in enumerate(flag_list):
-                assert dtype(no_list_data[idx])
-
-    @pytest.mark.parametrize(["test_data", "data_len", "data_dtype"],
-                             [(["test", "1", "2", "3"], 4, str),
-                              (["0", 1, 2, 3], 4, int),
-                              ([1., 2., 3., 4.], 4, float),
-                              ([1, 2, 3, 4], 4, int),
-                              ([1], 1, int),
-                              ([], 0, int),  # here dtype should not matter
-                              ([], 0, str),
-                              ([], 0, float),
-                              ]
-                             )
-    def test_len_getitem(self, test_data, data_len, data_dtype):
-        flag_list = TypedFlagChangeList(data=test_data, dtype=data_dtype)
-        # check that length is correct
-        assert len(flag_list) == data_len
-        # and check that all items are what we expect
-        for idx in range(len(flag_list)):
-            assert flag_list[idx] == data_dtype(test_data[idx])
-
-    @pytest.mark.parametrize(["test_data", "data_dtype"],
-                             [(["test", "1", "2", "3"], str),
-                              # the "0" should become an int!
-                              (["0", 1, 2, 3], int),
-                              ([1., 2., 3., 4.], float),
-                              ([1, 2, 3, 4], int),
-                              # the ints should become floats!
-                              ([1, 2., 3, 4], float),
-                              ([1], int),
-                              ]
-                             )
-    def test_changed_setitem_delitem_insert(self, test_data, data_dtype):
-        flag_list = TypedFlagChangeList(data=test_data, dtype=data_dtype)
-        assert not flag_list.changed
-        # get an item and check that everything is still good
-        _ = flag_list[0]
-        assert not flag_list.changed
-        # modify and see that we do set changed=True
-        flag_list[0] = "1234"  # can be converted to int, float and str
-        assert flag_list.changed
-        # reininit to get a new list with changed=False
-        flag_list = TypedFlagChangeList(data=test_data, dtype=data_dtype)
-        assert not flag_list.changed  # as it should be
-        # now delete an item and check again
-        del flag_list[0]
-        assert flag_list.changed
-        # again reinit, this time to test insert
-        flag_list = TypedFlagChangeList(data=test_data, dtype=data_dtype)
-        assert not flag_list.changed
-        obj_to_insert = "1234"  # again: castable tol int, float and str
-        # get a random index to insert at
-        if len(flag_list) > 0:
-            idx = np.random.randint(low=0, high=len(flag_list))
-        else:
-            idx = 0
-        flag_list.insert(idx, obj_to_insert)
-        # cast the object to right type
-        obj_to_insert = data_dtype(obj_to_insert)
-        assert flag_list[idx] == obj_to_insert
+from asyncmd.mdconfig import LineBasedMDConfig
 
 
 # for the tests below we need to overwite LineBasedMDConfig._parse_line,
@@ -352,3 +207,34 @@ class Test_LineBasedMDConfig:
                                                   )
         self.compare_mdconf_vals_to_beauty(mdconf=mdconf_parsed_modified,
                                            beauty=beauty)
+
+    def test_no_file_raises(self, tmp_path):
+        no_file = os.path.join(tmp_path, "false")
+        assert not os.path.exists(no_file)  # make sure it does not exist
+        with pytest.raises(ValueError):
+            self.dummy_class(original_file=no_file)
+
+    @pytest.mark.parametrize(["infile_to_parse", "beauty"],
+                             [("tests/test_data/mdconfig/dummy_mdconfig.dat",
+                               {"param_sans_dtype": ["test", "test123", "12.3"],
+                                "float_param": [1.0, 1.1, 1.2, 10.1],
+                                "float_singleton_param": 2.0,
+                                "int_param": [1, 2, 3, 4, 5, 6],
+                                "int_singleton_param": 6,
+                                "str_singleton_param": "1string",
+                                "empty_param": [],
+                                }
+                               ),
+                              ]
+                             )
+    def test_warning_duplicate_option(self, infile_to_parse, beauty, caplog):
+        # NOTE: our standard test file has a duplicate configuration option
+        #       it is "float_singleton_param"
+        with caplog.at_level(logging.WARNING):
+            mdconf = self.dummy_class(original_file=infile_to_parse)
+        warn_txt = "Parsed duplicate configuration option "
+        warn_txt += "(float_singleton_param). Last values encountered take "
+        warn_txt += "precedence."
+        assert warn_txt in caplog.text
+        # compare values to beauty just for good measure
+        self.compare_mdconf_vals_to_beauty(mdconf=mdconf, beauty=beauty)
