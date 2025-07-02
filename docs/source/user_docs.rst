@@ -170,6 +170,13 @@ with the important difference that the
 slurm while the :py:class:`asyncmd.gromacs.GmxEngine` runs locally on the same
 machine as the python process.
 
+.. seealso::
+
+   The example notebooks on the
+   :doc:`GmxEngine </examples_link/01_engines/gromacs/GmxEngine>` or the
+   :doc:`SlurmGmxEngine </examples_link/01_engines/gromacs/SlurmGmxEngine>`
+   (they are largely identical, just that the later uses slurm to submit the MD).
+
 MDP
 ---
 .. autoclass:: asyncmd.gromacs.MDP

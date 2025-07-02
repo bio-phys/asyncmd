@@ -8,7 +8,7 @@ How to use the molecular dynamics engines in `asyncmd`. The subfolders are for t
 
 ### `gromacs`
 
-- `GmxEngine.ipynb`: Run gromacs on your local machine using `asyncmd`, useful mostly for learning, testing and development.
+- {doc}`GmxEngine <01_engines/gromacs/GmxEngine>`: Run gromacs on your local machine using `asyncmd`, useful mostly for learning, testing and development.
 - `SlurmGmxEngine.ipynb`: Run gromacs on your favorite HPC system via the SLURM queuing system using `asyncmd`, has the same API as the local engine, useful for production.
 
 ## `02_TrajectoryFunctionWrappers`

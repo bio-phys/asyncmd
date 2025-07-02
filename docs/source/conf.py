@@ -20,29 +20,14 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__),
 
 # -- Project information -----------------------------------------------------
 
-# read the version from the pyproject.toml
-def _get_version_from_pyproject():
-    """Get version string from pyproject.toml file."""
-    pyproject_toml = os.path.abspath(os.path.join(os.path.dirname(__file__),
-                                                  "../../pyproject.toml")
-                                     )
-    with open(pyproject_toml) as f:
-        line = f.readline()
-        while line:
-            if line.startswith("version ="):
-                version_line = line
-                break
-            line = f.readline()
-    version = version_line.strip().split(" = ")[1]
-    version = version.replace('"', '').replace("'", "")
-    return version
+import importlib.metadata
 
 project = 'asyncmd'
 copyright = '2022-now, Hendrik Jung'
 author = 'Hendrik Jung'
 
 # The full version, including alpha/beta/rc tags
-version = release = _get_version_from_pyproject()
+version = release = importlib.metadata.version("asyncmd")
 
 
 # -- General configuration ---------------------------------------------------
@@ -53,7 +38,8 @@ version = release = _get_version_from_pyproject()
 extensions = [
     'sphinx.ext.autosummary',
     'sphinx.ext.autodoc',
-    'sphinx.ext.napoleon'
+    'sphinx.ext.napoleon',
+    'myst_nb',
         ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -87,3 +73,6 @@ autodoc_default_options = {
                     # document members (default = False)
                     "members": False,
                            }
+
+# -- Options for MyST-NB
+nb_execution_mode = "off"  # render the notebooks as they are in the repository
