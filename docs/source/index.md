@@ -1,7 +1,15 @@
-# Welcome to asyncmd's documentation!
+# asyncmd
 
-`asyncmd` is is a library to write **concurrent** code to run and analyze
-molecular dynamics simulations using pythons **async/await** synthax.
+asyncmd is a library to write **concurrent** code to run and analyze molecular dynamics simulations using pythons **async/await** syntax.
+Computationally costly operations can be performed locally or submitted to a queuing system.
+
+asyncmd enables users to construct complex molecular dynamics (MD) workflows or develop and implement trajectory based enhanced sampling methods with the following key features:
+
+- flexible, programmatic and parallel setup, control, and analysis of an arbitrary number of MD simulations
+- dictionary-like interface to the MD parameters
+- parallelized application of user defined (python) functions on trajectories (including the automatic caching of calculated values)
+- propagation of MD until any or all user-supplied conditions are fulfilled on the trajectory
+- extract molecular configurations from trajectories to (re)start an arbitrary number of MD simulations from it
 
 ## Get started
 
@@ -10,6 +18,7 @@ molecular dynamics simulations using pythons **async/await** synthax.
 :caption: The Basics
 
 usage/installation
+usage/basic_gromacs_example
 ```
 
 ## User guide
@@ -27,15 +36,11 @@ dev_docs
 ## Example notebooks
 
 ```{toctree}
-:maxdepth: 1
+:maxdepth: 2
 :caption: Example notebooks
+:titlesonly:
 
 Overview <examples_link/README>
-GmxEngine <examples_link/01_engines/gromacs/GmxEngine>
-SlurmGmxEngine <examples_link/01_engines/gromacs/SlurmGmxEngine>
-PyTrajectoryFunctionWrapper <examples_link/02_TrajectoryFunctionWrappers/PyTrajectoryFunctionWrapper>
-SlurmTrajectoryFunctionWrapper <examples_link/02_TrajectoryFunctionWrappers/SlurmTrajectoryFunctionWrapper>
-InPartsTrajectoryPropagator <examples_link/>
 ```
 
 ## Community guide

@@ -56,7 +56,36 @@ exclude_patterns = []
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'alabaster'
+html_theme = 'sphinx_book_theme'
+
+html_theme_options = {
+    "path_to_docs": "docs/source",
+    "repository_url": "https://github.com/bio-phys/asyncmd.git",
+    "repository_branch": "main",
+
+    "use_edit_page_button": True,
+    "use_source_button": True,
+    "use_repository_button": True,
+    "use_download_button": True,
+    #"use_sidenotes": True,
+
+    "show_toc_level": 2,  # show up to one sub-heading on the right sidebar
+
+    # links with icons in left sidebar
+    "icon_links": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/bio-phys/asyncmd.git",
+            "icon": "fa-brands fa-github",
+        },
+        {
+            "name": "PyPI",
+            "url": "https://pypi.org/project/asyncmd/",
+            "icon": "https://img.shields.io/pypi/dm/asyncmd",
+            "type": "url",
+        },
+    ],
+}
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,

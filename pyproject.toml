@@ -36,7 +36,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-docs = ["sphinx", "myst-nb"]
+docs = ["sphinx", "myst-nb", "sphinx-book-theme"]
 tests = ["pytest", "pytest-asyncio"]
 tests-all = ["asyncmd[tests]", "h5py", "coverage", "pytest-cov"]
 dev = ["asyncmd[docs,tests-all]"]
