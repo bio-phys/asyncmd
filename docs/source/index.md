@@ -43,8 +43,8 @@ The following section contains information on how to get help and/or report any 
 :maxdepth: 2
 :caption: Community
 
-support
-contributing/index
+community/support
+community/contributing
 ```
 
 ## Example notebooks

@@ -26,6 +26,7 @@ cd asyncmd
 pip install .
 ```
 
+(tests-installation)=
 ### Tests
 
 Tests use [pytest]. To run them you can install asycmd with the tests requirements. All tests should either pass or be skipped.
@@ -54,6 +55,7 @@ pytest -v
 # to get a more detailed report
 ```
 
+(documentation-installation)=
 ### Documentation
 
 The documentation can be build with [sphinx], use e.g. the following to build it in html format:
@@ -67,6 +69,7 @@ cd asyncmd  # Need to be at the top folder of the repository for the next line t
 sphinx-build -b html docs/source docs/build/html
 ```
 
+(developer-installation)=
 ## Developer installation
 
 If you intend to contribute to asyncmd, it is recommended to use the dev extra and use an editable install to enable you to directly test your changes:
