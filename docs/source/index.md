@@ -13,6 +13,8 @@ asyncmd enables users to construct complex molecular dynamics (MD) workflows or 
 
 ## Get started
 
+This section contains everything to get you started using asyncmd.
+
 ```{toctree}
 :maxdepth: 2
 :caption: The Basics
@@ -23,7 +25,7 @@ usage/basic_gromacs_example
 
 ## User guide
 
-**TODO: Some words on the user guide...**
+This section provides more in-depth explanations on various topics, such as the {py:class}`Trajectory <asyncmd.Trajectory>` object or the use of complex stopping criteria for MD simulations. It also includes a section on modifying and extending asyncmd for your own use-case.
 
 ```{toctree}
 :maxdepth: 2
@@ -33,19 +35,9 @@ user_docs
 dev_docs
 ```
 
-## Example notebooks
-
-```{toctree}
-:maxdepth: 2
-:caption: Example notebooks
-:titlesonly:
-
-Overview <examples_link/README>
-```
-
 ## Community guide
 
-**TODO: Some words here**
+The following section contains information on how to get help and/or report any issues encountered using asyncmd as well as how to contribute code or documentation.
 
 ```{toctree}
 :maxdepth: 2
@@ -55,21 +47,25 @@ support
 contributing/index
 ```
 
-----------------
+## Example notebooks
 
-## Changelog
+This section contains example jupyter notebooks (also included in the repository) on various topics and starts with a brief description of all notebooks.
 
 ```{toctree}
 :maxdepth: 2
+:caption: Example notebooks
+:titlesonly:
 
-include_changelog
+Overview <examples_link/README>
 ```
 
-## Indices and tables
+----------------
 
 ```{toctree}
-:maxdepth: 1
+:maxdepth: 2
+:caption: Changelog and Indices
 
+include_changelog
 modindex
 genindex
 ```
