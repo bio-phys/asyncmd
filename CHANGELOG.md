@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Improve and expand documentation, include example notebooks into it, and setup deployment on [read the docs](https://asyncmd.readthedocs.io/en/latest/)
 - `SlurmGmxEngine` (and `GmxEngine`) now expose the `mdrun_time_conversion_factor` to enable users to control the expected time it takes to set up the environment inside the slurm job. Both engines also have improved consistency checks for mdp options when performing energy minimization.
 - `MDEngine`, `GmxEngine`, and `SlurmGmxEngine`: removed unused `running` property
 - Some tests for `trajectory.propagate` and `gromacs.mdengine` modules
