@@ -24,16 +24,17 @@ from .tools import TypedFlagChangeList
 logger = logging.getLogger(__name__)
 
 
-# NOTE: only to define the interface
 class MDConfig(collections.abc.MutableMapping):
+    """Abstract base class only to define the interface."""
+
     @abc.abstractmethod
     def parse(self):
-        # should read original file and populate self with key, value pairs
+        """Should read original file and populate self with key, value pairs."""
         raise NotImplementedError
 
     @abc.abstractmethod
     def write(self, outfile):
-        # write out current config stored in self to outfile
+        """Should write out current config stored in self to outfile."""
         raise NotImplementedError
 
 
