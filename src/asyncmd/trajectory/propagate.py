@@ -524,11 +524,6 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
     which then starts with the starting configuration and ends with the frame
     fullfilling the condition.
 
-    Attributes
-    ----------
-    conditions : list[callable]
-        List of (wrapped) condition functions.
-
     Notes
     -----
     We assume that every condition function returns a list/ a 1d array with
@@ -612,7 +607,7 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
 
     @property
     def conditions(self) -> FlagChangeList:
-        """List of condition functions."""
+        """List of (wrapped) condition functions."""
         return self._conditions
 
     @conditions.setter

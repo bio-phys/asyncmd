@@ -27,18 +27,6 @@ class MDP(LineBasedMDConfig):
     option, list of values pairs. Includes automatic types for known options
     and keeps track if any options have been changed compared to the original
     file.
-
-    Parameters
-    ----------
-    original_file : str
-        absolute or relative path to original config file to parse
-
-    Methods
-    -------
-    write(outfile)
-        write the current (modified) configuration state to a given file
-    parse()
-        read the current original_file and update own state with it
     """
 
     _KEY_VALUE_SEPARATOR = " = "

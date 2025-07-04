@@ -32,6 +32,10 @@ This section provides more in-depth explanations on various topics, such as the 
 :caption: User guide
 
 guide/trajectories_trajectoryfuncs_and_caching
+guide/frame_extraction_and_trajectory_concatenation
+guide/trajectory_propagation
+guide/gromacs
+guide/configuration
 guide/extending_asyncmd
 ```
 
