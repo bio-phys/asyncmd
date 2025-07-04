@@ -66,6 +66,13 @@ Overview <examples_link/README>
 ----------------
 
 ```{toctree}
+:maxdepth: 1
+:caption: Module layout
+
+module_layout_autosummary
+```
+
+```{toctree}
 :maxdepth: 2
 :caption: Changelog and Indices
 

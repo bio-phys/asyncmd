@@ -6,6 +6,10 @@ This section also contains the interface of the classes, which are used under th
 Namely there is the {py:class}`SlurmProcess <asyncmd.slurm.SlurmProcess>`, which emulates the interface of {py:class}`asyncio.subprocess.Process` and which is used to submit and wait for single SLURM jobs.
 Additionally (one level deeper under the hood) there is the {py:class}`SlurmClusterMediator <asyncmd.slurm.SlurmClusterMediator>`, which is a singleton class acting as the central communication point between the single {py:class}`SlurmProcess <asyncmd.slurm.SlurmProcess>` and the SLURM commands ("sacct", "sbatch", etc.).
 
+```{seealso}
+The example notebook on the {doc}`SlurmProcess </examples_link/05_developer_topics/slurm/SlurmProcess>`.
+```
+
 (extending-asyncmd-trajectoryfunctions)=
 ## Writing a TrajectoryFunctionWrapper class
 
@@ -58,8 +62,8 @@ This class defines the two abstract methods {py:meth}`parse <asyncmd.mdconfig.MD
 
 However, most often you can probably subclass {py:class}`asyncmd.mdconfig.LineBasedMDConfig` directly.
 This has the advantage that you will only need to define the datatypes of the values (if you want them to be typed) and define a function that knows how to parse single lines of the config file format.
-To this end you should overwrite the abstract method {py:meth}`<_parse_line asyncmd.mdconfig.LineBasedMDConfig._parse_line>` in your subclass.
-The function will get single lines to parse is expected to return the key, list of value(s) pair as a {py:class}`dict` with one item, i.e. `{key: list of value(s)}`.
+To this end you should overwrite the abstract method {py:meth}`LineBasedMDConfig._parse_line <asyncmd.mdconfig.LineBasedMDConfig._parse_line>` in your subclass.
+The function will get single lines to parse (as {py:class}`str`) and is expected to return the key, list of value(s) pair as a {py:class}`dict` with one item, i.e. `{key: list of value(s)}`.
 If the line is parsed as comment the returned dict must be empty, i.e. `{}`.
 If the option/key is present but without associated value(s) the list in the dict must be empty, i.e. `{key: []}`.
 

@@ -7,6 +7,8 @@ Most notably the {py:class}`MDP <asyncmd.gromacs.MDP>` (which provides a diction
 The example notebooks on the {doc}`GmxEngine </examples_link/01_engines/gromacs/GmxEngine>` or the {doc}`SlurmGmxEngine </examples_link/01_engines/gromacs/SlurmGmxEngine>` (they are largely identical, just that the later uses slurm to submit the MD).
 ```
 
+## MD parameter (`mdp`) file manipulation
+
 ```{eval-rst}
 .. autoclass:: asyncmd.gromacs.MDP
     :class-doc-from: both
@@ -15,14 +17,21 @@ The example notebooks on the {doc}`GmxEngine </examples_link/01_engines/gromacs/
     .. autoproperty:: asyncmd.gromacs.MDP.changed
     .. automethod:: asyncmd.gromacs.MDP.parse
     .. automethod:: asyncmd.gromacs.MDP.write
+```
 
+## Run MD locally
 
+```{eval-rst}
 .. autoclass:: asyncmd.gromacs.GmxEngine
     :class-doc-from: both
     :member-order: groupwise
     :members:
     :inherited-members:
+```
 
+## Submit MD via slurm
+
+```{eval-rst}
 .. autoclass:: asyncmd.gromacs.SlurmGmxEngine
     :class-doc-from: both
     :member-order: groupwise
