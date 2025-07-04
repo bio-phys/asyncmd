@@ -1049,17 +1049,17 @@ class SlurmGmxEngine(GmxEngine):
             Optional, absolute or relative path to a gromacs index file.
         sbatch_options : dict or None
             Dictionary of sbatch options, keys are long names for options,
-            values are the correponding values. The keys/long names are given
-            without the dashes, e.g. to specify "--mem=1024" the dictionary
-            needs to be {"mem": "1024"}. To specify options without values use
-            keys with empty strings as values, e.g. to specify "--contiguous"
-            the dictionary needs to be {"contiguous": ""}.
+            values are the corresponding values. The keys/long names are given
+            without the dashes, e.g. to specify ``--mem=1024`` the dictionary
+            needs to be ``{"mem": "1024"}``. To specify options without values
+            use keys with empty strings as values, e.g. to specify
+            ``--contiguous`` the dictionary needs to be ``{"contiguous": ""}``.
             See the SLURM documentation for a full list of sbatch options
             (https://slurm.schedmd.com/sbatch.html).
-            Note: This argument is passed as is to the `SlurmProcess` in which
+            Note: This argument is passed as is to the ``SlurmProcess`` in which
             the computation is performed. Each call to the engines `run` method
-            triggers the creation of a new `SlurmProcess` and will use the then
-            current `sbatch_options`.
+            triggers the creation of a new :class:`asyncmd.slurm.SlurmProcess`
+            and will use the then current ``sbatch_options``.
 
         Note that all attributes can be set at intialization by passing keyword
         arguments with their name, e.g. mdrun_extra_args="-ntomp 2" to instruct

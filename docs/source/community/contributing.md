@@ -11,6 +11,7 @@ For bug reports, please include the full error message and, if possible, a (mini
 
 The asyncmd source code is managed using git and [hosted on Github][Github]. The recommended way for contributors to submit code is to fork this repository and open a [pull request][Github pr].
 
+(contributing-getting-started)=
 ### Getting started
 
 Before starting a patch, it is recommended to check for open [issues][Github issue] or [pull requests][Github pr] relating to the topic.
@@ -35,7 +36,7 @@ Please follow these guidelines when writing code for asyncmd:
 
 ## Contribute documentation
 
-To contribute documentation you will need to modify the source files in the `doc/source` folder. To get started follow the steps in [Getting started](#getting-started), but instead of writing code (and tests) modify the documentation source files. You can then build the documentation locally (see the [installation instructions](#documentation-installation)) to check that everything works as expected. Additionally, after submitting a [pull request][Github pr], you can preview your changes as they will be rendered on readthedocs directly.
+To contribute documentation you will need to modify the source files in the `doc/source` folder. To get started follow the steps in [Getting started](#contributing-getting-started), but instead of writing code (and tests) modify the documentation source files. You can then build the documentation locally (see the [installation instructions](#documentation-installation)) to check that everything works as expected. Additionally, after submitting a [pull request][Github pr], you can preview your changes as they will be rendered on readthedocs directly.
 
 [Github]: https://github.com/bio-phys/asyncmd
 [Github issue]: https://github.com/bio-phys/asyncmd/issues

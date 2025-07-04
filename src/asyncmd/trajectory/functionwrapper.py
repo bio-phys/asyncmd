@@ -91,23 +91,27 @@ class TrajectoryFunctionWrapper(abc.ABC):
         self._call_kwargs = value
         self._id = self._get_id_str()  # get/set ID
 
-    @abc.abstractmethod
-    def _get_id_str(self) -> str:
-        # this is expected to return an unique idetifying string
-        # this should be unique and portable, i.e. it should enable us to make
-        # ensure that the cached values will only be used for the same function
-        # called with the same arguments
-        pass
 
     @abc.abstractmethod
-    async def get_values_for_trajectory(self, traj):
-        # will be called by trajectory._apply_wrapped_func()
-        # is expected to return a numpy array, shape=(n_frames, n_dim_function)
-        pass
+    def _get_id_str(self) -> str:
+        """
+        This function is expected to return an unique identifying string.
+
+        It should be unique and portable, i.e. it should enable us to make
+        sure that the cached values will only be used for the same function
+        called with the same arguments.
+        """
+
+    @abc.abstractmethod
+    async def get_values_for_trajectory(self, traj: Trajectory):
+        """
+        Will be called by Trajectory._apply_wrapped_func() and is expected to
+        return a numpy array, shape=(n_frames, n_dim_function).
+        """
 
     async def __call__(self, value):
         """
-        Apply wrapped function asyncronously on given trajectory.
+        Apply wrapped function asynchronously on given trajectory.
 
         Parameters
         ----------
@@ -133,16 +137,9 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
     """
     Wrap python functions for use on :class:`asyncmd.Trajectory`.
 
-    Turns every python callable into an asyncronous (awaitable) and cached
+    Turns every python callable into an asynchronous (awaitable) and cached
     function for application on :class:`asyncmd.Trajectory`. Also works for
-    asyncronous (awaitable) functions, they will be cached.
-
-    Attributes
-    ----------
-    function : callable
-        The wrapped callable.
-    call_kwargs : dict
-        Keyword arguments for wrapped function.
+    asynchronous (awaitable) functions, they will be cached.
     """
     def __init__(self, function, call_kwargs: typing.Optional[dict] = None,
                  **kwargs):
@@ -192,7 +189,7 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
     @property
     def function(self):
         """
-        The python callable this :class:`PyTrajectoryFunctionWrapper` wrapps.
+        The python callable this :class:`PyTrajectoryFunctionWrapper` wraps.
         """
         return self._func
 
@@ -218,7 +215,7 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
 
     async def get_values_for_trajectory(self, traj):
         """
-        Apply wrapped function asyncronously on given trajectory.
+        Apply wrapped function asynchronously on given trajectory.
 
         Parameters
         ----------
@@ -269,7 +266,7 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
     """
     Wrap executables to use on :class:`asyncmd.Trajectory` via SLURM.
 
-    The execution of the job is submited to the queueing system with the
+    The execution of the job is submitted to the queueing system with the
     given sbatch script (template).
     The executable will be called with the following positional arguments:
 
@@ -289,19 +286,6 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
 
     See also the examples for a reference (python) implementation of multiple
     different functions/executables for use with this class.
-
-    Attributes
-    ----------
-    slurm_jobname : str
-        Used as name for the job in slurm and also as part of the filename for
-        the submission script that will be written (and deleted if everything
-        goes well) for every trajectory.
-        NOTE: If you modify it, ensure that each SlurmTrajectoryWrapper has a
-        unique slurm_jobname.
-    executable : str
-        Name of or path to the wrapped executable.
-    call_kwargs : dict
-        Keyword arguments for wrapped executable.
     """
 
     def __init__(self, executable, sbatch_script,
@@ -328,23 +312,24 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
 
         sbatch_options : dict or None
             Dictionary of sbatch options, keys are long names for options,
-            values are the correponding values. The keys/long names are given
-            without the dashes, e.g. to specify "--mem=1024" the dictionary
-            needs to be {"mem": "1024"}. To specify options without values use
-            keys with empty strings as values, e.g. to specify "--contiguous"
-            the dictionary needs to be {"contiguous": ""}.
+            values are the corresponding values. The keys/long names are given
+            without the dashes, e.g. to specify ``--mem=1024`` the dictionary
+            needs to be ``{"mem": "1024"}``. To specify options without values
+            use keys with empty strings as values, e.g. to specify
+            ``--contiguous`` the dictionary needs to be ``{"contiguous": ""}``.
             See the SLURM documentation for a full list of sbatch options
             (https://slurm.schedmd.com/sbatch.html).
-            Note: This argument is passed as is to the `SlurmProcess` in which
+            Note: This argument is passed as is to the ``SlurmProcess`` in which
             the computation is performed. Each call of the TrajectoryFunction
-            triggers the creation of a new `SlurmProcess` and will use the then
-            current `sbatch_options`.
+            triggers the creation of a new :class:`asyncmd.slurm.SlurmProcess`
+            and will use the then current ``sbatch_options``.
         call_kwargs : dict, optional
             Dictionary of additional arguments to pass to the executable, they
-            will be added to the call as pair ' {key} {val}', note that in case
-            you want to pass single command line flags (like '-v') this can be
-            achieved by setting key='-v' and val='', i.e. to the empty string.
-            The values are shell escaped using `shlex.quote()` when writing
+            will be added to the call as pair `` {key} {val}``, note that in
+            case you want to pass single command line flags (like ``-v``) this
+            can be achieved by setting ``key="-v"`` and ``val=""``, i.e. to the
+            empty string.
+            The values are shell escaped using :func:`shlex.quote` when writing
             them to the sbatch script.
         load_results_func : None or function (callable)
             Function to call to customize the loading of the results.
@@ -378,7 +363,10 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         """
         The jobname of the slurm job used to compute the function results.
 
-        Must be unique for each :class:`SlurmTrajectoryFunctionWrapper`
+        Also used as part of the filename for the submission script that will
+        be written (and deleted if everything goes well) for every trajectory.
+
+        NOTE: Must be unique for each :class:`SlurmTrajectoryFunctionWrapper`
         instance. Will by default include the persistent unique ID :meth:`id`.
         To (re)set to the default set it to None.
         """
@@ -429,7 +417,7 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
 
     async def get_values_for_trajectory(self, traj):
         """
-        Apply wrapped function asyncronously on given trajectory.
+        Apply wrapped function asynchronously on given trajectory.
 
         Parameters
         ----------

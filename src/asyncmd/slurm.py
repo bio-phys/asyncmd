@@ -108,8 +108,6 @@ class SlurmClusterMediator:
     success_to_fail_ratio : int
         Number of successful jobs we need to observe per node to decrease the
         failed job counter by one.
-    exclude_nodes : list[str]
-        List of nodes to exclude in job submissions.
 
     """
 
@@ -624,11 +622,11 @@ class SlurmProcess:
             default as either specified in the sbatch script or the partition.
         sbatch_options : dict or None
             Dictionary of sbatch options, keys are long names for options,
-            values are the correponding values. The keys/long names are given
-            without the dashes, e.g. to specify "--mem=1024" the dictionary
-            needs to be {"mem": "1024"}. To specify options without values use
-            keys with empty strings as values, e.g. to specify "--contiguous"
-            the dictionary needs to be {"contiguous": ""}.
+            values are the corresponding values. The keys/long names are given
+            without the dashes, e.g. to specify ``--mem=1024`` the dictionary
+            needs to be ``{"mem": "1024"}``. To specify options without values
+            use keys with empty strings as values, e.g. to specify
+            ``--contiguous`` the dictionary needs to be ``{"contiguous": ""}``.
             See the SLURM documentation for a full list of sbatch options
             (https://slurm.schedmd.com/sbatch.html).
         stdfiles_removal : str
@@ -1197,11 +1195,11 @@ async def create_slurmprocess_submit(jobname: str,
         default as either specified in the sbatch script or the partition.
     sbatch_options : dict or None
         Dictionary of sbatch options, keys are long names for options,
-        values are the correponding values. The keys/long names are given
-        without the dashes, e.g. to specify "--mem=1024" the dictionary
-        needs to be {"mem": "1024"}. To specify options without values use
-        keys with empty strings as values, e.g. to specify "--contiguous"
-        the dictionary needs to be {"contiguous": ""}.
+        values are the corresponding values. The keys/long names are given
+        without the dashes, e.g. to specify ``--mem=1024`` the dictionary
+        needs to be ``{"mem": "1024"}``. To specify options without values
+        use keys with empty strings as values, e.g. to specify
+        ``--contiguous`` the dictionary needs to be ``{"contiguous": ""}``.
         See the SLURM documentation for a full list of sbatch options
         (https://slurm.schedmd.com/sbatch.html).
     stdfiles_removal : str

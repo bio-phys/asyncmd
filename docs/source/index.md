@@ -31,8 +31,8 @@ This section provides more in-depth explanations on various topics, such as the 
 :maxdepth: 2
 :caption: User guide
 
-user_docs
-dev_docs
+guide/trajectories_trajectoryfuncs_and_caching
+guide/extending_asyncmd
 ```
 
 ## Community guide
