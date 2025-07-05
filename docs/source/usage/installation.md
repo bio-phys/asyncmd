@@ -29,7 +29,7 @@ pip install .
 (tests-installation)=
 ### Tests
 
-Tests use [pytest]. To run them you can install asycmd with the tests requirements. All tests should either pass or be skipped.
+Tests use [pytest]. To run them you can install asyncmd with the tests requirements. All tests should either pass or be skipped.
 
 ```{important}
 Please note that you need [git-lfs] to get all (input) files used in the tests.
@@ -58,16 +58,19 @@ pytest -v
 (documentation-installation)=
 ### Documentation
 
-The documentation can be build with [sphinx], use e.g. the following to build it in html format:
-
 ```{note}
 Use ```pip install .\[docs\]``` to install the requirements needed to build the documentation.
 ```
+
+The documentation can be build with [sphinx], use e.g. the following to build it in html format:
 
 ```bash
 cd asyncmd  # Need to be at the top folder of the repository for the next line to work
 sphinx-build -b html docs/source docs/build/html
 ```
+
+The documentation is located in the `docs/source/` folder and (mostly) written in [MyST] markdown.
+[MyST-NB] and the [sphinx-book-theme] are needed to build the documentation and include the example notebooks into it.
 
 (developer-installation)=
 ## Developer installation
@@ -80,7 +83,9 @@ cd asyncmd
 pip install -e .\[dev\]
 ```
 
-This will, in addition to the requirements to run the tests and to build the documentation, install [coverage] and its [pytest-cov] plugin such that you have an idea of the test coverage for your newly added code. To get a nice html coverage report you can run the tests as
+This will, in addition to the requirements to run the tests and to build the documentation, install [jupyterlab] such that you can easily contribute to the example notebooks.
+It will also install [coverage] and its [pytest-cov] plugin such that you have an idea of the test coverage for your newly added code.
+To get a nice html coverage report you can run the tests as
 
 ```bash
 pytest --cov=asyncmd --cov-report=html
@@ -89,8 +94,12 @@ pytest --cov=asyncmd --cov-report=html
 [coverage]: https://pypi.org/project/coverage/
 [git-lfs]: https://git-lfs.com/
 [GROMACS]: https://www.gromacs.org/
+[jupyterlab]: https://jupyterlab.readthedocs.io/en/stable/
+[MyST]: https://mystmd.org/
+[MyST-NB]: https://myst-nb.readthedocs.io/en/latest/
 [PyPi]: https://pypi.org/project/asyncmd/
 [pytest]: https://docs.pytest.org/en/latest/
 [pytest-cov]: https://pypi.org/project/pytest-cov/
 [SLURM]: https://slurm.schedmd.com/documentation.html
 [sphinx]: https://www.sphinx-doc.org/en/master/index.html
+[sphinx-book-theme]: https://sphinx-book-theme.readthedocs.io/en/stable/

@@ -39,10 +39,10 @@ classifiers = [
 docs = ["sphinx", "myst-nb", "sphinx-book-theme"]
 tests = ["pytest", "pytest-asyncio"]
 tests-all = ["asyncmd[tests]", "h5py", "coverage", "pytest-cov"]
-dev = ["asyncmd[docs,tests-all]"]
+dev = ["asyncmd[docs,tests-all]", "jupyterlab"]
 
 [project.urls]
-#Documentation =
+Documentation = "https://asyncmd.readthedocs.io/en/latest/"
 Repository = "https://github.com/bio-phys/asyncmd.git"
 Issues = "https://github.com/bio-phys/asyncmd/issues"
 
