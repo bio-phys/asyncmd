@@ -19,6 +19,7 @@ The awaitable version does exactly the same as its sync counterpart, just that i
 
 ```{seealso}
 The example notebook on {doc}`FrameExtractors </examples_link/03_trajectory_propagation_and_subtrajectory_extraction/FrameExtractors>`.
+It also contains a basic example on how to write your own {py:class}`FrameExtractor <asyncmd.trajectory.convert.FrameExtractor>` subclass.
 ```
 
 ```{eval-rst}

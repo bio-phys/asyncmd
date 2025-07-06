@@ -14,7 +14,7 @@ requires-python = ">=3.10"
 authors = [{ name = "Hendrik Jung", email = "hendrik.jung@biophys.mpg.de"}]
 maintainers = [{ name = "Hendrik Jung", email = "hendrik.jung@biophys.mpg.de"}]
 description = """asyncmd is a library to write concurrent code to run and \
-analyze molecular dynamics simulations using pythons async/await synthax."""
+analyze molecular dynamics simulations using pythons async/await syntax."""
 readme = "README.md"
 keywords = ["molecular dynamics", "molecular-dynamics", "MD",
             "high performance computing", "HPC",
@@ -39,10 +39,12 @@ classifiers = [
 docs = ["sphinx", "myst-nb", "sphinx-book-theme"]
 tests = ["pytest", "pytest-asyncio"]
 tests-all = ["asyncmd[tests]", "h5py", "coverage", "pytest-cov"]
-dev = ["asyncmd[docs,tests-all]"]
+dev = ["asyncmd[docs,tests-all]",
+       "jupyterlab", "ipywidgets", "tqdm",  # needed for example notebooks
+       ]
 
 [project.urls]
-#Documentation =
+Documentation = "https://asyncmd.readthedocs.io/en/latest/"
 Repository = "https://github.com/bio-phys/asyncmd.git"
 Issues = "https://github.com/bio-phys/asyncmd/issues"
 

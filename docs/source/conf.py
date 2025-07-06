@@ -103,5 +103,10 @@ autodoc_default_options = {
                     "members": False,
                            }
 
+# -- Options for MyST (Parser)
+
+myst_enable_extensions = ["dollarmath", "amsmath",  # enable math rendering
+                          ]
+
 # -- Options for MyST-NB
 nb_execution_mode = "off"  # render the notebooks as they are in the repository
