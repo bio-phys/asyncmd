@@ -21,7 +21,7 @@ The basic steps to start developing on asyncmd are:
 1. [Fork](https://github.com/bio-phys/asyncmd/fork) the repository on Github.
 2. (Optional but highly recommended) Create and activate a python virtual environment using your favorite environment manager (e.g. virtualenv, conda).
 3. Clone the repository and install it in editable mode using the dev target (see the [installation instructions](#developer-installation)).
-4. Create a new working branch and write your code. Please try to write tests for your code and make sure that all tests pass (see [here](#tests-installation)).
+4. Create a new working branch and write your code. Please try to write tests for your code and make sure that all tests pass (see [below](#tests-and-linting)).
 5. Add a bullet point to `CHANGELOG.md` if the fix or feature is not trivial, then commit.
 6. Push the changes and open a [pull request on Github][Github pr].
 
@@ -34,10 +34,50 @@ Please follow these guidelines when writing code for asyncmd:
 - New features should be documented. If possible, also include them in the example notebooks or add a new example notebook showcasing the feature.
 - Add appropriate unit tests.
 
+(tests-and-linting)=
+### Tests and linting
+
+#### Tests
+
+asyncmd uses [pytest] for its tests. When you install asyncmd using the [developer installation target](#developer-installation), it will also install everything needed to run tests and get a coverage report (i.e. [coverage] and [pytest-cov]). To, e.g., get a html coverage report you can then run the tests as
+
+```bash
+pytest --cov=asyncmd --cov-report=html
+```
+
+#### Linting
+
+asyncmd uses [pylint] to perform linting and ensure code quality. It will also be installed with the [developer installation](#developer-installation) such that you can run it locally and it will also be run automatically on pull requests on github.
+
+```{important}
+The current configuration fails only if [pylint] finds an [error](https://pylint.readthedocs.io/en/latest/user_guide/messages/messages_overview.html#error-category) or if the [pylint] rating decreases to below 8.2.
+Note that this somewhat relaxed setting is due to historical code and will be tightened in the future as soon as we refactored the old code.
+All new code should strive to not add any [pylint] messages, but at least not result in additional error or warning messages.
+```
+
+You can run pytest using something like the following:
+
+```bash
+pylint --output-format="colorized" asyncmd
+# or, to also get detailed reports and summaries printed at the end use:
+pylint --output-format="colorized" --reports=y asyncmd
+# or, to only see the errors and warnings (disable refactor and convention):
+pylint --output-format="colorized" --disable="R,C" asyncmd
+```
+
+```{note}
+You need to be somewhere in the repository folder hierarchy for the asyncmd-specific pylint configuration (stored in `pyproject.toml`) to take effect.
+If you are not at the correct spot in the folder hierarchy the command will (probably) still work, but might give a different result due to missing extensions and differing settings
+```
+
 ## Contribute documentation
 
 To contribute documentation you will need to modify the source files in the `doc/source` folder. To get started follow the steps in [Getting started](#contributing-getting-started), but instead of writing code (and tests) modify the documentation source files. You can then build the documentation locally (see the [installation instructions](#documentation-installation)) to check that everything works as expected. Additionally, after submitting a [pull request][Github pr], you can preview your changes as they will be rendered on readthedocs directly.
 
+[coverage]: https://pypi.org/project/coverage/
 [Github]: https://github.com/bio-phys/asyncmd
 [Github issue]: https://github.com/bio-phys/asyncmd/issues
 [Github pr]: https://github.com/bio-phys/asyncmd/pulls
+[pylint]: https://pylint.readthedocs.io/en/latest/index.html
+[pytest]: https://docs.pytest.org/en/latest/
+[pytest-cov]: https://pypi.org/project/pytest-cov/
