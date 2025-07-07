@@ -12,9 +12,14 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+This module contains various classes used for trajectory extraction and concatenation.
+
+Most notably the FrameExtractor classes and the TrajectoryConcatenator.
+"""
 import os
 import abc
-import typing
+import collections.abc
 import asyncio
 import logging
 import functools
@@ -48,8 +53,8 @@ def _is_documented_by(original):
 
 def _attach_mda_trafos_to_universe(
         universe: mda.Universe,
-        mda_transformations: typing.Optional[list[typing.Callable]] = None,
-        mda_transformations_setup_func: typing.Optional[typing.Callable] = None,
+        mda_transformations: list[collections.abc.Callable] | None = None,
+        mda_transformations_setup_func: collections.abc.Callable | None = None,
                                   ) -> mda.Universe:
     """
     Attach MDAnalysis transformations to a given universe.
@@ -64,10 +69,10 @@ def _attach_mda_trafos_to_universe(
     ----------
     universe : MDAnalysis.core.universe.Universe
         The universe to attach the transformations to.
-    mda_transformations : typing.Optional[list[typing.Callable]], optional
+    mda_transformations : list[collections.abc.Callable] or None, optional
         List of MDAnalysis transformations to attach, by default None
-    mda_transformations_setup_func : typing.Optional[typing.Callable], optional
-        Setup function to attach MDAnalysis transformatiosn to the universe,
+    mda_transformations_setup_func : collections.abc.Callable or None, optional
+        Setup function to attach MDAnalysis transformations to the universe,
         by default None
 
     Returns
@@ -78,7 +83,7 @@ def _attach_mda_trafos_to_universe(
     Raises
     ------
     ValueError
-        If both ``mda_transformations`` and ``mda_transformations_setupt_func``
+        If both ``mda_transformations`` and ``mda_transformations_setup_func``
         are given.
     """
     # NOTE: this func is used to attach the MDAnalysis transformations to
@@ -120,8 +125,8 @@ class TrajectoryConcatenator:
 
     def __init__(self,
         invert_v_for_negative_step: bool = True,
-        mda_transformations: typing.Optional[list[typing.Callable]] = None,
-        mda_transformations_setup_func: typing.Optional[typing.Callable] = None,
+        mda_transformations: list[collections.abc.Callable] | None = None,
+        mda_transformations_setup_func: collections.abc.Callable | None = None,
                  ) -> None:
         """
         Initialize a :class:`TrajectoryConcatenator`.
@@ -163,7 +168,7 @@ class TrajectoryConcatenator:
         self.mda_transformations_setup_func = mda_transformations_setup_func
 
     def concatenate(self, trajs: "list[Trajectory]", slices: "list[tuple]",
-                    tra_out: str, struct_out: typing.Optional[str] = None,
+                    tra_out: str, struct_out: str | None = None,
                     overwrite: bool = False,
                     remove_double_frames: bool = True) -> Trajectory:
         """
@@ -186,7 +191,7 @@ class TrajectoryConcatenator:
             Whether we should overwrite existing output trajectories,
             by default False.
         remove_double_frames : bool, optional
-            Wheter we should try to remove double frames from the concatenated
+            Whether we should try to remove double frames from the concatenated
             output trajectory.
             Note that we use a simple heuristic to determine double frames,
             we just check if the integration time is the same for both frames,
@@ -224,11 +229,15 @@ class TrajectoryConcatenator:
             mda_transformations_setup_func=self.mda_transformations_setup_func,
             )
         start0, stop0, step0 = slices[0]
-        if remove_double_frames:
-            last_time_seen = None
+        last_time_seen = None
         # if the file exists MDAnalysis will silently overwrite
         with mda.Writer(tra_out, n_atoms=u0.trajectory.n_atoms) as W:
             for ts in u0.trajectory[start0:stop0:step0]:
+                if remove_double_frames and (last_time_seen is not None):
+                    if last_time_seen == ts.data["time"]:
+                        # this is a no-op, as they are they same...
+                        # last_time_seen = ts.data["time"]
+                        continue  # skip this timestep/go to next iteration
                 if (self.invert_v_for_negative_step and step0 < 0
                         and ts.has_velocities):
                     u0.atoms.velocities *= -1
@@ -250,9 +259,7 @@ class TrajectoryConcatenator:
                 for ts in u.trajectory[start:stop:step]:
                     if remove_double_frames and (last_time_seen is not None):
                         if last_time_seen == ts.data["time"]:
-                            # this is a no-op, as they are they same...
-                            # last_time_seen = ts.data["time"]
-                            continue  # skip this timestep/go to next iteration
+                            continue
                     if (self.invert_v_for_negative_step and step < 0
                             and ts.has_velocities):
                         u.atoms.velocities *= -1
@@ -269,7 +276,7 @@ class TrajectoryConcatenator:
     # pylint: disable-next=missing-function-docstring
     async def concatenate_async(self, trajs: "list[Trajectory]",
                                 slices: "list[tuple]", tra_out: str,
-                                struct_out: typing.Optional[str] = None,
+                                struct_out: str | None = None,
                                 overwrite: bool = False,
                                 remove_double_frames: bool = True) -> Trajectory:
         concat_fx = functools.partial(self.concatenate,
@@ -304,8 +311,8 @@ class FrameExtractor(abc.ABC):
 
     def __init__(
         self,
-        mda_transformations: typing.Optional[list[typing.Callable]] = None,
-        mda_transformations_setup_func: typing.Optional[typing.Callable] = None,
+        mda_transformations: list[collections.abc.Callable] | None = None,
+        mda_transformations_setup_func: collections.abc.Callable | None = None,
                  ) -> None:
         """
         Initialize a :class:`FrameExtractor`.
@@ -508,8 +515,8 @@ class RandomVelocitiesFrameExtractor(FrameExtractor):
     def __init__(
         self,
         T: float,
-        mda_transformations: typing.Optional[list[typing.Callable]] = None,
-        mda_transformations_setup_func: typing.Optional[typing.Callable] = None,
+        mda_transformations: list[collections.abc.Callable] | None = None,
+        mda_transformations_setup_func: collections.abc.Callable | None = None,
         ) -> None:
         """
         Initialize a :class:`RandomVelocitiesFrameExtractor`.
