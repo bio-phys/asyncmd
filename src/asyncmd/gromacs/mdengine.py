@@ -12,6 +12,12 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+This module contains the implementation of the gromacs engine classes.
+
+The two classes GmxEngine and SlurmGmxEngine share most of their methods, the
+slurm-enabled superclass only overrides a few methods to submit gmx mdrun via slurm.
+"""
 import os
 import copy
 import shlex
@@ -212,7 +218,7 @@ class GmxEngine(MDEngine):
         # output_traj_type is actually written with current mdp-settings
         self.mdp = mdconfig
         # initialize internal state variables
-        self._workdir = None
+        self._workdir = "."
         self._prepared = False
         # NOTE: frames_done and steps_done do not have an easy relation!
         #       See the steps_done property docstring for more!
@@ -488,9 +494,6 @@ class GmxEngine(MDEngine):
 
     async def _0step_md(self, conf_in, conf_out_name, wdir,
                         constraints: bool, generate_velocities: bool):
-        if (self.workdir is not None) and (wdir == "."):
-            # use own working directory if know/set
-            wdir = self.workdir
         if not os.path.isabs(conf_out_name):
             # assume conf_out is to be meant relative to wdir if not an abspath
             conf_out_name = os.path.join(wdir, conf_out_name)
@@ -930,34 +933,28 @@ class GmxEngine(MDEngine):
     def _grompp_cmd(self, mdp_in, tpr_out, workdir, trr_in=None, mdp_out=None):
         # all args are expected to be file paths
         # make sure we use the right ones, i.e. relative to workdir
-        if workdir is not None:
-            mdp_in = os.path.relpath(mdp_in, start=workdir)
-            tpr_out = os.path.relpath(tpr_out, start=workdir)
-            gro_file = os.path.relpath(self.gro_file, start=workdir)
-            top_file = os.path.relpath(self.top_file, start=workdir)
+        mdp_in = os.path.relpath(mdp_in, start=workdir)
+        tpr_out = os.path.relpath(tpr_out, start=workdir)
+        gro_file = os.path.relpath(self.gro_file, start=workdir)
+        top_file = os.path.relpath(self.top_file, start=workdir)
         cmd = f"{self.grompp_executable} -f {mdp_in} -c {gro_file}"
         cmd += f" -p {top_file}"
         if self.ndx_file is not None:
-            if workdir is not None:
-                ndx_file = os.path.relpath(self.ndx_file, start=workdir)
-            else:
-                ndx_file = self.ndx_file
+            ndx_file = os.path.relpath(self.ndx_file, start=workdir)
             cmd += f" -n {ndx_file}"
         if trr_in is not None:
             # input trr is optional
             # TODO/FIXME?!
             # TODO/NOTE: currently we do not pass '-time', i.e. we just use the
             #            gmx default frame selection: last frame from trr
-            if workdir is not None:
-                trr_in = os.path.relpath(trr_in, start=workdir)
+            trr_in = os.path.relpath(trr_in, start=workdir)
             cmd += f" -t {trr_in}"
         if mdp_out is None:
             # find out the name and dir of the tpr to put the mdp next to it
             head, tail = os.path.split(tpr_out)
             name = tail.split(".")[0]
             mdp_out = os.path.join(head, name + ".mdout.mdp")
-        if workdir is not None:
-            mdp_out = os.path.relpath(mdp_out, start=workdir)
+        mdp_out = os.path.relpath(mdp_out, start=workdir)
         cmd += f" -o {tpr_out} -po {mdp_out}"
         if self.grompp_extra_args != "":
             # add extra args string if it is not empty
@@ -967,8 +964,7 @@ class GmxEngine(MDEngine):
     def _mdrun_cmd(self, tpr, workdir, deffnm=None, maxh=None, nsteps=None):
         # use "-noappend" to avoid appending to the trajectories when starting
         # from checkpoints, instead let gmx create new files with .partXXXX suffix
-        if workdir is not None:
-            tpr = os.path.relpath(tpr, start=workdir)
+        tpr = os.path.relpath(tpr, start=workdir)
         if deffnm is None:
             # find out the name of the tpr and use that as deffnm
             head, tail = os.path.split(tpr)

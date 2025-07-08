@@ -12,6 +12,12 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+This module contains the implementation the asyncmd.Trajectory class.
+
+It also contains some helper function related to the global Trajectory registry
+used for trajectory function value caching.
+"""
 import io
 import os
 import copy
@@ -932,6 +938,8 @@ class TrajectoryFunctionValueCacheNPZ(collections.abc.Mapping):
         existing_npz_matches = False
         with np.load(self.fname_npz, allow_pickle=False) as npzfile:
             try:
+                # it is an array with 1 element, but pylint does not know that
+                # pylint: disable-next=unsubscriptable-object
                 saved_hash_traj = npzfile[self._hash_traj_npz_key][0]
             except KeyError:
                 # we probably tripped over an old formatted npz

@@ -12,6 +12,15 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+This module contains classes for propagation of MD in segments and/or until a condition is reached.
+
+Most notable are the InPartsTrajectoryPropagator and the ConditionalTrajectoryPropagator.
+Also of interest especially in the context of path sampling could be the function
+construct_TP_from_plus_and_minus_traj_segments, which can be used directly on the
+output of a ConditionalTrajectoryPropagator to generate trajectories connecting two
+fulfilled conditions.
+"""
 import os
 import asyncio
 import aiofiles
