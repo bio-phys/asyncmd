@@ -12,6 +12,14 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+This file implements commonly used utility functions related to MD usage with asyncmd.
+
+This includes various functions to get all trajectory (or other files) related
+to a given engine, naming scheme, and/or file-ending.
+It also includes various functions to retrieve or ensure important parameters from
+MDConfig/MDEngine combinations, such as nstout_from_mdconfig and ensure_mdconfig_options.
+"""
 from .mdengine import MDEngine
 from .mdconfig import MDConfig
 from .trajectory.trajectory import Trajectory
@@ -67,7 +75,7 @@ async def get_all_file_parts(folder: str, deffnm: str, file_ending: str,
     deffnm : str
         deffnm (prefix of filenames) used in the simulation.
     file_ending : str
-        File ending of the requested filetype (with or without preceeding ".").
+        File ending of the requested filetype (with or without preceding ".").
 
     Returns
     -------

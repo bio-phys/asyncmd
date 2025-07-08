@@ -14,22 +14,7 @@
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import os
 import subprocess
-
-
-def _get_version_from_pyproject():
-    """Get version string from pyproject.toml file."""
-    pyproject_toml = os.path.join(os.path.dirname(__file__),
-                                  "../../pyproject.toml")
-    with open(pyproject_toml) as f:
-        line = f.readline()
-        while line:
-            if line.startswith("version ="):
-                version_line = line
-                break
-            line = f.readline()
-    version = version_line.strip().split(" = ")[1]
-    version = version.replace('"', '').replace("'", "")
-    return version
+import importlib.metadata
 
 
 def _get_git_hash_and_tag():
@@ -57,19 +42,13 @@ def _get_git_hash_and_tag():
             git_tag = git_describe[1:]  # strip of the 'v'
     return git_hash, git_date, git_tag
 
-try:
-    _version = _get_version_from_pyproject()
-except FileNotFoundError:
-    # pyproject.toml not found
-    import importlib.metadata
-    __version__ = importlib.metadata.version("asyncmd")
-    __git_hash__ = ""
+
+_version = importlib.metadata.version("asyncmd")
+_git_hash, _git_date, _git_tag = _get_git_hash_and_tag()
+__git_hash__ = _git_hash
+if _version == _git_tag or _git_hash == "":
+    # dont append git_hash to version, if it is a version-tagged commit or if
+    # git_hash is empty (happens if git is installed but we are not in a repo)
+    __version__ = _version
 else:
-    _git_hash, _git_date, _git_tag = _get_git_hash_and_tag()
-    __git_hash__ = _git_hash
-    if _version == _git_tag or _git_hash == "":
-        # dont append git_hash to version, if it is a version-tagged commit or if
-        # git_hash is empty (happens if git is installed but we are not in a repo)
-        __version__ = _version
-    else:
-        __version__ = _version + f"+git{_git_date}.{_git_hash[:7]}"
+    __version__ = _version + f"+git{_git_date}.{_git_hash[:7]}"

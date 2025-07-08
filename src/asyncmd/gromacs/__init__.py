@@ -12,5 +12,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+This module exports all user-facing classes and functions for running gromacs.
+"""
 from .mdconfig import MDP
 from .mdengine import GmxEngine, SlurmGmxEngine

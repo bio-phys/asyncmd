@@ -12,6 +12,21 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+This file contains functions and classes (re)used internally in asyncmd.
+
+These functions and classes are not (thought to be) exposed to the users but
+instead intended to be (re)used in newly added asyncmd code.
+This is also not the place for MD-related utility functions, for this see utils.py
+
+Currently in here are:
+
+- ensure_executable_available
+- remove_file_if_exist and remove_file_if_exist_async
+- FlagChangeList (and its typed sibling): lists with some sugar to remember if
+  their content has changed
+
+"""
 import collections
 import os
 import shutil

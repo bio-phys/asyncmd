@@ -12,6 +12,9 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+This file contains the MDP class to parse, modify, and write gromacs mdp files.
+"""
 import shlex
 import logging
 from ..mdconfig import LineBasedMDConfig

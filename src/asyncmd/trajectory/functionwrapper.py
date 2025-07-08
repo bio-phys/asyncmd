@@ -12,6 +12,12 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+This module contains the Implementation of all TrajectoryFunctionWrapper classes.
+
+It contains the abstract base class TrajectoryFunctionWrapper,
+and the functional classes PyTrajectoryFunctionWrapper and SlurmTrajectoryFunctionWrapper.
+"""
 import os
 import abc
 import shlex

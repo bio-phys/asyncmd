@@ -133,7 +133,7 @@ async def mock_slurm_call_completed(*args, **kwargs):
     return MockSlurmExecCompleted()
 
 
-@patch("asyncio.subprocess.create_subprocess_exec", new=mock_slurm_call_completed)
+@patch("asyncio.create_subprocess_exec", new=mock_slurm_call_completed)
 @patch("os.path.abspath", return_value="/usr/bin/true")
 @patch("time.time", return_value=7)
 @pytest.mark.asyncio
@@ -164,7 +164,7 @@ async def mock_slurm_call_failed(*args, **kwargs):
     return MockSlurmExecFailed()
 
 
-@patch("asyncio.subprocess.create_subprocess_exec", new=mock_slurm_call_failed)
+@patch("asyncio.create_subprocess_exec", new=mock_slurm_call_failed)
 @patch("os.path.abspath", return_value="/usr/bin/true")
 @patch("time.time", return_value=7)
 @pytest.mark.asyncio
@@ -216,9 +216,7 @@ class MockSubprocess:
 @patch("os.path.abspath", return_value="/usr/bin/true")
 @patch("asyncmd.slurm.logger")
 @patch("subprocess.check_output", return_value="node1\nnode2\n")
-@patch("asyncio.create_subprocess_exec", return_value=MockSubprocess())
 def test_terminate(
-    mock_create_subprocess_exec,
     mock_check_output,
     mock_logger,
     mock_isfile,
@@ -226,7 +224,7 @@ def test_terminate(
     mock_slurm_cluster_mediator,
 ):
     slurm_process = SlurmProcess(jobname="test", sbatch_script="/usr/bin/true")
-    slurm_process._jobid = ["15283217"]
+    slurm_process._jobid = "15283217"
 
     slurm_process.terminate()
 

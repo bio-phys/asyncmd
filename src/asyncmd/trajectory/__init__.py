@@ -12,6 +12,24 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+This module contains classes and functions for engine-agnostic but trajectory-related operations.
+
+All user-facing classes and functions are reexported here for convenience.
+This includes:
+
+- the TrajectoryFunctionWrapper classes for CV value calculation and caching,
+- the Conditional/InParts TrajectoryPropagator classes for propagation of MD in
+  parts and/or until a condition is reached (and related functions),
+- and classes for extracting and concatenating trajectories (FrameExtractors
+  and TrajectoryConcatenator)
+
+"""
+from .convert import (NoModificationFrameExtractor,
+                      InvertedVelocitiesFrameExtractor,
+                      RandomVelocitiesFrameExtractor,
+                      TrajectoryConcatenator,
+                      )
 from .functionwrapper import (PyTrajectoryFunctionWrapper,
                               SlurmTrajectoryFunctionWrapper,
                               )

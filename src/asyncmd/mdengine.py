@@ -12,6 +12,11 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+This module contains the abstract base class defining the interface for all MDEngines.
+
+It also defines the commonly used exceptions for MDEngines.
+"""
 import abc
 from .trajectory.trajectory import Trajectory
 

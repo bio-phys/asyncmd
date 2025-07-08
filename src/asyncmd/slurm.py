@@ -12,6 +12,18 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+This module contains the implementation of the classes to interact with Slurm.
+
+The SlurmClusterMediator is a singleton class (handling all sacct calls in a
+coordinated fashion) for all SlurmProcess instances.
+The SlurmProcess is a drop-in replacement for asyncio.subprocess.Subprocess and
+in this spirit this module also contains the function create_slurmprocess_submit,
+which similarly to asyncio.create_subprocess_exec, creates a SlurmProcess and
+directly submits the job.
+Finally this module contains two functions to set the configuration of this module,
+set_all_slurm_settings and set_slurm_settings.
+"""
 import asyncio
 import collections
 import logging
@@ -330,12 +342,12 @@ class SlurmClusterMediator:
         # (note that one semaphore counts for 3 files!)
         await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
         try:
-            sacct_proc = await asyncio.subprocess.create_subprocess_exec(
+            sacct_proc = await asyncio.create_subprocess_exec(
                                                 *shlex.split(sacct_cmd),
                                                 stdout=asyncio.subprocess.PIPE,
                                                 stderr=asyncio.subprocess.PIPE,
                                                 close_fds=True,
-                                                                          )
+                                                              )
             stdout, stderr = await sacct_proc.communicate()
             sacct_return = stdout.decode()
         except asyncio.CancelledError as e:
@@ -890,13 +902,13 @@ class SlurmProcess:
         # Note: one semaphore counts for 3 open files!
         await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
         try:
-            sbatch_proc = await asyncio.subprocess.create_subprocess_exec(
+            sbatch_proc = await asyncio.create_subprocess_exec(
                                                 *shlex.split(sbatch_cmd),
                                                 stdout=asyncio.subprocess.PIPE,
                                                 stderr=asyncio.subprocess.PIPE,
                                                 cwd=self.workdir,
                                                 close_fds=True,
-                                                                          )
+                                                               )
             stdout, stderr = await sbatch_proc.communicate()
             sbatch_return = stdout.decode()
         except asyncio.CancelledError as e:

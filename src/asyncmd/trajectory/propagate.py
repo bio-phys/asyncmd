@@ -12,18 +12,28 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+This module contains classes for propagation of MD in segments and/or until a condition is reached.
+
+Most notable are the InPartsTrajectoryPropagator and the ConditionalTrajectoryPropagator.
+Also of interest especially in the context of path sampling could be the function
+construct_TP_from_plus_and_minus_traj_segments, which can be used directly on the
+output of a ConditionalTrajectoryPropagator to generate trajectories connecting two
+fulfilled conditions.
+"""
 import os
 import asyncio
 import aiofiles
 import aiofiles.os
+import collections.abc
 import inspect
 import logging
-import typing
 import numpy as np
 
 from .trajectory import Trajectory
 from .functionwrapper import TrajectoryFunctionWrapper
 from .convert import TrajectoryConcatenator
+from ..mdengine import MDEngine
 from ..utils import (get_all_traj_parts,
                      get_all_file_parts,
                      nstout_from_mdconfig,
@@ -53,11 +63,11 @@ async def construct_TP_from_plus_and_minus_traj_segments(
                                 plus_state: int,
                                 state_funcs: "list[TrajectoryFunctionWrapper]",
                                 tra_out: str,
-                                struct_out: typing.Optional[str] = None,
+                                struct_out: str | None = None,
                                 overwrite: bool = False
                                                          ) -> Trajectory:
     """
-    Construct a continous TP from plus and minus segments until states.
+    Construct a continuous TP from plus and minus segments until states.
 
     This is used e.g. in TwoWay TPS or if you try to get TPs out of a committor
     simulation. Note, that this inverts all velocities on the minus segments.
@@ -179,6 +189,13 @@ class _TrajectoryPropagator:
     # (private) superclass for InPartsTrajectoryPropagator and
     # ConditionalTrajectoryPropagator,
     # here we keep the common functions shared between them
+    def __init__(self, engine_cls: type[MDEngine], engine_kwargs: dict,
+                 walltime_per_part: float,
+                 ) -> None:
+        self.engine_cls = engine_cls
+        self.engine_kwargs = engine_kwargs
+        self.walltime_per_part = walltime_per_part
+
     async def remove_parts(self, workdir: str, deffnm: str,
                            file_endings_to_remove: list[str] = ["trajectories",
                                                                 "log"],
@@ -189,7 +206,7 @@ class _TrajectoryPropagator:
         Remove all `$deffnm.part$num.$file_ending` files for file_endings.
 
         Can be useful to clean the `workdir` from temporary files if e.g. only
-        the concatenate trajectory is of interesst (like in TPS).
+        the concatenate trajectory is of interest (like in TPS).
 
         Parameters
         ----------
@@ -287,7 +304,7 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
     Useful to make full use of backfilling with short(ish) simulation jobs and
     also to run simulations that are longer than the timelimit.
     """
-    def __init__(self, n_steps: int, engine_cls,
+    def __init__(self, n_steps: int, engine_cls: type[MDEngine],
                  engine_kwargs: dict, walltime_per_part: float,
                  ) -> None:
         """
@@ -304,10 +321,9 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
         walltime_per_part : float
             Walltime per trajectory segment, in hours.
         """
+        super().__init__(engine_cls=engine_cls, engine_kwargs=engine_kwargs,
+                         walltime_per_part=walltime_per_part)
         self.n_steps = n_steps
-        self.engine_cls = engine_cls
-        self.engine_kwargs = engine_kwargs
-        self.walltime_per_part = walltime_per_part
 
     async def propagate_and_concatenate(self,
                                         starting_configuration: Trajectory,
@@ -365,7 +381,7 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
         """
         Propagate the trajectory until self.n_steps integration are done.
 
-        Return a list of trajecory segments and the first condition fullfilled.
+        Return a list of trajectory segments and the first condition fulfilled.
 
         Parameters
         ----------
@@ -435,7 +451,7 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
         """
         Cut and concatenate the trajectory until it has length n_steps.
 
-        Take a list of trajectory segments and form one continous trajectory
+        Take a list of trajectory segments and form one continuous trajectory
         containing n_steps integration steps. The expected input
         is a list of trajectories, e.g. the output of the :meth:`propagate`
         method.
@@ -514,38 +530,38 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
 
 class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
     """
-    Propagate a trajectory until any of the given conditions is fullfilled.
+    Propagate a trajectory until any of the given conditions is fulfilled.
 
     This class propagates the trajectory using a given MD engine (class) in
     small chunks (chunksize is determined by walltime_per_part) and checks
-    after every chunk is done if any condition has been fullfilled.
+    after every chunk is done if any condition has been fulfilled.
     It then returns a list of trajectory parts and the index of the condition
-    first fullfilled. It can also concatenate the parts into one trajectory,
+    first fulfilled. It can also concatenate the parts into one trajectory,
     which then starts with the starting configuration and ends with the frame
-    fullfilling the condition.
+    fulfilling the condition.
 
     Notes
     -----
     We assume that every condition function returns a list/ a 1d array with
-    True or False for each frame, i.e. if we fullfill condition at any given
+    True or False for each frame, i.e. if we fulfill condition at any given
     frame.
-    We assume non-overlapping conditions, i.e. a configuration can not fullfill
+    We assume non-overlapping conditions, i.e. a configuration can not fulfill
     two conditions at the same time, **it is the users responsibility to ensure
     that their conditions are sane**.
     """
 
     # NOTE: we assume that every condition function returns a list/ a 1d array
-    #       with True/False for each frame, i.e. if we fullfill condition at
+    #       with True/False for each frame, i.e. if we fulfill condition at
     #       any given frame
     # NOTE: we assume non-overlapping conditions, i.e. a configuration can not
-    #       fullfill two conditions at the same time, it is the users
+    #       fulfill two conditions at the same time, it is the users
     #       responsibility to ensure that their conditions are sane
 
     def __init__(self, conditions, engine_cls,
                  engine_kwargs: dict,
                  walltime_per_part: float,
-                 max_steps: typing.Optional[int] = None,
-                 max_frames: typing.Optional[int] = None,
+                 max_steps: int | None = None,
+                 max_frames: int | None = None,
                  ):
         """
         Initialize a `ConditionalTrajectoryPropagator`.
@@ -554,7 +570,7 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
         ----------
         conditions : list[callable], usually list[TrajectoryFunctionWrapper]
             List of condition functions, usually wrapped function for
-            asyncronous application, but can be any callable that takes a
+            asynchronous application, but can be any callable that takes a
             :class:`asyncmd.Trajectory` and returns an array of True and False
             values (one value per frame).
         engine_cls : :class:`asyncmd.mdengine.MDEngine`
@@ -566,7 +582,7 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
         max_steps : int, optional
             Maximum number of integration steps to do before stopping the
             simulation because it did not commit to any condition,
-            by default None. Takes precendence over max_frames if both given.
+            by default None. Takes precedence over max_frames if both given.
         max_frames : int, optional
             Maximum number of frames to produce before stopping the simulation
             because it did not commit to any condition, by default None.
@@ -577,12 +593,11 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
         ``max_steps = max_frames * output_frequency``, if both are given
         max_steps takes precedence.
         """
+        super().__init__(engine_cls=engine_cls, engine_kwargs=engine_kwargs,
+                         walltime_per_part=walltime_per_part)
         self._conditions = FlagChangeList([])
         self._condition_func_is_coroutine: list[bool] = []
         self.conditions = conditions
-        self.engine_cls = engine_cls
-        self.engine_kwargs = engine_kwargs
-        self.walltime_per_part = walltime_per_part
         # find nstout
         try:
             traj_type = engine_kwargs["output_traj_type"]
@@ -611,7 +626,7 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
         return self._conditions
 
     @conditions.setter
-    def conditions(self, conditions: typing.Sequence):
+    def conditions(self, conditions: collections.abc.Sequence):
         if len(conditions) < 1:
             raise ValueError("Must supply at least one termination condition.")
         self._condition_func_is_coroutine = self._check_condition_funcs(
@@ -755,6 +770,8 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
 
         # starting configuration does not fullfill any condition, lets do MD
         engine = self.engine_cls(**self.engine_kwargs)
+        # Note: we first check for continuation because if we do not find a run
+        # to continue we fallback to no continuation
         if continuation:
             # continuation: get all traj parts already done and continue from
             # there, i.e. append to the last traj part found
@@ -763,8 +780,14 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
             trajs = await get_all_traj_parts(folder=workdir, deffnm=deffnm,
                                              engine=engine,
                                              )
-            if len(trajs) > 0:
-                # can only calc CV values if we have trajectories prouced
+            if not trajs:
+                # no trajectories, so we should prepare engine from scratch
+                continuation = False
+                logger.error("continuation=True, but we found no previous "
+                             "trajectories. Setting continuation=False and "
+                             "preparing the engine from scratch.")
+            else:
+                # (can only) calc CV values if we have found trajectories
                 cond_vals = await asyncio.gather(
                             *(self._condition_vals_for_traj(t) for t in trajs)
                                                  )
@@ -782,13 +805,7 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
                 # Did not fullfill any condition yet, so prepare the engine to
                 # continue the simulation until we reach any of the (new) conds
                 await engine.prepare_from_files(workdir=workdir, deffnm=deffnm)
-                step_counter = engine.steps_done
-            else:
-                # no trajectories, so we should prepare engine from scratch
-                continuation = False
-                logger.error("continuation=True, but we found no previous "
-                             "trajectories. Setting continuation=False and "
-                             "preparing the engine from scratch.")
+
         if not continuation:
             # no continuation, just prepare the engine from scratch
             await engine.prepare(
@@ -796,10 +813,10 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
                         workdir=workdir,
                         deffnm=deffnm,
                                 )
-            any_cond_fullfilled = False
             trajs = []
-            step_counter = 0
 
+        step_counter = engine.steps_done
+        any_cond_fullfilled = False
         while ((not any_cond_fullfilled)
                 and (step_counter <= self.max_steps)):
             traj = await engine.run_walltime(self.walltime_per_part)
