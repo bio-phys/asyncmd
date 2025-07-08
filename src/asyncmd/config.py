@@ -12,6 +12,12 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+This module contains the implementation of functions configuring asyncmd behavior.
+
+It also import the configuration functions for submodules (like slurm) to make
+them accessible to users in one central place.
+"""
 import os
 import asyncio
 import logging
@@ -20,6 +26,7 @@ import typing
 
 
 from ._config import _GLOBALS, _SEMAPHORES
+# pylint: disable-next=unused-import
 from .slurm import set_slurm_settings, set_all_slurm_settings
 # TODO: Do we want to set the _GLOBALS defaults here? E.g. CACHE_TYPE="npz"?
 
@@ -46,11 +53,12 @@ def set_max_process(num=None, max_num=None):
     """
     # NOTE: I think we should use a conservative default, e.g. 0.25*cpu_count()
     # TODO: limit to 30-40?, i.e never higher even if we have 1111 cores?
+    # pylint: disable-next=global-variable-not-assigned
     global _SEMAPHORES
     if num is None:
         logical_cpu_count = os.cpu_count()
         if logical_cpu_count is not None:
-            num = int(logical_cpu_count / 4)
+            num = max(1, int(logical_cpu_count / 4))
         else:
             # fallback if os.cpu_count() can not determine the number of cpus
             # play it save and not have more than 2?
@@ -86,10 +94,11 @@ def set_max_files_open(num: typing.Optional[int] = None, margin: int = 30):
     """
     # ensure that we do not open too many files
     # resource.getrlimit returns a tuple (soft, hard); we take the soft-limit
-    # and to be sure 30 less (the reason beeing that we can not use the
+    # and to be sure 30 less (the reason being that we can not use the
     # semaphores from non-async code, but sometimes use the sync subprocess.run
     # and subprocess.check_call [which also need files/pipes to work])
     # also maybe we need other open files like a storage :)
+    # pylint: disable-next=global-variable-not-assigned
     global _SEMAPHORES
     rlim_soft = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
     if num is None:
@@ -125,7 +134,7 @@ set_max_files_open()
 # SLURM semaphore stuff:
 # TODO: move this to slurm.py? and initialize only if slurm is available?
 # slurm max job semaphore, if the user sets it it will be used,
-# otherwise we can use an unlimited number of syncronous slurm-jobs
+# otherwise we can use an unlimited number of synchronous slurm-jobs
 # (if the simulation requires that much)
 # TODO: document that somewhere, bc usually clusters have a job number limit?!
 def set_slurm_max_jobs(num: typing.Union[int, None]):
@@ -138,6 +147,7 @@ def set_slurm_max_jobs(num: typing.Union[int, None]):
         The maximum number of simultaneous SLURM jobs for this invocation of
         python/asyncmd. `None` means do not limit the maximum number of jobs.
     """
+    # pylint: disable-next=global-variable-not-assigned
     global _SEMAPHORES
     if num is None:
         _SEMAPHORES["SLURM_MAX_JOB"] = None
@@ -166,6 +176,7 @@ def set_default_trajectory_cache_type(cache_type: str):
     ValueError
         Raised if ``cache_type`` is not one of the allowed values.
     """
+    # pylint: disable-next=global-variable-not-assigned
     global _GLOBALS
     allowed_values = ["h5py", "npz", "memory"]
     cache_type = cache_type.lower()
@@ -187,7 +198,8 @@ def register_h5py_cache(h5py_group, make_default: bool = False):
     the root of its own stored values.
     E.g. you will have ``h5py_group["asyncmd/TrajectoryFunctionValueCache"]``
     always pointing to the cached trajectory values and if ``h5py_group`` is
-    the top-level group (i.e. the file) you also have ``(file["/asyncmd/TrajectoryFunctionValueCache"] == h5py_group["asyncmd/TrajectoryFunctionValueCache"])``.
+    the top-level group (i.e. the file) you also have
+    ``(file["/asyncmd/TrajectoryFunctionValueCache"] == h5py_group["asyncmd/TrajectoryFunctionValueCache"])``.
 
     Parameters
     ----------
@@ -197,6 +209,7 @@ def register_h5py_cache(h5py_group, make_default: bool = False):
         Whether we should also make "h5py" the default trajectory function
         cache type. By default False.
     """
+    # pylint: disable-next=global-variable-not-assigned
     global _GLOBALS
     if make_default:
         set_default_trajectory_cache_type(cache_type="h5py")

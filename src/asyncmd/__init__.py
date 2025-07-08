@@ -12,6 +12,13 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+The asyncmd toplevel module.
+
+It imports the central Trajectory objects and the config(uration) functions for
+user convenience.
+It also makes public some information on the asyncmd version/git_hash.
+"""
 from ._version import __version__, __git_hash__
 
 from . import config

@@ -61,7 +61,7 @@ where = ["src"]
 fail-on = ["E"]
 
 # Specify a score threshold under which the program will exit with error.
-fail-under = 8.2
+fail-under = 8.6
 
 # List of plugins (as comma separated values of python module names) to load,
 # usually to register additional checkers.
@@ -73,6 +73,7 @@ load-plugins = ["pylint.extensions.bad_builtin",
                 "pylint.extensions.consider_refactoring_into_while_condition",
                 "pylint.extensions.dict_init_mutate",
                 "pylint.extensions.docparams",
+                "pylint.extensions.eq_without_hash",
                 "pylint.extensions.for_any_all",
                 "pylint.extensions.overlapping_exceptions",
                 "pylint.extensions.redefined_loop_name",

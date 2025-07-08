@@ -12,6 +12,14 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+This module contains abstract base classes to use for MD config file parsing.
+
+It contains the MDConfig class, which only serves to define the interface and
+the LineBasedMDConfig class, which implements useful methods to parse MD configuration
+files in which options never span over multiple lines, i.e. in which every line
+contains only one (or multiple) options.
+"""
 import os
 import abc
 import shutil
@@ -39,13 +47,16 @@ class MDConfig(collections.abc.MutableMapping):
 
 
 class LineBasedMDConfig(MDConfig):
-    # abstract base class for line based parsing and writing,
-    # subclasses must implement `_parse_line()` method and should set the
-    # appropriate separator characters for their line format
-    # We assume that every line/option can be parsed and written on its own!
-    # We assume the order of the options in the written file is not relevant!
-    # We represent every line/option with a key (str), list of values pair
-    # values can have a specific type (e.g. int or float) or default to str.
+    """
+    Abstract base class for line based parsing and writing.
+
+    Subclasses must implement `_parse_line()` method and should set the
+    appropriate separator characters for their line format.
+    We assume that every line/option can be parsed and written on its own!
+    We assume the order of the options in the written file is not relevant!
+    We represent every line/option with a key (str), list of values pair.
+    Values can have a specific type (e.g. int or float) or default to str.
+    """
     # NOTE: Initially written for gmx, but we already had e.g. namd in mind and
     # tried to make this as general as possible
 
