@@ -12,6 +12,11 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+This file implements gromacs-specific variants of the utility functions related to MD usage.
+
+The general variants of these functions can be found in asyncmd.utils.
+"""
 import os
 import logging
 import aiofiles.os
