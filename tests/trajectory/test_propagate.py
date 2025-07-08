@@ -26,6 +26,7 @@ from asyncmd.trajectory import (PyTrajectoryFunctionWrapper,
                                 InPartsTrajectoryPropagator,
                                 ConditionalTrajectoryPropagator,
                                 )
+from asyncmd.trajectory.propagate import MaxStepsReachedError
 
 # marker for tests that need gromacs installed
 from conftest import needs_gmx_install
@@ -505,6 +506,8 @@ class Test_ConditionalPropagator:
     @needs_gmx_install
     @pytest.mark.asyncio
     async def test_run_continue_with_gromacs(self, tmp_path):
+        # test for simple run and then continue from there (where we dont do md
+        # but just return the previous trajs)
         conditions = [self.ala_cond_func_alphaR, self.ala_cond_func_C7eq]
         propa = ConditionalTrajectoryPropagator(
                         conditions=conditions,
@@ -539,3 +542,50 @@ class Test_ConditionalPropagator:
         cond_vals = await conditions[state_reached](traj2)
         assert cond_vals[-1]
         assert not any(cond_vals[:-1])
+
+    @pytest.mark.slow
+    @needs_gmx_install
+    @pytest.mark.asyncio
+    async def test_run_continue_logging_and_raise_with_gromacs(self,
+                                                               tmp_path,
+                                                               caplog,
+                                                               ):
+        # test for run with "wrong" continue=True (i.e. when no trajs are found)
+        # -> we should just do a propagation but log an error
+        # then do a continuation where we actually do an MD because the conditions
+        # changed, however dont finish this MD but raise MaxStepsError very early
+        # (to not waste CPU-time and to test the error raising)
+        conditions = [self.ala_cond_func_alphaR, self.ala_cond_func_C7eq]
+        propa = ConditionalTrajectoryPropagator(
+                        conditions=conditions,
+                        engine_cls=asyncgmx.GmxEngine,
+                        engine_kwargs={"mdconfig": self.xtc_mdp,
+                                       "gro_file": self.ala_gro,
+                                       "top_file": self.ala_top,
+                                       },
+                        walltime_per_part=1 / (60 * 60 * 100),  # 0.01 s
+                                                )
+        with caplog.at_level(logging.ERROR):
+            trajs, state_reached = await propa.propagate(
+                                    starting_configuration=self.ala_conf_in_no_state,
+                                    workdir=tmp_path,
+                                    deffnm="test",
+                                    continuation=True,
+                                                         )
+        # make sure we logged that there were no trajs found and we do a "normal" run
+        log_str_beauty = ("continuation=True, but we found no previous "
+                          "trajectories. Setting continuation=False and "
+                          "preparing the engine from scratch."
+                          )
+        assert log_str_beauty in caplog.text
+        # and now, remove the condition we reached, set max_steps and continue
+        _ = conditions.pop(state_reached)
+        propa.conditions = conditions
+        propa.max_steps = trajs[-1].last_step + 3 * self.xtc_mdp["nstxout-compressed"]
+        with pytest.raises(MaxStepsReachedError):
+            traj2, state_reached2 = await propa.propagate(
+                                    starting_configuration=self.ala_conf_in_no_state,
+                                    workdir=tmp_path,
+                                    deffnm="test",
+                                    continuation=True
+                                                          )
