@@ -39,6 +39,23 @@ All computationally costly operations are submitted via the queuing system, i.e.
 
 `asyncmd` can therefore be used to manage large scale MD simulation campaigns on HPC resources. In addition, `asyncmd` provides an ideal building block to develop and implement trajectory based enhanced sampling methods as, e.g., variants of the string method [@e2002StringMethod], highly parallelized transition path or transition interface sampling methods [@dellago2002TransitionPathSampling;@vanerp2003NovelPathSampling], flux sampling methods [@chandler1978;@ruizmontero1997], or the weighted ensemble method [@huber1996Weightedensemble]. Showcasing its potential, `asyncmd` was already used to develop and implement the AI for molecular mechanism discovery (aimmd) algorithm [@jung2023;@aimmd], which adaptively steers a large number of simultaneous MD simulations using a combination of transition path sampling and machine learning.
 
+## State of the field
+
+A number of other software packages are relevant in the context of submitting MD simulations on HPC resources or to control them from python, which will be discussed in the following.
+
+Notably, it is possible to control and define MD simulation workflows for GROMACS in python by using its gmxapi python interface [@irrgang2018gmxapi;@irrgang2022gmxapi].
+While gmxapi allows for fine grained control of the MD simulation (including, e.g., custom stopping conditions and user plugin code within the force calculation), it is only possible to interact with MD simulations running within the same job allocation or on the same local machine.
+
+The definition and submission of a general (non MD-specific) computational workflow spanning over multiple job allocations on HPC resources from python is possible by using AiiDA [@huber2020aiida;@uhrin2021aiida] or by using the combination of row [@row] and signac [@adorf2018signac].
+Both, AiiDa and signac/row, have an emphasis on automatically storing data provenance, while `asyncmd` makes no attempt to store any input/output relations and it is the users responsibility (and freedom) to choose an adequate solution for their use-case to track data provenance.
+AiiDA currently supports a number of different queuing systems, but it is not possible to request accelerator resources such as GPUs.
+row currently only supports the SLURM queuing system, but offers a finer control over the job resources including the requested memory and number of GPUs.
+`asyncmd` currently also only supports the SLURM queuing system, but offers support for any option of the SLURM "sbatch" command to control the requested resources for and execution of the jobs.
+MD simulations can be performed with AiiDA by using the aiida-gromacs plugin [@aiida-gromacs] and martignac [@bereau2024martignac] defines a number of coarse-grained Martini simulation workflows with signac.
+However, to the best knowledge of the authors, no other package besides `asyncmd` exists that offers the submission and control of many MD simulation via a queuing system, while also focusing on versatile and dynamic stopping conditions for the simulations to provide simple building blocks for enhanced sampling algorithms.
+
+Finally, what sets `asyncmd` apart from full-fledged implementations of path sampling and other trajectory based sampling methods, such as, e.g., openpathsampling [@ops1;@ops2], is that it does not implement any specific algorithms to drive the sampling, but instead strives to only provide the common building blocks shared between many trajectory based enhanced sampling methods.
+
 # Acknowledgements
 
 The authors thank all users of `asyncmd` for contributing feedback and suggesting new features, especially Matea Turalija and Vedran Miletic, for feedback on and contributions to the code.
