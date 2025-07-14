@@ -14,10 +14,6 @@ pip install asyncmd
 
 In case you you intend to run the tests or {doc}`example notebooks </examples_link/README>` yourself or if want to install the latest and greatest development version of asyncmd (see the {doc}`changelog </include_changelog>` for whats new) you will need to install asyncmd from the git repository.
 
-```{important}
-Please note that you need to have [git-lfs] (an open source git extension) setup to get all input files needed to run the notebooks in the `examples` folder (no [git-lfs] is needed to get a working version of the library).
-```
-
 This will clone the repository to the current working directory and install asyncmd into the current python environment:
 
 ```bash
@@ -30,10 +26,6 @@ pip install .
 ### Tests
 
 Tests use [pytest]. To run them you can install asyncmd with the tests requirements. All tests should either pass or be skipped.
-
-```{important}
-Please note that you need [git-lfs] to get all (input) files used in the tests.
-```
 
 This will clone the repository to the current working directory and install asyncmd with the tests requirement into the current python environment:
 
@@ -53,6 +45,11 @@ pytest
 # or use
 pytest -v
 # to get a more detailed report
+```
+
+```{note}
+Previously some of the files needed to run the tests were stored with [git-lfs].
+This means that if you want to checkout an old commit of `asyncmd` and run the tests against it, you will need to have [git-lfs] installed.
 ```
 
 (documentation-installation)=
