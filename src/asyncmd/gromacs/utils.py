@@ -63,20 +63,21 @@ def nstout_from_mdp(mdp: MDP, traj_type: str = "TRR") -> int:
     vals = []
     for k in keys:
         try:
-            # need to check for 0 (== no output!) in case somone puts the
-            # defaults (or reads an mdout.mdp where gmx lists all the defaults)
             v = mdp[k]
-            if v == 0:
-                v = float("inf")
-            vals += [v]
         except KeyError:
             # not set, defaults to 0, so we ignore it
             pass
+        else:
+            # need to check for 0 (== no output!) in case somone puts the
+            # defaults (or reads an mdout.mdp where gmx lists all the defaults)
+            if not v:
+                v = float("inf")
+            vals += [v]
 
     nstout = min(vals, default=None)
     if (nstout is None) or (nstout == float("inf")):
         raise ValueError(f"The MDP you passed results in no {traj_type} "
-                         +"trajectory output.")
+                         + "trajectory output.")
     return nstout
 
 
@@ -133,7 +134,7 @@ async def get_all_file_parts(folder: str, deffnm: str, file_ending: str) -> "lis
     """
     def partnum_suffix(num):
         # construct gromacs num part suffix from simulation_part
-        num_suffix = ".part{:04d}".format(num)
+        num_suffix = f".part{num:04d}"
         return num_suffix
 
     if not file_ending.startswith("."):

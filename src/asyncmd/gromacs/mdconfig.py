@@ -289,7 +289,7 @@ class MDP(LineBasedMDConfig):
         #                               before or after the equal sign
         # 4. no splits at '=' and no splits at ';' -> weired line, probably
         #                                             not a valid line(?)
-        if splits_at_comment[0] == "":
+        if not splits_at_comment[0]:
             # option 2 (and 3 if the comment is before the equal sign)
             # comment sign is the first letter, so the whole line is
             # (most probably) a comment line
@@ -309,10 +309,9 @@ class MDP(LineBasedMDConfig):
                 parser.commenters = ";"
                 # puncutation_chars=True adds "~-./*?=" to wordchars
                 # such that we do not split floats and file paths and similar
-                tokens = list(parser)
                 # gromacs mdp can have 0-N tokens/values to the RHS of the '='
-                if len(tokens) == 0:
-                    # line with empty options, e.g. 'define = '
+                if not (tokens := list(parser)):
+                    # zero tokens -> line with empty options, e.g. 'define = '
                     return {self._key_char_replace(key): []}
                 # lines with content, we always return a list (and let our
                 #  type_dispatch sort out the singleton options and the typing)

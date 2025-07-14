@@ -62,9 +62,9 @@ def ensure_executable_available(executable: str) -> str:
         executable = os.path.abspath(executable)
         if not os.access(executable, os.X_OK):
             raise ValueError(f"{executable} must be executable.")
-    elif shutil.which(executable) is not None:
+    elif (which_exe := shutil.which(executable)) is not None:
         # see if we find it in $PATH
-        executable = shutil.which(executable)
+        executable = which_exe
     else:
         raise ValueError(f"{executable} must be an existing path or accessible "
                          + "via the $PATH environment variable.")
