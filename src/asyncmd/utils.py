@@ -56,9 +56,8 @@ async def get_all_traj_parts(folder: str, deffnm: str, engine: MDEngine) -> "lis
         return await gmx_utils.get_all_traj_parts(folder=folder, deffnm=deffnm,
                                                   traj_type=engine.output_traj_type,
                                                   )
-    else:
-        raise ValueError(f"Engine {engine} is not a known MDEngine class."
-                         + " Maybe someone just forgot to add the function?")
+    raise ValueError(f"Engine {engine} is not a known MDEngine class."
+                     + " Maybe someone just forgot to add the function?")
 
 
 async def get_all_file_parts(folder: str, deffnm: str, file_ending: str,
@@ -113,9 +112,8 @@ def nstout_from_mdconfig(mdconfig: MDConfig, output_traj_type: str) -> int:
         return gmx_utils.nstout_from_mdp(mdp=mdconfig,
                                          traj_type=output_traj_type,
                                          )
-    else:
-        raise ValueError(f"mdconfig {mdconfig} is not a known MDConfig class."
-                         + " Maybe someone just forgot to add the function?")
+    raise ValueError(f"mdconfig {mdconfig} is not a known MDConfig class."
+                     + " Maybe someone just forgot to add the function?")
 
 
 def ensure_mdconfig_options(mdconfig: MDConfig, genvel: str = "no",
@@ -144,13 +142,12 @@ def ensure_mdconfig_options(mdconfig: MDConfig, genvel: str = "no",
     Raises
     ------
     ValueError
-        If the MDConfig belongs to an unknown subclass not dispatcheable to any
+        If the MDConfig belongs to an unknown subclass not dispatchable to any
         specific engine submodule.
     """
     if isinstance(mdconfig, gmx_config.MDP):
         return gmx_utils.ensure_mdp_options(mdp=mdconfig, genvel=genvel,
                                             continuation=continuation,
                                             )
-    else:
-        raise ValueError(f"mdconfig {mdconfig} is not a known MDConfig class."
-                         + " Maybe someone just forgot to add the function?")
+    raise ValueError(f"mdconfig {mdconfig} is not a known MDConfig class."
+                     + " Maybe someone just forgot to add the function?")

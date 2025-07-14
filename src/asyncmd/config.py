@@ -197,7 +197,8 @@ def register_h5py_cache(h5py_group, make_default: bool = False):
     E.g. you will have ``h5py_group["asyncmd/TrajectoryFunctionValueCache"]``
     always pointing to the cached trajectory values and if ``h5py_group`` is
     the top-level group (i.e. the file) you also have
-    ``(file["/asyncmd/TrajectoryFunctionValueCache"] == h5py_group["asyncmd/TrajectoryFunctionValueCache"])``.
+    ``(file["/asyncmd/TrajectoryFunctionValueCache"] ==\
+ h5py_group["asyncmd/TrajectoryFunctionValueCache"])``.
 
     Parameters
     ----------
