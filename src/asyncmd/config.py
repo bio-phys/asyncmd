@@ -22,20 +22,23 @@ import os
 import asyncio
 import logging
 import resource
-import typing
 
 
 from ._config import _GLOBALS, _SEMAPHORES
 # pylint: disable-next=unused-import
 from .slurm import set_slurm_settings, set_all_slurm_settings
+
 # TODO: Do we want to set the _GLOBALS defaults here? E.g. CACHE_TYPE="npz"?
+#       (then we could assume in Trajectory that the CACHE_TYPE is always set and
+#        remove the code handling the unset case...it would also be potentially
+#        clearer and less confusing?)
 
 
 logger = logging.getLogger(__name__)
 
 
 # can be called by the user to (re) set maximum number of processes used
-def set_max_process(num=None, max_num=None):
+def set_max_process(num: int | None = None, max_num: int | None = None):
     """
     Set the maximum number of concurrent python processes.
 
@@ -52,17 +55,14 @@ def set_max_process(num=None, max_num=None):
         spawning hundreds of processes.
     """
     # NOTE: I think we should use a conservative default, e.g. 0.25*cpu_count()
-    # TODO: limit to 30-40?, i.e never higher even if we have 1111 cores?
     # pylint: disable-next=global-variable-not-assigned
     global _SEMAPHORES
     if num is None:
-        logical_cpu_count = os.cpu_count()
-        if logical_cpu_count is not None:
+        if (logical_cpu_count := os.cpu_count()) is not None:
             num = max(1, int(logical_cpu_count / 4))
         else:
             # fallback if os.cpu_count() can not determine the number of cpus
             # play it save and not have more than 2?
-            # TODO: think about a good number!
             num = 2
     if max_num is not None:
         num = min((num, max_num))
@@ -72,7 +72,7 @@ def set_max_process(num=None, max_num=None):
 set_max_process()
 
 
-def set_max_files_open(num: typing.Optional[int] = None, margin: int = 30):
+def set_max_files_open(num: int | None = None, margin: int = 30):
     """
     Set the maximum number of concurrently opened files.
 
@@ -136,8 +136,7 @@ set_max_files_open()
 # slurm max job semaphore, if the user sets it it will be used,
 # otherwise we can use an unlimited number of synchronous slurm-jobs
 # (if the simulation requires that much)
-# TODO: document that somewhere, bc usually clusters have a job number limit?!
-def set_slurm_max_jobs(num: typing.Union[int, None]):
+def set_slurm_max_jobs(num: int | None):
     """
     Set the maximum number of simultaneously submitted SLURM jobs.
 
@@ -179,8 +178,7 @@ def set_default_trajectory_cache_type(cache_type: str):
     # pylint: disable-next=global-variable-not-assigned
     global _GLOBALS
     allowed_values = ["h5py", "npz", "memory"]
-    cache_type = cache_type.lower()
-    if cache_type not in allowed_values:
+    if (cache_type := cache_type.lower()) not in allowed_values:
         raise ValueError(f"Given cache type must be one of {allowed_values}."
                          + f" Was: {cache_type}.")
     _GLOBALS["TRAJECTORY_FUNCTION_CACHE_TYPE"] = cache_type
@@ -194,7 +192,7 @@ def register_h5py_cache(h5py_group, make_default: bool = False):
     :func:`set_default_trajectory_cache_type` with ``cache_type="h5py"``.
 
     Note that a ``h5py.File`` is just a slightly special ``h5py.Group``, so you
-    can pass either. :mod:`asyncmd` will use euther the file or the group as
+    can pass either. :mod:`asyncmd` will use either the file or the group as
     the root of its own stored values.
     E.g. you will have ``h5py_group["asyncmd/TrajectoryFunctionValueCache"]``
     always pointing to the cached trajectory values and if ``h5py_group`` is

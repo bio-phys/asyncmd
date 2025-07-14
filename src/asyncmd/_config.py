@@ -12,15 +12,16 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+Configuration dictionaries to influence asyncmd runtime behavior.
 
-
-# NOTE: This file **only** contains the dictionaries with the values
-#       and **no** functions to set them, the funcs all live in 'config.py'.
-#       The idea here is that we can then without any issues import additional
-#       stuff (like the config functions from 'slurm.py') in 'config.py'
-#       without risking circular imports becasue all asyncmd files should only
-#       need to import the _CONFIG and _SEMAPHORES dicts from '_config.py'.
-
+NOTE: This file **only** contains the dictionaries with the values
+      and **no** functions to set them, the funcs all live in 'config.py'.
+      The idea here is that we can then without any issues import additional
+      stuff (like the config functions from 'slurm.py') in 'config.py'
+      without risking circular imports because all asyncmd files should only
+      need to import the _CONFIG and _SEMAPHORES dicts from '_config.py'.
+"""
 
 _GLOBALS = {}
 _SEMAPHORES = {}
