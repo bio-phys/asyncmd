@@ -68,11 +68,11 @@ class LineBasedMDConfig(MDConfig):
     # use these to specify config parameters that are of type int or float
     # parsed lines with dict key matching will then be converted
     # any lines not matching will be left in their default str type
-    _FLOAT_PARAMS = []  # can have multiple values per config option
-    _FLOAT_SINGLETON_PARAMS = []  # must have one value per config option
-    _INT_PARAMS = []  # multiple int per option
-    _INT_SINGLETON_PARAMS = []  # one int per option
-    _STR_SINGLETON_PARAMS = []  # strings with only one value per option
+    _FLOAT_PARAMS: list[str] = []  # can have multiple values per config option
+    _FLOAT_SINGLETON_PARAMS: list[str] = []  # must have one value per config option
+    _INT_PARAMS: list[str] = []  # multiple int per option
+    _INT_SINGLETON_PARAMS: list[str] = []  # one int per option
+    _STR_SINGLETON_PARAMS: list[str] = []  # strings with only one value per option
     # NOTE on SPECIAL_PARAM_DISPATCH
     # can be used to set custom type convert functions on a per parameter basis
     # the key must match the key in the dict for in the parsed line,
@@ -83,7 +83,7 @@ class LineBasedMDConfig(MDConfig):
     # new values into the expected FlagChangeList format
     # [note that it is probably easiest to subclass TypedFlagChangeList and
     #  overwrite only the '_check_type()' method]
-    _SPECIAL_PARAM_DISPATCH = {}
+    _SPECIAL_PARAM_DISPATCH: dict[str, collections.abc.Callable] = {}
 
     def __init__(self, original_file: str) -> None:
         """
@@ -94,7 +94,7 @@ class LineBasedMDConfig(MDConfig):
         original_file : str
             Path to original config file (absolute or relative).
         """
-        self._config = {}
+        self._config: dict[str, TypedFlagChangeList | int | float | str] = {}
         self._changed = False
         self._type_dispatch = self._construct_type_dispatch()
         # property to set/check file and parse to config dictionary all in one
@@ -109,8 +109,7 @@ class LineBasedMDConfig(MDConfig):
             # singleton vals, i.e. "val" instead of ["val"]
             if isinstance(val, str) or getattr(val, '__len__', None) is None:
                 return dtype(val)
-            else:
-                return dtype(val[0])
+            return dtype(val[0])
 
         # construct type conversion dispatch
         type_dispatch = collections.defaultdict(
@@ -253,15 +252,14 @@ class LineBasedMDConfig(MDConfig):
         # NOTE: we default to False, i.e. we expect that anything that
         #       does not have a self.changed attribute is not a container
         #       and we (the dictionary) would know that it changed
-        return self._changed or any([getattr(v, "changed", False)
-                                     for v in self._config.values()]
-                                    )
+        return self._changed or any(getattr(v, "changed", False)
+                                    for v in self._config.values())
 
     def parse(self):
         """Parse the current ``self.original_file`` to update own state."""
-        with open(self.original_file, "r") as f:
+        with open(self.original_file, "r", encoding="locale") as f:
             # NOTE: we split at newlines on all platforms by iterating over the
-            #       file, i.e. python takes care of the differnt platforms and
+            #       file, i.e. python takes care of the different platforms and
             #       newline chars for us :)
             parsed = {}
             for line in f:
@@ -275,7 +273,7 @@ class LineBasedMDConfig(MDConfig):
                         # as it should be
                         pass
                     else:
-                        # warn that we will only keep the last occurenc of key
+                        # warn that we will only keep the last occurrence of key
                         logger.warning("Parsed duplicate configuration option "
                                        "(%s). Last values encountered take "
                                        "precedence.", key)
@@ -312,19 +310,21 @@ class LineBasedMDConfig(MDConfig):
             lines = []
             for key, value in self._config.items():
                 line = f"{key}{self._KEY_VALUE_SEPARATOR}"
-                try:
-                    if isinstance(value, str):
-                        # it is a string singleton option
-                        line += f"{value}"
-                    else:
+                if isinstance(value, (str, float, int)):
+                    # it is a string/float/int singleton option
+                    line += f"{value}"
+                else:
+                    # not a singleton, so lets try to iterate over it
+                    try:
                         line += self._INTER_VALUE_CHAR.join(str(v)
                                                             for v in value
                                                             )
-                except TypeError:
-                    # not a Sequence/Iterable or string,
-                    # i.e. (probably) one of the float/int singleton options
-                    line += f"{value}"
+                    except TypeError:
+                        # Note: need this except to catch user-added types
+                        #       (via special param dispatch), that are not
+                        #       str/float/int singletons but also not iterable
+                        line += f"{value}"
                 lines += [line]
             # concatenate the lines and write out at once
-            with open(outfile, "w") as f:
+            with open(outfile, "w", encoding="locale") as f:
                 f.write("\n".join(lines))
