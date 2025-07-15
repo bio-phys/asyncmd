@@ -110,7 +110,9 @@ class TrajectoryConcatenator:
     and returns one trajectory containing only the selected frames in the order
     specified by the slices.
     Velocities are automatically inverted if the step of a slice is negative,
-    this can be controlled via the invert_v_for_negative_step attribute.
+    this can be controlled via the ``invert_v_for_negative_step`` attribute.
+    Double frames are also automatically removed, which can be controlled via
+    the ``remove_double_frames`` attribute.
     We assume that all trajs have the same structure file and attach the
     structure of the first traj if not told otherwise.
     Note that you can pass MDAnalysis transformations to this class to
@@ -121,12 +123,20 @@ class TrajectoryConcatenator:
     ----------
     invert_v_for_negative_step : bool
         Whether to invert all momenta for segments with negative stride.
+    remove_double_frames : bool
+        Whether we should (try to) remove double frames from the concatenated
+        output trajectory.
+        Note that a simple heuristic is used to determine double frames,
+        frames count as double if the integration time is the same for both
+        frames.
     """
 
-    def __init__(self,
-        invert_v_for_negative_step: bool = True,
-        mda_transformations: list[collections.abc.Callable] | None = None,
-        mda_transformations_setup_func: collections.abc.Callable | None = None,
+    def __init__(
+            self,
+            invert_v_for_negative_step: bool = True,
+            remove_double_frames: bool = True, *,
+            mda_transformations: list[collections.abc.Callable] | None = None,
+            mda_transformations_setup_func: collections.abc.Callable | None = None,
                  ) -> None:
         """
         Initialize a :class:`TrajectoryConcatenator`.
@@ -136,6 +146,9 @@ class TrajectoryConcatenator:
         invert_v_for_negative_step : bool, optional
             Whether to invert all momenta for segments with negative stride,
             by default True.
+        remove_double_frames : bool, optional
+            Whether we should (try to) remove double frames from the concatenated
+            output trajectory, by default True.
         mda_transformations : list of callables, optional
             If given will be added as a list of transformations to the
             MDAnalysis universe as
@@ -143,7 +156,8 @@ class TrajectoryConcatenator:
             See the ``mda_transformations_setup_func`` argument if your
             transformations need additional universe-dependant arguments, e.g.
             atomgroups from the universe.
-            See https://docs.mdanalysis.org/stable/documentation_pages/trajectory_transformations.html
+            See
+            https://docs.mdanalysis.org/stable/documentation_pages/trajectory_transformations.html
             for more on MDAnalysis transformations.
         mda_transformations_setup_func: callable, optional
             If given will be called to attach user-defined MDAnalysis
@@ -154,12 +168,16 @@ class TrajectoryConcatenator:
             after defining ``list_of_trafos`` (potentially depending on the
             universe or atomgroups therein) and then finally returns the
             universe with trafos.
-            See https://docs.mdanalysis.org/stable/documentation_pages/trajectory_transformations.html
+            See
+            https://docs.mdanalysis.org/stable/documentation_pages/trajectory_transformations.html
             for more on MDAnalysis transformations.
         """
         self.invert_v_for_negative_step = invert_v_for_negative_step
-        if (mda_transformations is not None
-            and mda_transformations_setup_func is not None):
+        self.remove_double_frames = remove_double_frames
+        if (
+            mda_transformations is not None
+            and mda_transformations_setup_func is not None
+        ):
             raise ValueError("`mda_transformations` and "
                              "`mda_transformations_setup_func` are mutually "
                              "exclusive, but both were given."
@@ -167,10 +185,11 @@ class TrajectoryConcatenator:
         self.mda_transformations = mda_transformations
         self.mda_transformations_setup_func = mda_transformations_setup_func
 
-    def concatenate(self, trajs: "list[Trajectory]", slices: "list[tuple]",
-                    tra_out: str, struct_out: str | None = None,
+    def concatenate(self, trajs: list[Trajectory], slices: list[tuple],
+                    tra_out: str, *,
+                    struct_out: str | None = None,
                     overwrite: bool = False,
-                    remove_double_frames: bool = True) -> Trajectory:
+                    ) -> Trajectory:
         """
         Create concatenated trajectory from given trajectories and frames.
 
@@ -190,12 +209,6 @@ class TrajectoryConcatenator:
         overwrite : bool, optional
             Whether we should overwrite existing output trajectories,
             by default False.
-        remove_double_frames : bool, optional
-            Whether we should try to remove double frames from the concatenated
-            output trajectory.
-            Note that we use a simple heuristic to determine double frames,
-            we just check if the integration time is the same for both frames,
-            by default True
 
         Returns
         -------
@@ -222,70 +235,31 @@ class TrajectoryConcatenator:
                                     )
 
         # special treatment for traj0 because we need n_atoms for the writer
-        u0 = mda.Universe(trajs[0].structure_file, *trajs[0].trajectory_files)
-        u0 = _attach_mda_trafos_to_universe(
-            universe=u0,
-            mda_transformations=self.mda_transformations,
-            mda_transformations_setup_func=self.mda_transformations_setup_func,
-            )
-        start0, stop0, step0 = slices[0]
+        u = mda.Universe(trajs[0].structure_file, *trajs[0].trajectory_files)
         last_time_seen = None
-        # if the file exists MDAnalysis will silently overwrite
-        with mda.Writer(tra_out, n_atoms=u0.trajectory.n_atoms) as W:
-            for ts in u0.trajectory[start0:stop0:step0]:
-                if remove_double_frames and (last_time_seen is not None):
-                    if last_time_seen == ts.data["time"]:
-                        # this is a no-op, as they are they same...
-                        # last_time_seen = ts.data["time"]
-                        continue  # skip this timestep/go to next iteration
-                if (self.invert_v_for_negative_step and step0 < 0
-                        and ts.has_velocities):
-                    u0.atoms.velocities *= -1
-                W.write(u0.atoms)
-                if remove_double_frames:
-                    # remember the last timestamp, so we can take it out
-                    last_time_seen = ts.data["time"]
-            # close the trajectory file for and delete the original universe
-            u0.trajectory.close()
-            del u0
-            for traj, sl in zip(trajs[1:], slices[1:]):
-                u = mda.Universe(traj.structure_file, *traj.trajectory_files)
-                u = _attach_mda_trafos_to_universe(
-                    universe=u,
-                    mda_transformations=self.mda_transformations,
-                    mda_transformations_setup_func=self.mda_transformations_setup_func,
-                    )
-                start, stop, step = sl
-                for ts in u.trajectory[start:stop:step]:
-                    if remove_double_frames and (last_time_seen is not None):
-                        if last_time_seen == ts.data["time"]:
-                            continue
-                    if (self.invert_v_for_negative_step and step < 0
-                            and ts.has_velocities):
-                        u.atoms.velocities *= -1
-                    W.write(u.atoms)
-                    if remove_double_frames:
-                        last_time_seen = ts.data["time"]
-                # make sure MDAnalysis closes the underlying trajectory file
-                u.trajectory.close()
-                del u  # and delete the universe just because we can
+        with mda.Writer(tra_out, n_atoms=u.atoms.n_atoms) as writer:
+            # iterate over the trajectories
+            for traj, sl in zip(trajs, slices):
+                last_time_seen = self._write_one_traj_sliced_with_writer(
+                                            traj=traj, sl=sl, writer=writer,
+                                            last_time_seen=last_time_seen,
+                )
         # return (file paths to) the finished trajectory
         return Trajectory(tra_out, struct_out)
 
     @_is_documented_by(concatenate)
     # pylint: disable-next=missing-function-docstring
-    async def concatenate_async(self, trajs: "list[Trajectory]",
-                                slices: "list[tuple]", tra_out: str,
+    async def concatenate_async(self, trajs: list[Trajectory],
+                                slices: list[tuple], tra_out: str, *,
                                 struct_out: str | None = None,
                                 overwrite: bool = False,
-                                remove_double_frames: bool = True) -> Trajectory:
+                                ) -> Trajectory:
         concat_fx = functools.partial(self.concatenate,
                                       trajs=trajs,
                                       slices=slices,
                                       tra_out=tra_out,
                                       struct_out=struct_out,
                                       overwrite=overwrite,
-                                      remove_double_frames=remove_double_frames,
                                       )
         loop = asyncio.get_running_loop()
         async with _SEMAPHORES["MAX_FILES_OPEN"]:
@@ -294,6 +268,55 @@ class TrajectoryConcatenator:
                                         thread_name_prefix="concat_thread",
                                         ) as pool:
                     return await loop.run_in_executor(pool, concat_fx)
+
+    def _write_one_traj_sliced_with_writer(self, traj: Trajectory, sl: tuple, *,
+                                           writer: mda.Writer,
+                                           last_time_seen: float | None,
+                                           ) -> float | None:
+        """
+        Write one Trajectory (sliced) using the given MDAnalysis writer.
+
+        Take as argument and return (the updated) ``last_time_seen`` to enable
+        removal of double frames over multiple Trajectories and subsequent calls
+        to this method.
+
+        Parameters
+        ----------
+        traj : Trajectory
+            The origin trajectory to iterate over (in a sliced manner).
+        sl : tuple
+            The slice defining which frames are written from ``traj``.
+        writer : mda.Writer
+        last_time_seen : float | None
+            Integration time of the last written/seen timestep.
+
+        Returns
+        -------
+        float | None
+            Updated ``last_time_seen``.
+        """
+        u = mda.Universe(traj.structure_file, *traj.trajectory_files)
+        u = _attach_mda_trafos_to_universe(
+                universe=u,
+                mda_transformations=self.mda_transformations,
+                mda_transformations_setup_func=self.mda_transformations_setup_func,
+                )
+        start, stop, step = sl
+        for ts in u.trajectory[start:stop:step]:
+            if self.remove_double_frames and (last_time_seen is not None):
+                if last_time_seen == ts.data["time"]:
+                    continue
+            if (
+                self.invert_v_for_negative_step and step < 0
+                and ts.has_velocities
+            ):
+                u.atoms.velocities *= -1
+            writer.write(u.atoms)
+            if self.remove_double_frames:
+                last_time_seen = ts.data["time"]
+        # make sure MDAnalysis closes the underlying trajectory file
+        u.trajectory.close()
+        return last_time_seen
 
 
 class FrameExtractor(abc.ABC):
@@ -310,7 +333,7 @@ class FrameExtractor(abc.ABC):
     # with inverted velocities, with random Maxwell-Boltzmann velocities, etc.
 
     def __init__(
-        self,
+        self, *,
         mda_transformations: list[collections.abc.Callable] | None = None,
         mda_transformations_setup_func: collections.abc.Callable | None = None,
                  ) -> None:
@@ -326,7 +349,8 @@ class FrameExtractor(abc.ABC):
             See the ``mda_transformations_setup_func`` argument if your
             transformations need additional universe-dependant arguments, e.g.
             atomgroups from the universe.
-            See https://docs.mdanalysis.org/stable/documentation_pages/trajectory_transformations.html
+            See
+            https://docs.mdanalysis.org/stable/documentation_pages/trajectory_transformations.html
             for more on MDAnalysis transformations.
         mda_transformations_setup_func: callable, optional
             If given will be called to attach user-defined MDAnalysis
@@ -337,11 +361,14 @@ class FrameExtractor(abc.ABC):
             after defining ``list_of_trafos`` (potentially depending on the
             universe or atomgroups therein) and then finally returns the
             universe with trafos.
-            See https://docs.mdanalysis.org/stable/documentation_pages/trajectory_transformations.html
+            See
+            https://docs.mdanalysis.org/stable/documentation_pages/trajectory_transformations.html
             for more on MDAnalysis transformations.
         """
-        if (mda_transformations is not None
-            and mda_transformations_setup_func is not None):
+        if (
+            mda_transformations is not None
+            and mda_transformations_setup_func is not None
+        ):
             raise ValueError("`mda_transformations` and "
                              "`mda_transformations_setup_func` are mutually "
                              "exclusive, but both were given."
@@ -375,8 +402,9 @@ class FrameExtractor(abc.ABC):
         """
         raise NotImplementedError
 
-    def extract(self, outfile, traj_in: Trajectory, idx: int,
-                struct_out=None, overwrite: bool = False) -> Trajectory:
+    def extract(self, outfile: str, traj_in: Trajectory, idx: int, *,
+                struct_out: str | None = None, overwrite: bool = False,
+                ) -> Trajectory:
         """
         Extract a single frame from given trajectory and write it out.
 
@@ -409,11 +437,8 @@ class FrameExtractor(abc.ABC):
         FileNotFoundError
             If `struct_out` is given but does not exist.
         """
-        # TODO: should we check that idx is an idx, i.e. an int?
         # TODO: make it possible to select a subset of atoms to write out
         #       and also for modification?
-        # TODO: should we make it possible to extract multiple frames, i.e.
-        #       enable the use of slices (and iterables of indices?)
         outfile = os.path.relpath(outfile)
         if os.path.exists(outfile) and not overwrite:
             raise FileExistsError(f"overwrite=False but outfile={outfile} exists.")
@@ -431,10 +456,10 @@ class FrameExtractor(abc.ABC):
             mda_transformations=self.mda_transformations,
             mda_transformations_setup_func=self.mda_transformations_setup_func,
             )
-        with mda.Writer(outfile, n_atoms=u.trajectory.n_atoms) as W:
+        with mda.Writer(outfile, n_atoms=u.trajectory.n_atoms) as writer:
             ts = u.trajectory[idx]
             self.apply_modification(u, ts)
-            W.write(u.atoms)
+            writer.write(u.atoms)
         # make sure MDAnalysis closes the underlying trajectory files
         u.trajectory.close()
         del u
@@ -442,8 +467,9 @@ class FrameExtractor(abc.ABC):
 
     @_is_documented_by(extract)
     # pylint: disable-next=missing-function-docstring
-    async def extract_async(self, outfile, traj_in: Trajectory, idx: int,
-                            struct_out=None, overwrite: bool = False) -> Trajectory:
+    async def extract_async(self, outfile: str, traj_in: Trajectory, idx: int, *,
+                            struct_out: str | None = None, overwrite: bool = False,
+                            ) -> Trajectory:
         extract_fx = functools.partial(self.extract,
                                        outfile=outfile,
                                        traj_in=traj_in,
@@ -514,10 +540,10 @@ class RandomVelocitiesFrameExtractor(FrameExtractor):
 
     def __init__(
         self,
-        T: float,
+        T: float, *,
         mda_transformations: list[collections.abc.Callable] | None = None,
         mda_transformations_setup_func: collections.abc.Callable | None = None,
-        ) -> None:
+                 ) -> None:
         """
         Initialize a :class:`RandomVelocitiesFrameExtractor`.
 
@@ -532,7 +558,8 @@ class RandomVelocitiesFrameExtractor(FrameExtractor):
             See the ``mda_transformations_setup_func`` argument if your
             transformations need additional universe-dependant arguments, e.g.
             atomgroups from the universe.
-            See https://docs.mdanalysis.org/stable/documentation_pages/trajectory_transformations.html
+            See
+            https://docs.mdanalysis.org/stable/documentation_pages/trajectory_transformations.html
             for more on MDAnalysis transformations.
         mda_transformations_setup_func: callable, optional
             If given will be called to attach user-defined MDAnalysis
@@ -543,13 +570,15 @@ class RandomVelocitiesFrameExtractor(FrameExtractor):
             after defining ``list_of_trafos`` (potentially depending on the
             universe or atomgroups therein) and then finally returns the
             universe with trafos.
-            See https://docs.mdanalysis.org/stable/documentation_pages/trajectory_transformations.html
+            See
+            https://docs.mdanalysis.org/stable/documentation_pages/trajectory_transformations.html
             for more on MDAnalysis transformations.
         """
         super().__init__(
                 mda_transformations=mda_transformations,
                 mda_transformations_setup_func=mda_transformations_setup_func,
                          )
+        # pylint: disable-next=invalid-name
         self.T = T  # in K
         self._rng = np.random.default_rng()
 

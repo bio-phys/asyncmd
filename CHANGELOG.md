@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MDEngine`, `GmxEngine`, and `SlurmGmxEngine`: removed unused `running` property
 - Some tests for `trajectory.propagate` and `gromacs.mdengine` modules
 
+### Changed
+
+- `TrajectoryConcatenator`: `remove_double_frames` is now an instance attribute instead of an argument to the `concatenate` and `concatenate_async` methods
+
 ### Fixed
 
 - refactor to reduce number of pylint messages
