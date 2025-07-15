@@ -28,7 +28,7 @@ from .gromacs import mdengine as gmx_engine
 from .gromacs import mdconfig as gmx_config
 
 
-async def get_all_traj_parts(folder: str, deffnm: str, engine: MDEngine) -> "list[Trajectory]":
+async def get_all_traj_parts(folder: str, deffnm: str, engine: MDEngine) -> list[Trajectory]:
     """
     List all trajectories in folder by given engine class with given deffnm.
 
@@ -61,7 +61,7 @@ async def get_all_traj_parts(folder: str, deffnm: str, engine: MDEngine) -> "lis
 
 
 async def get_all_file_parts(folder: str, deffnm: str, file_ending: str,
-                             ) -> "list[str]":
+                             ) -> list[str]:
     """
     Find and return all files with given ending produced by a `MDEngine`.
 

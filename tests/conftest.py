@@ -16,6 +16,10 @@ import pytest
 import shutil
 
 
+# Test helper classes
+from helper_classes import NoOpMDConfig, NoOpMDEngine
+
+
 # common markers
 # Decorator for test that need gmx grompp and/or gmx mdrun
 needs_gmx_install = pytest.mark.skipif(shutil.which("gmx") is None,
