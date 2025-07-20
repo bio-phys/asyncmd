@@ -24,21 +24,17 @@ import logging
 import resource
 
 
-from ._config import _GLOBALS, _SEMAPHORES
+from ._config import _GLOBALS, _SEMAPHORES, _OPT_SEMAPHORES
+from .trajectory.trajectory import _update_cache_type_for_all_trajectories
 # pylint: disable-next=unused-import
 from .slurm import set_slurm_settings, set_all_slurm_settings
-
-# TODO: Do we want to set the _GLOBALS defaults here? E.g. CACHE_TYPE="npz"?
-#       (then we could assume in Trajectory that the CACHE_TYPE is always set and
-#        remove the code handling the unset case...it would also be potentially
-#        clearer and less confusing?)
 
 
 logger = logging.getLogger(__name__)
 
 
 # can be called by the user to (re) set maximum number of processes used
-def set_max_process(num: int | None = None, max_num: int | None = None):
+def set_max_process(num: int | None = None, max_num: int | None = None) -> None:
     """
     Set the maximum number of concurrent python processes.
 
@@ -72,7 +68,7 @@ def set_max_process(num: int | None = None, max_num: int | None = None):
 set_max_process()
 
 
-def set_max_files_open(num: int | None = None, margin: int = 30):
+def set_max_files_open(num: int | None = None, margin: int = 30) -> None:
     """
     Set the maximum number of concurrently opened files.
 
@@ -136,7 +132,7 @@ set_max_files_open()
 # slurm max job semaphore, if the user sets it it will be used,
 # otherwise we can use an unlimited number of synchronous slurm-jobs
 # (if the simulation requires that much)
-def set_slurm_max_jobs(num: int | None):
+def set_slurm_max_jobs(num: int | None) -> None:
     """
     Set the maximum number of simultaneously submitted SLURM jobs.
 
@@ -147,28 +143,37 @@ def set_slurm_max_jobs(num: int | None):
         python/asyncmd. `None` means do not limit the maximum number of jobs.
     """
     # pylint: disable-next=global-variable-not-assigned
-    global _SEMAPHORES
+    global _OPT_SEMAPHORES
     if num is None:
-        _SEMAPHORES["SLURM_MAX_JOB"] = None
+        _OPT_SEMAPHORES["SLURM_MAX_JOB"] = None
     else:
-        _SEMAPHORES["SLURM_MAX_JOB"] = asyncio.BoundedSemaphore(num)
+        _OPT_SEMAPHORES["SLURM_MAX_JOB"] = asyncio.BoundedSemaphore(num)
 
 
 set_slurm_max_jobs(num=None)
 
 
 # Trajectory function value config
-def set_default_trajectory_cache_type(cache_type: str):
+def set_trajectory_cache_type(cache_type: str,
+                              copy_content: bool = True,
+                              clear_old_cache: bool = False
+                              ) -> None:
     """
-    Set the default cache type for TrajectoryFunctionValues.
+    Set the cache type for TrajectoryFunctionWrapper values.
 
-    Note that this can be overwritten on a per trajectory basis by passing
-    ``cache_type`` to ``Trajectory.__init__``.
+    By default the content of the current caches is copied to the new caches.
+    To clear the old/previously set caches (after copying their values), pass
+    ``clear_old_cache=True``.
 
     Parameters
     ----------
     cache_type : str
         One of "h5py", "npz", "memory".
+    copy_content : bool, optional
+        Whether to copy the current cache content to the new cache,
+        by default True
+    clear_old_cache : bool, optional
+        Whether to clear the old/previously set cache, by default False.
 
     Raises
     ------
@@ -181,15 +186,23 @@ def set_default_trajectory_cache_type(cache_type: str):
     if (cache_type := cache_type.lower()) not in allowed_values:
         raise ValueError(f"Given cache type must be one of {allowed_values}."
                          + f" Was: {cache_type}.")
-    _GLOBALS["TRAJECTORY_FUNCTION_CACHE_TYPE"] = cache_type
+    if _GLOBALS.get("TRAJECTORY_FUNCTION_CACHE_TYPE", "not_set") != cache_type:
+        # only do something if the new cache type differs from what we have
+        _GLOBALS["TRAJECTORY_FUNCTION_CACHE_TYPE"] = cache_type
+        _update_cache_type_for_all_trajectories(copy_content=copy_content,
+                                                clear_old_cache=clear_old_cache,
+                                                )
 
 
-def register_h5py_cache(h5py_group, make_default: bool = False):
+set_trajectory_cache_type("npz")
+
+
+def register_h5py_cache(h5py_group) -> None:
     """
     Register a h5py file or group for CV value caching.
 
     Note that this also sets the default cache type to "h5py", i.e. it calls
-    :func:`set_default_trajectory_cache_type` with ``cache_type="h5py"``.
+    :func:`set_trajectory_cache_type` with ``cache_type="h5py"``.
 
     Note that a ``h5py.File`` is just a slightly special ``h5py.Group``, so you
     can pass either. :mod:`asyncmd` will use either the file or the group as
@@ -204,12 +217,20 @@ def register_h5py_cache(h5py_group, make_default: bool = False):
     ----------
     h5py_group : h5py.Group or h5py.File
         The file or group to use for caching.
-    make_default: bool,
-        Whether we should also make "h5py" the default trajectory function
-        cache type. By default False.
     """
     # pylint: disable-next=global-variable-not-assigned
     global _GLOBALS
-    if make_default:
-        set_default_trajectory_cache_type(cache_type="h5py")
     _GLOBALS["H5PY_CACHE"] = h5py_group
+    set_trajectory_cache_type(cache_type="h5py")
+
+
+def show_config() -> None:
+    """
+    Print/show current configuration.
+    """
+    print(f"Values controlling caching: {_GLOBALS}")
+    # pylint: disable-next=protected-access
+    sem_print = {key: sem._value
+                 for key, sem in {**_SEMAPHORES, **_OPT_SEMAPHORES}.items()
+                 if sem is not None}
+    print(f"Semaphores controlling resource usage: {sem_print}")

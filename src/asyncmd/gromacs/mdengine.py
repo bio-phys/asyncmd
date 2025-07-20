@@ -31,13 +31,14 @@ import aiofiles
 import aiofiles.os
 import aiofiles.ospath
 
-from .._config import _SEMAPHORES
+from .._config import _SEMAPHORES, _OPT_SEMAPHORES
 from ..mdengine import MDEngine, EngineError, EngineCrashedError
 from ..trajectory.trajectory import Trajectory
 from .. import slurm
 from .mdconfig import MDP
 from .utils import nstout_from_mdp, get_all_traj_parts
 from ..tools import ensure_executable_available
+from ..tools import attach_kwargs_to_object as _attach_kwargs_to_object
 
 
 logger = logging.getLogger(__name__)
@@ -187,21 +188,7 @@ class GmxEngine(MDEngine):
         """
         # make it possible to set any attribute via kwargs
         # check the type for attributes with default values
-        dval = object()
-        for kwarg, value in kwargs.items():
-            cval = getattr(self, kwarg, dval)
-            if cval is not dval:
-                if isinstance(value, type(cval)):
-                    # value is of same type as default so set it
-                    setattr(self, kwarg, value)
-                else:
-                    raise TypeError(f"Setting attribute {kwarg} with "
-                                    + f"mismatching type ({type(value)}). "
-                                    + f" Default type is {type(cval)}."
-                                    )
-            else:
-                # not previously defined, so warn that we ignore it
-                logger.warning("Ignoring unknown keyword-argument %s.", kwarg)
+        _attach_kwargs_to_object(obj=self, logger=logger, **kwargs)
         # NOTE: after the kwargs setting to be sure they are what we set/expect
         # TODO: store a hash/the file contents for gro, top, ndx?
         #       to check against when we load from storage/restart?
@@ -1109,16 +1096,16 @@ class SlurmGmxEngine(GmxEngine):
                                                             )
 
     async def _acquire_resources_gmx_mdrun(self, **kwargs):
-        if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
+        if _OPT_SEMAPHORES["SLURM_MAX_JOB"] is not None:
             logger.debug("SLURM_MAX_JOB semaphore is %s before acquiring.",
-                         _SEMAPHORES['SLURM_MAX_JOB'])
-            await _SEMAPHORES["SLURM_MAX_JOB"].acquire()
+                         _OPT_SEMAPHORES['SLURM_MAX_JOB'])
+            await _OPT_SEMAPHORES["SLURM_MAX_JOB"].acquire()
         else:
             logger.debug("SLURM_MAX_JOB semaphore is None")
 
     async def _cleanup_gmx_mdrun(self, workdir, run_name=None, **kwargs):
-        if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
-            _SEMAPHORES["SLURM_MAX_JOB"].release()
+        if _OPT_SEMAPHORES["SLURM_MAX_JOB"] is not None:
+            _OPT_SEMAPHORES["SLURM_MAX_JOB"].release()
         # remove the sbatch script
         name = self._name_from_name_or_none(run_name=run_name)
         fname = os.path.join(workdir, name + ".slurm")

@@ -14,14 +14,14 @@ The example notebook on the {doc}`SlurmProcess </examples_link/05_developer_topi
 ## Writing a TrajectoryFunctionWrapper class
 
 All wrapper classes for functions acting on {py:class}`Trajectory <asyncmd.Trajectory>` objects must subclass {py:class}`TrajectoryFunctionWrapper <asyncmd.trajectory.functionwrapper.TrajectoryFunctionWrapper>` to make full and easy use of the caching mechanism already implemented.
-You then only need to implement {py:meth}`TrajectoryFunctionWrapper._get_id_str <asyncmd.trajectory.functionwrapper.TrajectoryFunctionWrapper._get_id_str>` and {py:meth}`TrajectoryFunctionWrapper.get_values_for_trajectory <asyncmd.trajectory.functionwrapper.TrajectoryFunctionWrapper.get_values_for_trajectory>` to get a fully functional TrajectoryFunctionWrapper class.
+You then only need to implement {py:meth}`TrajectoryFunctionWrapper._get_id_str <asyncmd.trajectory.functionwrapper.TrajectoryFunctionWrapper._get_id_str>` and {py:meth}`TrajectoryFunctionWrapper._get_values_for_trajectory <asyncmd.trajectory.functionwrapper.TrajectoryFunctionWrapper._get_values_for_trajectory>` to get a fully functional TrajectoryFunctionWrapper class.
 See also the (reference) implementations of the other wrapper classes, {py:class}`PyTrajectoryFunctionWrapper <asyncmd.trajectory.PyTrajectoryFunctionWrapper>` and {py:class}`SlurmTrajectoryFunctionWrapper <asyncmd.trajectory.SlurmTrajectoryFunctionWrapper>`.
 
 ```{eval-rst}
 .. autoclass:: asyncmd.trajectory.functionwrapper.TrajectoryFunctionWrapper
     :class-doc-from: class
     :member-order: groupwise
-    :members: __call__, _get_id_str, get_values_for_trajectory
+    :members: __call__, _get_id_str, _get_values_for_trajectory
     :exclude-members: __init__, __weakref__
     :special-members:
     :private-members:

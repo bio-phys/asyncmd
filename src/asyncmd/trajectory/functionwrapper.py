@@ -26,16 +26,18 @@ import inspect
 import logging
 import hashlib
 import functools
+import collections
+import dataclasses
 import typing
-import aiofiles
-import aiofiles.os
-import numpy as np
 from concurrent.futures import ThreadPoolExecutor
+import aiofiles
+import numpy as np
 
 
-from .._config import _SEMAPHORES
+from .._config import _SEMAPHORES, _OPT_SEMAPHORES
 from .. import slurm
 from ..tools import ensure_executable_available, remove_file_if_exist_async
+from ..tools import attach_kwargs_to_object as _attach_kwargs_to_object
 from .trajectory import Trajectory
 
 
@@ -50,28 +52,15 @@ class TrajectoryFunctionWrapper(abc.ABC):
         #       (otherwise users could overwrite them by passing _id="blub" to
         #        init), but since the subclasses sets call_kwargs again and
         #       have to calculate the id according to their own recipe anyway
-        #       we can savely set them here (this enables us to use the id
+        #       we can safely set them here (this enables us to use the id
         #        property at initialization time as e.g. in the slurm_jobname
         #        of the SlurmTrajectoryFunctionWrapper)
-        self._id = None
-        self._call_kwargs = {}  # init to empty dict such that iteration works
+        self._id = ""
+        # initialize to an empty dict such that iteration works
+        self._call_kwargs: dict[str, typing.Any] = {}
         # make it possible to set any attribute via kwargs
         # check the type for attributes with default values
-        dval = object()
-        for kwarg, value in kwargs.items():
-            cval = getattr(self, kwarg, dval)
-            if cval is not dval:
-                if isinstance(value, type(cval)):
-                    # value is of same type as default so set it
-                    setattr(self, kwarg, value)
-                else:
-                    raise TypeError(f"Setting attribute {kwarg} with "
-                                    + f"mismatching type ({type(value)}). "
-                                    + f" Default type is {type(cval)}."
-                                    )
-            else:
-                # not previously defined, so warn that we ignore it
-                logger.warning("Ignoring unknown keyword-argument %s.", kwarg)
+        _attach_kwargs_to_object(obj=self, logger=logger, **kwargs)
 
     @property
     def id(self) -> str:
@@ -83,20 +72,21 @@ class TrajectoryFunctionWrapper(abc.ABC):
         return self._id
 
     @property
-    def call_kwargs(self) -> dict:
-        """Additional calling arguments for the wrapped function/executable."""
+    def call_kwargs(self) -> dict[str, typing.Any]:
+        """
+        Additional calling arguments for the wrapped function/executable.
+
+        **NOTE:** You can only (re)set the complete dict and not single keys!
+        """
         # return a copy to avoid people modifying entries without us noticing
-        # TODO/FIXME: this will make unhappy users if they try to set single
-        #             items in the dict!
         return self._call_kwargs.copy()
 
     @call_kwargs.setter
-    def call_kwargs(self, value):
+    def call_kwargs(self, value: dict[str, typing.Any]) -> None:
         if not isinstance(value, dict):
             raise TypeError("call_kwargs must be a dictionary.")
         self._call_kwargs = value
         self._id = self._get_id_str()  # get/set ID
-
 
     @abc.abstractmethod
     def _get_id_str(self) -> str:
@@ -109,13 +99,13 @@ class TrajectoryFunctionWrapper(abc.ABC):
         """
 
     @abc.abstractmethod
-    async def get_values_for_trajectory(self, traj: Trajectory):
+    async def _get_values_for_trajectory(self, traj: Trajectory) -> np.ndarray:
         """
-        Will be called by Trajectory._apply_wrapped_func() and is expected to
-        return a numpy array, shape=(n_frames, n_dim_function).
+        Will be called by self.__call__ to actually perform the function calculation.
+        Is expected to return a numpy array, shape=(n_frames, n_dim_function).
         """
 
-    async def __call__(self, value):
+    async def __call__(self, value: Trajectory) -> np.ndarray:
         """
         Apply wrapped function asynchronously on given trajectory.
 
@@ -129,14 +119,18 @@ class TrajectoryFunctionWrapper(abc.ABC):
         iterable, usually list or np.ndarray
             The values of the wrapped function when applied on the trajectory.
         """
-        if isinstance(value, Trajectory):
-            if self.id is not None:
-                return await value._apply_wrapped_func(self.id, self)
-            raise RuntimeError(f"{type(self)} must have a unique id, but "
-                               "self.id is None.")
-        raise TypeError(f"{type(self)} must be called with an "
-                        "`asyncmd.Trajectory` but was called with "
-                        f"{type(value)}.")
+        if not isinstance(value, Trajectory):
+            raise TypeError(f"{type(self)} must be called with an "
+                            "`asyncmd.Trajectory` but was called with "
+                            f"{type(value)}.")
+        async with value._semaphores_by_func_id[self.id]:
+            if (  # see if we have already values cached
+                func_values := value._retrieve_cached_values(func_wrapper=self)
+            ) is None:
+                # no values cached yet, so calc them and cache them
+                func_values = await self._get_values_for_trajectory(value)
+                value._register_cached_values(values=func_values, func_wrapper=self)
+            return func_values
 
 
 class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
@@ -147,15 +141,15 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
     function for application on :class:`asyncmd.Trajectory`. Also works for
     asynchronous (awaitable) functions, they will be cached.
     """
-    def __init__(self, function, call_kwargs: typing.Optional[dict] = None,
-                 **kwargs):
+    def __init__(self, function, call_kwargs: dict[str, typing.Any] | None = None,
+                 **kwargs) -> None:
         """
         Initialize a :class:`PyTrajectoryFunctionWrapper`.
 
         Parameters
         ----------
         function : callable
-            The (synchronous) callable to wrap.
+            The (synchronous or asynchronous) callable to wrap.
         call_kwargs : dict, optional
             Keyword arguments for `function`,
             the keys will be used as keyword with the corresponding values,
@@ -176,21 +170,21 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                 + f"call_kwargs={self.call_kwargs})"
                 )
 
-    def _get_id_str(self):
+    def _get_id_str(self) -> str:
         # calculate a hash over function src and call_kwargs dict
         # this should be unique and portable, i.e. it should enable us to make
         # ensure that the cached values will only be used for the same function
         # called with the same arguments
-        id = 0
+        _id = 0
         # NOTE: addition is commutative, i.e. order does not matter here!
         for k, v in self._call_kwargs.items():
             # hash the value
-            id += int(hashlib.blake2b(str(v).encode('utf-8')).hexdigest(), 16)
+            _id += int(hashlib.blake2b(str(v).encode('utf-8')).hexdigest(), 16)
             # hash the key
-            id += int(hashlib.blake2b(str(k).encode('utf-8')).hexdigest(), 16)
+            _id += int(hashlib.blake2b(str(k).encode('utf-8')).hexdigest(), 16)
         # and add the func_src
-        id += int(hashlib.blake2b(str(self._func_src).encode('utf-8')).hexdigest(), 16)
-        return str(id)  # return a str because we want to use it as dict keys
+        _id += int(hashlib.blake2b(str(self._func_src).encode('utf-8')).hexdigest(), 16)
+        return str(_id)  # return a str because we want to use it as dict keys
 
     @property
     def function(self):
@@ -205,21 +199,18 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                                or inspect.iscoroutinefunction(value.__call__))
         try:
             src = inspect.getsource(value)
-        except OSError:
+        except OSError as e:
             # OSError is raised if source can not be retrieved
-            self._func_src = None
-            self._id = None
-            logger.warning("Could not retrieve source for %s."
-                           " No caching can/will be performed.",
-                           value,
-                           )
+            raise OSError(f"Could not retrieve source for {value}."
+                          " No hash can be calculated and no caching performed."
+                          ) from e
         else:
             self._func_src = src
             self._id = self._get_id_str()  # get/set ID
         finally:
             self._func = value
 
-    async def get_values_for_trajectory(self, traj):
+    async def _get_values_for_trajectory(self, traj: Trajectory) -> np.ndarray:
         """
         Apply wrapped function asynchronously on given trajectory.
 
@@ -237,10 +228,10 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             return await self._get_values_for_trajectory_async(traj)
         return await self._get_values_for_trajectory_sync(traj)
 
-    async def _get_values_for_trajectory_async(self, traj):
+    async def _get_values_for_trajectory_async(self, traj: Trajectory) -> np.ndarray:
         return await self._func(traj, **self._call_kwargs)
 
-    async def _get_values_for_trajectory_sync(self, traj):
+    async def _get_values_for_trajectory_sync(self, traj: Trajectory) -> np.ndarray:
         loop = asyncio.get_running_loop()
         async with _SEMAPHORES["MAX_PROCESS"]:
             # fill in additional kwargs (if any)
@@ -258,7 +249,7 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             #       only place where this could make sense to think about as
             #       opposed to concatenation of trajs (which is IO bound)
             # NOTE: make sure we do not fork! (not save with multithreading)
-            # see e.g. https://stackoverflow.com/questions/46439740/safe-to-call-multiprocessing-from-a-thread-in-python
+            #       see e.g. https://stackoverflow.com/a/46440564
             #ctx = multiprocessing.get_context("forkserver")
             #with ProcessPoolExecutor(1, mp_context=ctx) as pool:
             with ThreadPoolExecutor(max_workers=1,
@@ -266,6 +257,16 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                                     ) as pool:
                 vals = await loop.run_in_executor(pool, func, traj)
         return vals
+
+
+@dataclasses.dataclass
+class _SlurmDataForTrajFuncWrapper:
+    """
+    Bundle/store all data related to slurm (submission) for :class:`SlurmTrajectoryFunctionWrapper`.
+    """
+    sbatch_script: str = ""
+    jobname: str | None = None
+    sbatch_options: dict[str, str] | None = None
 
 
 class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
@@ -294,10 +295,11 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
     different functions/executables for use with this class.
     """
 
-    def __init__(self, executable, sbatch_script,
+    def __init__(self, executable, sbatch_script, *,
                  sbatch_options: dict | None = None,
-                 call_kwargs: typing.Optional[dict] = None,
-                 load_results_func=None, **kwargs):
+                 call_kwargs: dict | None = None,
+                 load_results_func: collections.abc.Callable | None = None,
+                 **kwargs) -> None:
         """
         Initialize :class:`SlurmTrajectoryFunctionWrapper`.
 
@@ -335,6 +337,8 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             case you want to pass single command line flags (like ``-v``) this
             can be achieved by setting ``key="-v"`` and ``val=""``, i.e. to the
             empty string.
+            Lists as values will be unpacked and added as (for a list with n
+            entries): `` {key} {val1} {val2} ... {valn}``.
             The values are shell escaped using :func:`shlex.quote` when writing
             them to the sbatch script.
         load_results_func : None or function (callable)
@@ -343,21 +347,13 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             the results file (as in the call to the executable) and should
             return a numpy array containing the loaded values.
         """
-        # property defaults before superclass init to be resettable via kwargs
-        self._slurm_jobname = None
+        # init property defaults before superclass init to be resettable via kwargs
+        self._slurm_data = _SlurmDataForTrajFuncWrapper(sbatch_options=sbatch_options,
+                                                        )
         super().__init__(**kwargs)
-        self._executable = None
-        # we expect sbatch_script to be a str,
-        # but it could be either the path to a submit script or the content of
-        # the submission script directly
-        # we decide what it is by checking for the shebang
-        if not sbatch_script.startswith("#!"):
-            # probably path to a file, lets try to read it
-            with open(sbatch_script, 'r') as f:
-                sbatch_script = f.read()
-        # (possibly) use properties to calc the id directly
+        self._executable = ""
+        # use property setters to (possibly) calc the id directly and/or preprocess values
         self.sbatch_script = sbatch_script
-        self.sbatch_options = sbatch_options
         self.executable = executable
         if call_kwargs is None:
             call_kwargs = {}
@@ -372,56 +368,90 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         Also used as part of the filename for the submission script that will
         be written (and deleted if everything goes well) for every trajectory.
 
-        NOTE: Must be unique for each :class:`SlurmTrajectoryFunctionWrapper`
+        **NOTE:** Must be unique for each :class:`SlurmTrajectoryFunctionWrapper`
         instance. Will by default include the persistent unique ID :meth:`id`.
         To (re)set to the default set it to None.
         """
-        if self._slurm_jobname is None:
+        if self._slurm_data.jobname is None:
             return f"CVfunc_id_{self.id}"
-        return self._slurm_jobname
+        return self._slurm_data.jobname
 
     @slurm_jobname.setter
-    def slurm_jobname(self, val: str | None):
-        self._slurm_jobname = val
+    def slurm_jobname(self, val: str | None) -> None:
+        self._slurm_data.jobname = val
+
+    @property
+    def sbatch_script(self) -> str:
+        """
+        Content of the sbatch script (see the corresponding __init__ argument).
+
+        Can also be set with the path to a file, in this case the script will be read.
+        """
+        return self._slurm_data.sbatch_script
+
+    @sbatch_script.setter
+    def sbatch_script(self, value: str) -> None:
+        # we expect sbatch_script to be a str,
+        # but it could be either the path to a submit script or the content of
+        # the submission script directly
+        # we decide what it is by checking for the shebang
+        if not value.startswith("#!"):
+            # probably path to a file, lets try to read it
+            with open(value, 'r', encoding="locale") as f:
+                value = f.read()
+        self._slurm_data.sbatch_script = value
+
+    @property
+    def sbatch_options(self) -> dict[str, str] | None:
+        """
+        Dictionary of sbatch_options or None (see the corresponding __init__ argument).
+
+        **NOTE:** You can only (re)set the complete dict and not single keys!
+        """
+        return self._slurm_data.sbatch_options
+
+    @sbatch_options.setter
+    def sbatch_options(self, value: dict[str, str] | None) -> None:
+        self._slurm_data.sbatch_options = value
 
     def __repr__(self) -> str:
         return (f"SlurmTrajectoryFunctionWrapper(executable={self._executable}, "
                 + f"call_kwargs={self.call_kwargs})"
                 )
 
-    def _get_id_str(self):
+    def _get_id_str(self) -> str:
         # calculate a hash over executable and call_kwargs dict
         # this should be unique and portable, i.e. it should enable us to make
         # ensure that the cached values will only be used for the same function
         # called with the same arguments
-        id = 0
+        _id = 0
         # NOTE: addition is commutative, i.e. order does not matter here!
         for k, v in self._call_kwargs.items():
             # hash the value
-            id += int(hashlib.blake2b(str(v).encode('utf-8')).hexdigest(), 16)
+            _id += int(hashlib.blake2b(str(v).encode('utf-8')).hexdigest(), 16)
             # hash the key
-            id += int(hashlib.blake2b(str(k).encode('utf-8')).hexdigest(), 16)
+            _id += int(hashlib.blake2b(str(k).encode('utf-8')).hexdigest(), 16)
         # and add the executable hash
         with open(self.executable, "rb") as exe_file:
             # NOTE: we assume that executable is small enough to read at once
             #       if this crashes becasue of OOM we should use chunks...
             data = exe_file.read()
-        id += int(hashlib.blake2b(data).hexdigest(), 16)
-        return str(id)  # return a str because we want to use it as dict keys
+        _id += int(hashlib.blake2b(data).hexdigest(), 16)
+        return str(_id)  # return a str because we want to use it as dict keys
 
     @property
-    def executable(self):
+    def executable(self) -> str:
         """The executable used to compute the function results."""
         return self._executable
 
     @executable.setter
-    def executable(self, val):
+    def executable(self, val: str) -> None:
         exe = ensure_executable_available(val)
         # if we get here it should be save to set, i.e. it exists + has X-bit
         self._executable = exe
         self._id = self._get_id_str()  # get the new hash/id
 
-    async def get_values_for_trajectory(self, traj):
+    async def _get_values_for_trajectory(self, traj: Trajectory) -> np.ndarray:
         """
         Apply wrapped function asynchronously on given trajectory.
 
@@ -432,7 +462,7 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
 
         Returns
         -------
-        iterable, usually list or np.ndarray
+        np.ndarray
             The values of the wrapped function when applied on the trajectory.
         """
         # first construct the path/name for the numpy npy file in which we expect
@@ -447,22 +477,8 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         result_file = os.path.abspath(os.path.join(
                         tra_dir, f"{tra_name}_{hash_part}_CVfunc_id_{self.id}"
                                                    ))
-        # we expect executable to take 3 postional args:
-        # struct traj outfile
-        cmd_str = f"{self.executable} {os.path.abspath(traj.structure_file)}"
-        cmd_str += f" {' '.join(os.path.abspath(t) for t in traj.trajectory_files)}"
-        cmd_str += f" {result_file}"
-        if len(self.call_kwargs) > 0:
-            for key, val in self.call_kwargs.items():
-                # shell escape only the values,
-                # the keys (i.e. option names/flags) should be no issue
-                if isinstance(val, list):
-                    # enable lists of arguments for the same key,
-                    # can then be used e.g. with pythons argparse `nargs="*"` or `nargs="+"`
-                    cmd_str += f" {key} {' '.join([shlex.quote(str(v)) for v in val])}"
-                else:
-                    cmd_str += f" {key} {shlex.quote(str(val))}"
         # now prepare the sbatch script
+        cmd_str = self._build_cmd_str(traj=traj, result_file=result_file)
         script = self.sbatch_script.format(cmd_str=cmd_str)
         # write it out
         sbatch_fname = os.path.join(tra_dir,
@@ -473,7 +489,7 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                          sbatch_fname,
                          )
         async with _SEMAPHORES["MAX_FILES_OPEN"]:
-            async with aiofiles.open(sbatch_fname, 'w') as f:
+            async with aiofiles.open(sbatch_fname, 'w', encoding="locale") as f:
                 await f.write(script)
         # NOTE: we set returncode to 2 (what slurmprocess returns in case of
         # node failure) and rerun/retry until we either get a completed job
@@ -493,7 +509,8 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                              self.executable, traj, slurm_proc.slurm_jobid,
                              stdout.decode(), stderr.decode(),
                              )
-        if returncode != 0:
+        if returncode:
+            # Non-zero return code,
             # Can not be exitcode 2, because of the while loop above
             raise RuntimeError(
                             "Non-zero exit code from CV batch job for "
@@ -505,6 +522,29 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                             + f" and stdout was: {stdout.decode()}"
                                     )
         # zero-exitcode: load the results
+        return await self._load_results_remove_files(result_file=result_file,
+                                                     sbatch_fname=sbatch_fname)
+
+    def _build_cmd_str(self, traj: Trajectory, result_file: str) -> str:
+        # we expect executable to take 3 positional args:
+        # struct traj outfile
+        cmd_str = f"{self.executable} {os.path.abspath(traj.structure_file)}"
+        cmd_str += f" {' '.join(os.path.abspath(t) for t in traj.trajectory_files)}"
+        cmd_str += f" {result_file}"
+        if len(self.call_kwargs) > 0:
+            for key, val in self.call_kwargs.items():
+                # shell escape only the values,
+                # the keys (i.e. option names/flags) should be no issue
+                if isinstance(val, list):
+                    # enable lists of arguments for the same key,
+                    # can then be used e.g. with pythons argparse `nargs="*"` or `nargs="+"`
+                    cmd_str += f" {key} {' '.join([shlex.quote(str(v)) for v in val])}"
+                else:
+                    cmd_str += f" {key} {shlex.quote(str(val))}"
+        return cmd_str
+
+    async def _load_results_remove_files(self, result_file: str,
+                                         sbatch_fname: str) -> np.ndarray:
         if self.load_results_func is None:
             # we do not have '.npy' ending in results_file,
             # numpy.save() adds it if it is not there, so we need it here
@@ -532,12 +572,11 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
 
     async def _run_slurm_job(self, sbatch_fname: str, result_file: str,
                              slurm_workdir: str,
-                             ) -> tuple[int,slurm.SlurmProcess,bytes,bytes]:
+                             ) -> tuple[int, slurm.SlurmProcess, bytes, bytes]:
         # submit and run slurm-job
-        if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
-            await _SEMAPHORES["SLURM_MAX_JOB"].acquire()
-        try:  # this try is just to make sure we always release the semaphore
-            slurm_proc = await slurm.create_slurmprocess_submit(
+        if _OPT_SEMAPHORES["SLURM_MAX_JOB"] is not None:
+            await _OPT_SEMAPHORES["SLURM_MAX_JOB"].acquire()
+        slurm_proc = await slurm.create_slurmprocess_submit(
                                         jobname=self.slurm_jobname,
                                         sbatch_script=sbatch_fname,
                                         workdir=slurm_workdir,
@@ -546,12 +585,13 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                                         stdin=None,
                                         # sleep 5 s between checking
                                         sleep_time=5,
-                                                                )
+                                        )
+        # this try is just to make sure we always release the semaphore
+        # and to possibly clean up any left-over files from the fail
+        try:
             # wait for the slurm job to finish
             # also cancel the job when this future is canceled
             stdout, stderr = await slurm_proc.communicate()
-            returncode = slurm_proc.returncode
-            return returncode, slurm_proc, stdout, stderr
         except asyncio.CancelledError:
             slurm_proc.kill()
             # clean up the sbatch file and potentialy written result file
@@ -561,6 +601,8 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                                  remove_file_if_exist_async(res_fname),
                                  )
             raise  # reraise CancelledError for encompassing coroutines
+        else:
+            return slurm_proc.returncode, slurm_proc, stdout, stderr
         finally:
-            if _SEMAPHORES["SLURM_MAX_JOB"] is not None:
-                _SEMAPHORES["SLURM_MAX_JOB"].release()
+            if _OPT_SEMAPHORES["SLURM_MAX_JOB"] is not None:
+                _OPT_SEMAPHORES["SLURM_MAX_JOB"].release()

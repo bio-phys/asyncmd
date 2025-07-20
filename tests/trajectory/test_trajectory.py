@@ -17,15 +17,16 @@ import os
 import pickle
 import numpy as np
 
-from unittest.mock import AsyncMock
+from unittest.mock import Mock, PropertyMock
 
 import asyncmd
 from asyncmd import Trajectory
 from asyncmd.config import _GLOBALS  # noqa: F401
-from asyncmd.trajectory.trajectory import (TrajectoryFunctionValueCacheMEMORY,
-                                           TrajectoryFunctionValueCacheNPZ,
-                                           TrajectoryFunctionValueCacheH5PY,
-                                           )
+from asyncmd.trajectory.trajectory_cache import (TrajectoryFunctionValueCacheInMemory,
+                                                 TrajectoryFunctionValueCacheInNPZ,
+                                                 TrajectoryFunctionValueCacheInH5PY,
+                                                 ValuesAlreadyStoredError,
+                                                 )
 from asyncmd.trajectory.functionwrapper import TrajectoryFunctionWrapper
 
 
@@ -71,6 +72,23 @@ class Test_Trajectory(TBase):
     def setup_method(self):
         super().setup_method()
         asyncmd.trajectory._forget_all_trajectories()
+
+    @pytest.mark.parametrize(["trajectory_files", "structure_file"],
+                             [("tests/test_data/trajectory/ala_traj.trr",  # existing traj
+                               "tests/test_data/trajectory/NON_EXISTING_STRUCTURE",  # ...
+                               ),
+                              (["tests/test_data/trajectory/ala_traj.trr"],  # existing traj (list)
+                               "tests/test_data/trajectory/NON_EXISTING_STRUCTURE",  # ...
+                               ),
+                              # and the other way around: non-existing traj, but struct present
+                              ("tests/test_data/trajectory/NON_EXISTING_TRAJECTORY",
+                               "tests/test_data/trajectory/ala.tpr")
+                              ]
+                             )
+    def test_init_raises_non_existing_files(self, trajectory_files, structure_file):
+        with pytest.raises(FileNotFoundError):
+            _ = Trajectory(trajectory_files=trajectory_files,
+                           structure_file=structure_file)
 
     @pytest.mark.parametrize(["traj_file", "struct_file", "truth"],
                              [("tests/test_data/trajectory/ala_traj.trr",
@@ -296,7 +314,7 @@ class Test_Trajectory(TBase):
             return Trajectory(
                     trajectory_files="tests/test_data/trajectory/ala_traj.trr",
                     structure_file="tests/test_data/trajectory/ala.tpr",
-                              )
+                    )
 
         def assert_neq(traj1, traj2):
             # check both eq and neq at once
@@ -306,58 +324,42 @@ class Test_Trajectory(TBase):
         traj2 = make_traj()
         assert traj1 == traj2  # make sure they are equal to begin with
         assert not traj1 != traj2  # and check that neq also works
-        # modify hash
-        traj2 = make_traj()  # get a new traj2
-        traj2._traj_hash += 1
+        # get another traj2 to test [not] eq (for two trajs which are different)
+        traj2 = Trajectory(
+                    trajectory_files="tests/test_data/trajectory/ala_conf_in_no_state.trr",
+                    structure_file="tests/test_data/trajectory/ala.tpr",
+                    )
         assert_neq(traj1, traj2)
         # test for non trajectory objects
         assert_neq(traj1, object())
 
-    @pytest.mark.parametrize("default_cache_type",
-                             [None, "npz", "h5py", "memory"])
     @pytest.mark.parametrize("cache_type",
-                             [None, "npz", "h5py", "memory"])
+                             ["npz", "h5py", "memory"])
     @pytest.mark.parametrize("initial_cache_type",
-                             [None, "npz", "h5py", "memory"])
-    @pytest.mark.asyncio
-    async def test__setup_cache(self, tmp_path, default_cache_type, cache_type,
-                                initial_cache_type):
-        # we create a trajectory with given cache_type
-        # (after setting default_cache_type), append some values and then
-        # (re)set its cache_type and check that everything is there and in the
+                             ["npz", "h5py", "memory"])
+    def test__setup_cache(self, tmp_path, cache_type, initial_cache_type):
+        # we create a trajectory with given initial_cache_type
+        # (after setting config-cache type), append some values, then
+        # (re)set the cache_type and check that everything is there and in the
         # correct cache
         global _GLOBALS
-        if (default_cache_type == "h5py"
-                or cache_type == "h5py"
-                or initial_cache_type == "h5py"):
+        if (initial_cache_type == "h5py" or cache_type == "h5py"):
+            # setup the h5py file if we use a h5py cache
             h5py = pytest.importorskip("h5py", minversion=None,
                                        reason="Requires 'h5py' to run.",
                                        )
             h5file = h5py.File(tmp_path / "h5py_file.h5", mode="w")
-            asyncmd.config.register_h5py_cache(h5py_group=h5file)
-        else:
-            # ensure it is not set
-            try:
-                del _GLOBALS["H5PY_CACHE"]
-            except KeyError:
-                pass
-        # Note that we need this bit below after calling register_h5py_file
-        # because that calls set_default_trajectory_cache_type("h5py")
-        if default_cache_type is not None:
-            asyncmd.config.set_default_trajectory_cache_type(
-                                            cache_type=default_cache_type,
-                                                             )
-        else:
-            # ensure it is unset
-            try:
-                del _GLOBALS["TRAJECTORY_FUNCTION_CACHE_TYPE"]
-            except KeyError:
-                pass
+            if initial_cache_type == "h5py":
+                asyncmd.config.register_h5py_cache(h5py_group=h5file)
+        # set the initial cache type (if it is `h5py` this is a no-op, since then
+        # register_h5py_cache already sets the cache type to h5py)
+        asyncmd.config.set_trajectory_cache_type(cache_type=initial_cache_type)
+
         traj = Trajectory(
                     trajectory_files="tests/test_data/trajectory/ala_traj.trr",
                     structure_file="tests/test_data/trajectory/ala.tpr",
-                    cache_type=initial_cache_type,
                           )
+        traj.clear_all_cache_values()  # make sure the cache is empty
         # create some dummy CV data and attach it to traj
         n_cached_cvs = 4
         cv_dims = [self.ran_gen.integers(300) for _ in range(n_cached_cvs)]
@@ -366,93 +368,65 @@ class Test_Trajectory(TBase):
                        ]
         func_ids = [self.make_func_id() for _ in range(n_cached_cvs)]
         # use a mock wrapped CV to attach the values
-        wrapped_func = AsyncMock(TrajectoryFunctionWrapper)
-        wrapped_func.get_values_for_trajectory.side_effect = func_values
-        for func_id in func_ids:
-            await traj._apply_wrapped_func(func_id=func_id,
-                                           wrapped_func=wrapped_func,
-                                           )
+        wrapped_func = Mock(TrajectoryFunctionWrapper)
+        type(wrapped_func).id = PropertyMock(side_effect=func_ids)
+        for vals in func_values:
+            traj._register_cached_values(values=vals, func_wrapper=wrapped_func)
         # now reset cache_type
-        traj.cache_type = cache_type
-        # and check that everything went well
-        for func_id, func_vals in zip(func_ids, func_values):
-            retrieved_func_vals = await traj._apply_wrapped_func(
-                                                    func_id=func_id,
-                                                    wrapped_func=None,
-                                                                     )
-            assert np.all(np.equal(retrieved_func_vals, func_vals))
-        # and that the correct cache is used
-        print(traj.__dict__)
-        if cache_type is not None:
-            assert traj.cache_type == cache_type
+        if cache_type == "h5py":
+            asyncmd.config.register_h5py_cache(h5py_group=h5file)
         else:
-            # we should take the global default if set
-            if default_cache_type is not None:
-                assert traj.cache_type == default_cache_type
-            else:
-                # no global default set and no value set
-                # currently that defaults to npz
-                assert traj.cache_type == "npz"
+            # for h5py this should be a no-op, but we take that code path above ;)
+            asyncmd.config.set_trajectory_cache_type(cache_type=cache_type)
+        # and check that everything went well
+        wrapped_func = Mock(TrajectoryFunctionWrapper)
+        type(wrapped_func).id = PropertyMock(side_effect=func_ids)
+        for func_vals in func_values:
+            retrieved_func_vals = traj._retrieve_cached_values(
+                                                    func_wrapper=wrapped_func,
+                                                               )
+            assert np.all(np.equal(retrieved_func_vals, func_vals))
+        # and check that the correct cache (class) is used/bound to traj
+        cache_type_to_class = {"memory": TrajectoryFunctionValueCacheInMemory,
+                               "npz": TrajectoryFunctionValueCacheInNPZ,
+                               "h5py": TrajectoryFunctionValueCacheInH5PY,
+                               }
+        assert isinstance(traj._cache, cache_type_to_class[cache_type])
         # cleanup
         # remove the npz cache file (if it can be there)!
-        fname_npz_cache = TrajectoryFunctionValueCacheNPZ._get_cache_filename(
-                                        fname_trajs=traj.trajectory_files,
-                                        trajectory_hash=traj.trajectory_hash,
+        fname_npz_cache = TrajectoryFunctionValueCacheInNPZ.get_cache_filename(
+                                        traj_files=traj.trajectory_files,
                                                                               )
-        if ("npz" in [cache_type, initial_cache_type]  # npz cache explicitly used
-            # npz cache explicitly set as default (or implicitly since default=None)
-            or ((cache_type is None or initial_cache_type is None)
-                and (default_cache_type == "npz" or default_cache_type is None)
-                )):
+        if "npz" in (cache_type, initial_cache_type):  # npz cache explicitly used
             os.unlink(fname_npz_cache)
         else:
             # there should be no file created if npz cache is not involved!
             assert not os.path.isfile(fname_npz_cache)
 
-    @pytest.mark.parametrize("default_cache_type",
-                             [None, "npz", "h5py", "memory"])
     @pytest.mark.parametrize("cache_type",
-                             [None, "npz", "h5py", "memory"])
+                             ["npz", "h5py", "memory"])
     @pytest.mark.parametrize("change_wdir_between_pickle_unpickle",
                              [True, False])
-    @pytest.mark.asyncio
-    async def test_pickle_and_wrapped_func_application(
+    def test_pickle_and_wrapped_func_application(
                                         self,
                                         tmp_path,
-                                        default_cache_type,
                                         cache_type,
                                         change_wdir_between_pickle_unpickle,
                                                        ):
         global _GLOBALS
-        if default_cache_type == "h5py" or cache_type == "h5py":
+        if cache_type == "h5py":
             h5py = pytest.importorskip("h5py", minversion=None,
                                        reason="Requires 'h5py' to run.",
                                        )
             h5file = h5py.File(tmp_path / "h5py_file.h5", mode="w")
             asyncmd.config.register_h5py_cache(h5py_group=h5file)
         else:
-            # ensure it is not set
-            try:
-                del _GLOBALS["H5PY_CACHE"]
-            except KeyError:
-                pass
-        # Note that we need this bit below after calling register_h5py_file
-        # because that calls set_default_trajectory_cache_type("h5py")
-        if default_cache_type is not None:
-            asyncmd.config.set_default_trajectory_cache_type(
-                                            cache_type=default_cache_type,
-                                                             )
-        else:
-            # ensure it is unset
-            try:
-                del _GLOBALS["TRAJECTORY_FUNCTION_CACHE_TYPE"]
-            except KeyError:
-                pass
+            asyncmd.config.set_trajectory_cache_type(cache_type=cache_type)
         traj = Trajectory(
                     trajectory_files="tests/test_data/trajectory/ala_traj.trr",
                     structure_file="tests/test_data/trajectory/ala.tpr",
-                    cache_type=cache_type,
                           )
+        traj.clear_all_cache_values()  # make sure the cache is empty
         # create some dummy CV data and attach it to traj
         n_cached_cvs = 4
         cv_dims = [self.ran_gen.integers(300) for _ in range(n_cached_cvs)]
@@ -461,12 +435,10 @@ class Test_Trajectory(TBase):
                        ]
         func_ids = [self.make_func_id() for _ in range(n_cached_cvs)]
         # use a mock wrapped CV to attach the values
-        wrapped_func = AsyncMock(TrajectoryFunctionWrapper)
-        wrapped_func.get_values_for_trajectory.side_effect = func_values
-        for func_id in func_ids:
-            await traj._apply_wrapped_func(func_id=func_id,
-                                           wrapped_func=wrapped_func,
-                                           )
+        wrapped_func = Mock(TrajectoryFunctionWrapper)
+        type(wrapped_func).id = PropertyMock(side_effect=func_ids)
+        for vals in func_values:
+            traj._register_cached_values(values=vals, func_wrapper=wrapped_func)
         fname = tmp_path / "pickle_test.pckl"
         with open(file=fname, mode="wb") as pfile:
             pickle.dump(traj, pfile)
@@ -477,41 +449,32 @@ class Test_Trajectory(TBase):
 
         # now open the file and load it again
         with open(file=fname, mode="rb") as pfile:
-            loaded_traj = pickle.load(pfile)
+            loaded_traj: Trajectory = pickle.load(pfile)
         # now compare the two
         # equality should at least be True
         assert traj == loaded_traj
         # check that the CV values are all in the loaded traj too
-        # use None for the wrapped func to get an err if it is called
-        # because it should not be called since the value will be cached
-        for func_id, func_vals in zip(func_ids, func_values):
-            loaded_func_vals = await loaded_traj._apply_wrapped_func(
-                                                    func_id=func_id,
-                                                    wrapped_func=None,
-                                                                     )
+        wrapped_func = Mock(TrajectoryFunctionWrapper)
+        type(wrapped_func).id = PropertyMock(side_effect=func_ids)
+        for func_vals in func_values:
+            loaded_func_vals = loaded_traj._retrieve_cached_values(
+                                                    func_wrapper=wrapped_func,
+                                                                   )
             assert np.all(np.equal(loaded_func_vals, func_vals))
-        # check that we unpickled with the correct cache
-        if cache_type is not None:
-            # we should have cache_type in both trajs independant of the
-            # default cache type
-            assert traj.cache_type == cache_type
-            assert loaded_traj.cache_type == cache_type
-        else:
-            # we should use the default cache type (if set)
-            if default_cache_type is None:
-                # this currently defaults to npz cache
-                assert traj.cache_type == "npz"
-                assert loaded_traj.cache_type == "npz"
-            else:
-                assert traj.cache_type == default_cache_type
-                assert loaded_traj.cache_type == default_cache_type
+
         # cleanup
         # remove the npz cache file!
-        fname_npz_cache = TrajectoryFunctionValueCacheNPZ._get_cache_filename(
-                                        fname_trajs=traj.trajectory_files,
-                                        trajectory_hash=traj.trajectory_hash,
+        fname_npz_cache = TrajectoryFunctionValueCacheInNPZ.get_cache_filename(
+                                        traj_files=traj.trajectory_files,
                                                                               )
-        os.unlink(fname_npz_cache)
+        if (
+            cache_type == "npz"  # npz cache explicitly used
+            or cache_type == "memory"  # memory will write to npz when pickled
+        ):
+            os.unlink(fname_npz_cache)
+        else:
+            # there should be no file created if npz cache is not involved!
+            assert not os.path.isfile(fname_npz_cache)
 
 
 class Test_TrajectoryFunctionValueCache(TBase):
@@ -519,22 +482,22 @@ class Test_TrajectoryFunctionValueCache(TBase):
         super().setup_method()
 
     @pytest.mark.parametrize("cache_class",
-                             [TrajectoryFunctionValueCacheNPZ,
-                              TrajectoryFunctionValueCacheH5PY,
-                              TrajectoryFunctionValueCacheMEMORY,
+                             [TrajectoryFunctionValueCacheInNPZ,
+                              TrajectoryFunctionValueCacheInH5PY,
+                              TrajectoryFunctionValueCacheInMemory,
                               ]
                              )
     def test_append_iter_len___getitem___errs(self, tmp_path, cache_class):
-        first_arg = None
-        if cache_class is TrajectoryFunctionValueCacheNPZ:
-            first_arg = [tmp_path / "traj_name.traj"]
-        elif cache_class is TrajectoryFunctionValueCacheH5PY:
+        if cache_class is TrajectoryFunctionValueCacheInH5PY:
             h5py = pytest.importorskip("h5py", minversion=None,
                                        reason="Requires 'h5py' to run.",
                                        )
             fname_traj_cache = tmp_path / "traj_cache.h5"
-            first_arg = h5py.File(fname_traj_cache, mode="w")
-        hash_traj = self.make_trajectory_hash()
+            h5file = h5py.File(fname_traj_cache, mode="w")
+            asyncmd.config.register_h5py_cache(h5py_group=h5file)
+
+        traj_hash = self.make_trajectory_hash()
+        traj_files = [tmp_path / "traj_name.traj"]
         n_cached_cvs = 2
         traj_len = 23
         cv_dims = [1, 223]
@@ -542,7 +505,7 @@ class Test_TrajectoryFunctionValueCache(TBase):
         test_data_func_values = [self.make_func_values(traj_len, cv_dim)
                                  for cv_dim in cv_dims]
         # now create a fresh cache and append
-        cache = cache_class(first_arg, hash_traj=hash_traj)
+        cache = cache_class(traj_hash=traj_hash, traj_files=traj_files)
         # make sure we get a KeyError trying to access non-existing values
         for func_id in test_data_func_ids:
             with pytest.raises(KeyError):
@@ -551,24 +514,15 @@ class Test_TrajectoryFunctionValueCache(TBase):
         # access non-existant stuff
         for func_id, func_values in zip(test_data_func_ids,
                                         test_data_func_values):
-            cache.append(func_id=func_id, vals=func_values)
+            cache.append(func_id=func_id, values=func_values)
         for _ in range(3):
             with pytest.raises(KeyError):
                 _ = cache[self.make_func_id()]
-        # test for TypeError when using something that is not a string as key
-        # also check for TypeError when appending func_ids that are not str
-        for func_id in [object(), 1, True, self.ran_gen]:
-            with pytest.raises(TypeError):
-                _ = cache[func_id]
-            with pytest.raises(TypeError):
-                cache.append(func_id=func_id,
-                             vals=np.zeros(shape=(traj_len, 2)),
-                             )
         # check that appending again raises an error
         for func_id, func_values in zip(test_data_func_ids,
                                         test_data_func_values):
-            with pytest.raises(ValueError):
-                cache.append(func_id=func_id, vals=func_values)
+            with pytest.raises(ValuesAlreadyStoredError):
+                cache.append(func_id=func_id, values=func_values)
         # and finally test that everything is there as expected
         for func_id in cache:
             idx_in_test_data = test_data_func_ids.index(func_id)
@@ -582,24 +536,28 @@ class Test_TrajectoryFunctionValueCache(TBase):
                                test_data_func_values[ran_idx]
                                )
                       )
+        # now check that clear works as expected
+        cache.clear_all_values()
+        assert len(cache) == 0
 
     # Note these test dont work for the memory cache as it is not stateful,
     # i.e. recreating it will empty it (as there is no file to back it)
     @pytest.mark.parametrize("cache_class",
-                             [TrajectoryFunctionValueCacheNPZ,
-                              TrajectoryFunctionValueCacheH5PY,
+                             [TrajectoryFunctionValueCacheInNPZ,
+                              TrajectoryFunctionValueCacheInH5PY,
                               ]
                              )
     def test_stateful_append_iter_len(self, tmp_path, cache_class):
-        if cache_class is TrajectoryFunctionValueCacheNPZ:
-            first_arg = [tmp_path / "traj_name.traj"]
-        elif cache_class is TrajectoryFunctionValueCacheH5PY:
+        if cache_class is TrajectoryFunctionValueCacheInH5PY:
             h5py = pytest.importorskip("h5py", minversion=None,
                                        reason="Requires 'h5py' to run.",
                                        )
             fname_traj_cache = tmp_path / "traj_cache.h5"
-            first_arg = h5py.File(fname_traj_cache, mode="w")
-        hash_traj = self.make_trajectory_hash()
+            h5file = h5py.File(fname_traj_cache, mode="w")
+            asyncmd.config.register_h5py_cache(h5py_group=h5file)
+
+        traj_hash = self.make_trajectory_hash()
+        traj_files = [tmp_path / "traj_name.traj"]
         n_cached_cvs = 5
         n_initial_cvs = 2
         traj_len = 123
@@ -610,13 +568,13 @@ class Test_TrajectoryFunctionValueCache(TBase):
         test_data_func_values = [self.make_func_values(traj_len, cv_dim)
                                  for cv_dim in cv_dims]
         # now create a fresh cache and append
-        cache = cache_class(first_arg, hash_traj=hash_traj)
+        cache = cache_class(traj_hash=traj_hash, traj_files=traj_files)
         for func_id, func_values in zip(test_data_func_ids[:n_initial_cvs],
                                         test_data_func_values[:n_initial_cvs]):
-            cache.append(func_id=func_id, vals=func_values)
+            cache.append(func_id=func_id, values=func_values)
         # now create a new cache, make sure it has the right "len" and that the
         # values are as expected (use iter to check!)
-        cache2 = cache_class(first_arg, hash_traj=hash_traj)
+        cache2 = cache_class(traj_hash=traj_hash, traj_files=traj_files)
         assert len(cache2) == n_initial_cvs
         for func_id in cache2:
             idx_in_test_data = test_data_func_ids.index(func_id)
@@ -627,17 +585,21 @@ class Test_TrajectoryFunctionValueCache(TBase):
         # now append the initial part again and check for the err
         for func_id, func_values in zip(test_data_func_ids[:n_initial_cvs],
                                         test_data_func_values[:n_initial_cvs]):
-            with pytest.raises(ValueError):
-                cache2.append(func_id=func_id, vals=func_values)
+            with pytest.raises(ValuesAlreadyStoredError):
+                cache2.append(func_id=func_id, values=func_values)
         # now append the rest and check that everything is correct
         for func_id, func_values in zip(test_data_func_ids[n_initial_cvs:],
                                         test_data_func_values[n_initial_cvs:]):
-            cache2.append(func_id=func_id, vals=func_values)
-        cache3 = cache_class(first_arg, hash_traj=hash_traj)
+            cache2.append(func_id=func_id, values=func_values)
+        cache3 = cache_class(traj_hash=traj_hash, traj_files=traj_files)
         assert len(cache3) == n_cached_cvs
         for func_id, func_values in zip(test_data_func_ids,
                                         test_data_func_values):
             assert np.all(np.equal(cache3[func_id], func_values))
+        # check that stateful caches initialize empty if we clear them before
+        cache3.clear_all_values()
+        cache4 = cache_class(traj_hash=traj_hash, traj_files=traj_files)
+        assert len(cache4) == 0
 
     # NOTE: this test is only relevant for npz cache as the h5py cache does not
     #       have/need a corresponding function since it caches using the
@@ -645,8 +607,8 @@ class Test_TrajectoryFunctionValueCache(TBase):
     def test__ensure_consistent_npz(self, tmp_path):
         # we also check in here that we get back what we saved
         # first generate name and hash for the traj + some mock CV data
-        fname_trajs = [tmp_path / "traj_name.traj"]
-        hash_traj = self.make_trajectory_hash()
+        traj_files = [tmp_path / "traj_name.traj"]
+        traj_hash = self.make_trajectory_hash()
         n_cached_cvs = 4
         traj_len = 223
         cv_dims = [1, 223, 10, 321]
@@ -654,16 +616,14 @@ class Test_TrajectoryFunctionValueCache(TBase):
         test_data_func_values = [self.make_func_values(traj_len, cv_dim)
                                  for cv_dim in cv_dims]
         # now create a fresh cache and append
-        npz_cache = TrajectoryFunctionValueCacheNPZ(fname_trajs=fname_trajs,
-                                                    hash_traj=hash_traj,
-                                                    )
+        npz_cache = TrajectoryFunctionValueCacheInNPZ(traj_hash=traj_hash,
+                                                      traj_files=traj_files)
         for func_id, func_values in zip(test_data_func_ids,
                                         test_data_func_values):
-            npz_cache.append(func_id=func_id, vals=func_values)
+            npz_cache.append(func_id=func_id, values=func_values)
         # now create a second npz cache to test that it will load the data
-        npz_cache2 = TrajectoryFunctionValueCacheNPZ(fname_trajs=fname_trajs,
-                                                     hash_traj=hash_traj,
-                                                     )
+        npz_cache2 = TrajectoryFunctionValueCacheInNPZ(traj_hash=traj_hash,
+                                                       traj_files=traj_files)
         for func_id, func_values in zip(test_data_func_ids,
                                         test_data_func_values):
             # and check that the loaded and saved data are equal
@@ -671,26 +631,39 @@ class Test_TrajectoryFunctionValueCache(TBase):
         # now check that the npz file will be removed if the traj hashes dont
         # match, currently we have the first 5 digits of the hash in the cache
         # filename, so artificially modify only the last digit(s)
-        hash_traj_mm = hash_traj - 1
-        if not (str(hash_traj)[:5] == str(hash_traj_mm)[:5]):
-            hash_traj_mm = hash_traj + 1
-        cache_file_name = npz_cache._get_cache_filename(
-                                                fname_trajs=fname_trajs,
-                                                trajectory_hash=hash_traj)
+        hash_traj_mm = traj_hash - 1
+        if str(traj_hash)[:5] != str(hash_traj_mm)[:5]:
+            hash_traj_mm = traj_hash + 1
+        cache_file_name = npz_cache.get_cache_filename(traj_files=traj_files)
         # creating a cache with a matching fname_trajs but mismatching hash
         # should remove the npz file
-        npz_cache_mm = TrajectoryFunctionValueCacheNPZ(fname_trajs=fname_trajs,
-                                                       hash_traj=hash_traj_mm,
-                                                       )
+        npz_cache_mm = TrajectoryFunctionValueCacheInNPZ(traj_hash=hash_traj_mm,
+                                                         traj_files=traj_files)
         assert not os.path.exists(cache_file_name)
         # recreate the npz file by appending the values again
         for func_id, func_values in zip(test_data_func_ids,
                                         test_data_func_values):
-            npz_cache_mm.append(func_id=func_id, vals=func_values)
+            npz_cache_mm.append(func_id=func_id, values=func_values)
         # and now test for removal of npz if mismatching npz file format is
         # detected (triggered by changing the key for the hash_traj in npz)
-        TrajectoryFunctionValueCacheNPZ._hash_traj_npz_key = "TEST123"
-        _ = TrajectoryFunctionValueCacheNPZ(fname_trajs=fname_trajs,
-                                            hash_traj=hash_traj_mm,
-                                            )
+        TrajectoryFunctionValueCacheInNPZ._TRAJ_HASH_NPZ_KEY = "TEST123"
+        _ = TrajectoryFunctionValueCacheInNPZ(traj_hash=traj_hash,
+                                              traj_files=traj_files)
         assert not os.path.exists(cache_file_name)
+
+    # NOTE: this test is only relevant for the h5py cache as it is the only one
+    #       that uses the h5py_cache config value
+    def test_h5py_cache_not_set(self, tmp_path):
+        # make sure the cache variable is unset
+        try:
+            _ = _GLOBALS["H5PY_CACHE"]
+        except KeyError:
+            pass
+        else:
+            del _GLOBALS["H5PY_CACHE"]
+
+        traj_hash = self.make_trajectory_hash()
+        traj_files = [tmp_path / "traj_name.traj"]
+        with pytest.raises(RuntimeError):
+            TrajectoryFunctionValueCacheInH5PY(traj_hash=traj_hash,
+                                               traj_files=traj_files)

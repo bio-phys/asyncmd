@@ -23,6 +23,9 @@ Currently in here are:
 
 - ensure_executable_available
 - remove_file_if_exist and remove_file_if_exist_async
+- attach_kwargs_to_object: a function to attach kwargs to an object as properties
+  or attributes. This does type checking and warns when previously unset things
+  are set. It is used, e.g., in the GmxEngine and SlurmProcess classes.
 - FlagChangeList (and its typed sibling): lists with some sugar to remember if
   their content has changed
 
@@ -30,6 +33,7 @@ Currently in here are:
 import collections
 import os
 import shutil
+import logging
 import typing
 import aiofiles
 
@@ -99,6 +103,39 @@ async def remove_file_if_exist_async(f: str):
         await aiofiles.os.remove(f)
     except FileNotFoundError:
         pass
+
+
+def attach_kwargs_to_object(obj, *, logger: logging.Logger,
+                            **kwargs
+                            ) -> None:
+    """
+    Set all kwargs as object attributes/properties, error on mismatching type.
+
+    Warn when we set an unknown (i.e. previously undefined attribute/property)
+
+    Parameters
+    ----------
+    obj : object
+        The object to attach the kwargs to.
+    logger: logging.Logger
+        The logger to use for logging.
+    **kwargs : dict
+        Zero to N keyword arguments.
+    """
+    dval = object()
+    for kwarg, value in kwargs.items():
+        if (cval := getattr(obj, kwarg, dval)) is not dval:
+            if isinstance(value, type(cval)):
+                # value is of same type as default so set it
+                setattr(obj, kwarg, value)
+            else:
+                raise TypeError(f"Setting attribute {kwarg} with "
+                                + f"mismatching type ({type(value)}). "
+                                + f" Default type is {type(cval)}."
+                                )
+        else:
+            # not previously defined, so warn that we ignore it
+            logger.warning("Ignoring unknown keyword-argument %s.", kwarg)
 
 
 class FlagChangeList(collections.abc.MutableSequence):

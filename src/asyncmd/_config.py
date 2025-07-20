@@ -22,6 +22,12 @@ NOTE: This file **only** contains the dictionaries with the values
       without risking circular imports because all asyncmd files should only
       need to import the _CONFIG and _SEMAPHORES dicts from '_config.py'.
 """
+import asyncio
+import typing
 
-_GLOBALS = {}
-_SEMAPHORES = {}
+
+_GLOBALS: dict[str, typing.Any] = {}
+_SEMAPHORES: dict[str, asyncio.BoundedSemaphore] = {}
+# These semaphores are optional (i.e. can be None, which means unlimited)
+# e.g. slurm_max_jobs
+_OPT_SEMAPHORES: dict[str, asyncio.BoundedSemaphore | None] = {}
