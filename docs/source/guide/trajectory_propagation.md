@@ -7,9 +7,7 @@ The {py:class}`InPartsTrajectoryPropagator <asyncmd.trajectory.InPartsTrajectory
 
 While it also enables running MD simulations longer than the queuing limit and makes full use of [backfilling] by splitting the MD into segments (similar to the {py:class}`InPartsTrajectoryPropagator <asyncmd.trajectory.InPartsTrajectoryPropagator>`), the {py:class}`ConditionalTrajectoryPropagator <asyncmd.trajectory.ConditionalTrajectoryPropagator>` is especially useful for path sampling and committor simulations.
 In this case the conditions would be the state functions, but it can be used in general for any situation where the time integration should be stopped on given criteria (as opposed to after a fixed number of integration steps or when a given walltime is reached).
-There is also a handy function to create a transition, i.e. a trajectory that
-connects to (different) conditions from two conditional propagation runs ending
-in different conditions, the {py:func}`construct_TP_from_plus_and_minus_traj_segments <asyncmd.trajectory.construct_TP_from_plus_and_minus_traj_segments>` function.
+There is also a handy function to create a transition, i.e. a trajectory that connects to (different) conditions from two conditional propagation runs ending in different conditions, the {py:func}`construct_tp_from_plus_and_minus_traj_segments <asyncmd.trajectory.construct_tp_from_plus_and_minus_traj_segments>` function.
 It is most likely useful for users implementing some form of path sampling.
 
 [backfilling]: https://slurm.schedmd.com/sched_config.html#backfill
@@ -41,5 +39,5 @@ The example notebooks on the {doc}`InPartsTrajectoryPropagator </examples_link/0
     :special-members:
     :inherited-members:
 
-.. autofunction:: asyncmd.trajectory.construct_TP_from_plus_and_minus_traj_segments
+.. autofunction:: asyncmd.trajectory.construct_tp_from_plus_and_minus_traj_segments
 ```
