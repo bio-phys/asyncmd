@@ -455,10 +455,9 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
             step_counter = 0
 
         while step_counter < self.n_steps:
-            traj = await engine.run(nsteps=self.n_steps,
-                                    walltime=self.walltime_per_part,
-                                    steps_per_part=False,
-                                    )
+            traj = await engine.run_walltime(walltime=self.walltime_per_part,
+                                             max_steps=self.n_steps,
+                                             )
             step_counter = engine.steps_done
             trajs.append(traj)
         return trajs

@@ -888,6 +888,9 @@ class GmxEngine(MDEngine):
         """
         Run simulation for specified number of steps.
 
+        Return None if no integration is needed because nsteps integration steps
+        have already been performed.
+
         Parameters
         ----------
         nsteps : int or None
@@ -901,16 +904,25 @@ class GmxEngine(MDEngine):
         """
         return await self.run(nsteps=nsteps, steps_per_part=steps_per_part)
 
-    async def run_walltime(self, walltime):
+    async def run_walltime(self, walltime: float, max_steps: int | None = None,
+                           ) -> Trajectory | None:
         """
         Run simulation for a given walltime.
+
+        Return None if no integration is needed because max_steps integration
+        steps have already been performed.
 
         Parameters
         ----------
         walltime : float or None
-            (Maximum) walltime in hours, `None` means unlimited.
+            (Maximum) walltime in hours.
+        max_steps : int | None, optional
+            If not None, terminate when max_steps integration steps are reached
+            in total, also if this is before walltime is reached.
+            By default None.
         """
-        return await self.run(walltime=walltime)
+        return await self.run(walltime=walltime, nsteps=max_steps,
+                              steps_per_part=False)
 
     def _num_suffix(self, sim_part: int) -> str:
         # construct gromacs num part suffix from simulation_part

@@ -90,27 +90,44 @@ class MDEngine(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    async def run_walltime(self, walltime: float) -> Trajectory:
+    async def run_walltime(self, walltime: float, max_steps: int | None = None,
+                           ) -> Trajectory | None:
         """
         Run for specified walltime.
 
         NOTE: Must be possible to run this multiple times after preparing once!
 
+        It is optional (but recommended if possible) for engines to respect the
+        ``max_steps`` argument. I.e. terminating upon reaching max_steps is
+        optional and no code should rely on it. See the :meth:`run_steps` if a
+        fixed number of integration steps is required.
+
+        Return None if no integration is needed because max_steps integration
+        steps have already been performed.
+
         Parameters
         ----------
         walltime : float
+            Walltime in hours.
+        max_steps : int | None, optional
+            If not None, (optionally) terminate when max_steps integration steps
+            in total are reached, also if this is before walltime is reached.
+            By default None.
 
         Returns
         -------
-        Trajectory
+        Trajectory | None
         """
         raise NotImplementedError
 
     @abc.abstractmethod
     async def run_steps(self, nsteps: int,
-                        steps_per_part: bool = False) -> Trajectory:
+                        steps_per_part: bool = False) -> Trajectory | None:
         """
         Run for a specified number of integration steps.
+
+        Return None if no integration is needed because nsteps integration steps
+        have already been performed.
 
         NOTE: Make sure we can run multiple times after preparing once!
 
@@ -122,7 +139,7 @@ class MDEngine(abc.ABC):
 
         Returns
         -------
-        Trajectory
+        Trajectory | None
         """
         raise NotImplementedError
 
