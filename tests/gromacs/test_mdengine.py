@@ -67,7 +67,7 @@ class Test_GmxEngine:
         # make sure nsteps is now set to -1
         assert engine.mdp["nsteps"] == -1
         # and check the log
-        info_str = "Changing nsteps from 100 to -1 (infinte), the run "
+        info_str = "Changing nsteps from 100 to -1 (infinite), the run "
         info_str += "length is controlled via arguments of the run method."
         assert info_str in caplog.text
 
@@ -92,20 +92,76 @@ class Test_GmxEngine:
                                    gro_file=self.gro,
                                    top_file=self.top)
 
-    @pytest.mark.parametrize("conversion_factor", [-1., 1.1, 0.])
-    def test_check_invalid_mdrun_time_conversion_factor(self, monkeypatch,
-                                                        conversion_factor):
-        # init should already fail
+    @pytest.mark.parametrize(["conversion_factor", "raises"],
+                             [(-1., True),
+                              (1.1, True),
+                              (0., True),
+                              (0.9, False),
+                              (0.1, False),
+                              ]
+                             )
+    def test_check_valid_and_invalid_mdrun_time_conversion_factor(
+                    self, monkeypatch, conversion_factor, raises,
+                    ):
         with monkeypatch.context() as m:
             # monkeypatch so we dont need to find a gromacs executable
             m.setattr("asyncmd.gromacs.mdengine.ensure_executable_available",
                       lambda _: "/usr/bin/true")
-            with pytest.raises(ValueError):
+            if raises:
+                # init should already fail
+                with pytest.raises(ValueError):
+                    engine = GmxEngine(mdconfig=self.mdp_md_compressed_out,
+                                       gro_file=self.gro,
+                                       top_file=self.top,
+                                       mdrun_time_conversion_factor=conversion_factor,
+                                       )
+            else:
                 engine = GmxEngine(mdconfig=self.mdp_md_compressed_out,
                                    gro_file=self.gro,
                                    top_file=self.top,
                                    mdrun_time_conversion_factor=conversion_factor,
                                    )
+                assert engine.mdrun_time_conversion_factor == conversion_factor
+
+    @pytest.mark.parametrize(["output_traj_type", "raises"],
+                             [("NOT_A_TRAJ_TYPE", True),
+                              ("also not a traj type", True),
+                              ("neither", True),
+                              ("xtc", False),
+                              ("XTC", False),
+                              ("trr", False),
+                              ("TRR", False),
+                              ]
+                             )
+    def test_check_valid_and_invalid_output_traj_type(
+                    self, monkeypatch, output_traj_type, raises,
+                    ):
+        if output_traj_type.lower() == "trr":
+            # use a MDP that has trajectory output configured for TRR
+            mdconfig = self.mdp_md_full_prec_out
+        else:
+            # use a MDP that has trajectory output configured for XTC
+            # for all other output_traj_type values (including "xtc")
+            mdconfig = self.mdp_md_compressed_out
+        with monkeypatch.context() as m:
+            # monkeypatch so we dont need to find a gromacs executable
+            m.setattr("asyncmd.gromacs.mdengine.ensure_executable_available",
+                      lambda _: "/usr/bin/true")
+            if raises:
+                with pytest.raises(ValueError):
+                    # init should already fail
+                    engine = GmxEngine(mdconfig=mdconfig,
+                                       gro_file=self.gro,
+                                       top_file=self.top,
+                                       output_traj_type=output_traj_type,
+                                       )
+            else:
+                engine = GmxEngine(mdconfig=mdconfig,
+                                   gro_file=self.gro,
+                                   top_file=self.top,
+                                   output_traj_type=output_traj_type,
+                                   )
+                assert engine.output_traj_type == output_traj_type.lower()
 
     @pytest.mark.slow
     @needs_gmx_install

@@ -26,6 +26,10 @@ Currently in here are:
 - attach_kwargs_to_object: a function to attach kwargs to an object as properties
   or attributes. This does type checking and warns when previously unset things
   are set. It is used, e.g., in the GmxEngine and SlurmProcess classes.
+- DescriptorWithDefaultOnInstanceAndClass and DescriptorOutputTrajType: two descriptor
+  classes to make default values accessible on the class level but still enable checks
+  when setting on the instance level (like a property), used in the GmxEngine classes
+  but could/should be useful for any MDEngine class
 - FlagChangeList (and its typed sibling): lists with some sugar to remember if
   their content has changed
 
@@ -136,6 +140,65 @@ def attach_kwargs_to_object(obj, *, logger: logging.Logger,
         else:
             # not previously defined, so warn that we ignore it
             logger.warning("Ignoring unknown keyword-argument %s.", kwarg)
+
+
+class DescriptorWithDefaultOnInstanceAndClass:
+    """
+    A descriptor that makes the (default) value of the private attribute
+    ``_name`` of the class it is attached to accessible as ``name`` on both the
+    class and the instance level.
+    Accessing the default value works from the class-level, i.e. without
+    instantiating the object, but note that setting on the class level
+    overwrites the descriptor and does not call ``__set__``.
+    Setting from an instance calls __set__ and therefore only sets the attribute
+    for the given instance (and also runs potential checks done in ``__set__``).
+    Also see the python docs:
+    https://docs.python.org/3/howto/descriptor.html#customized-names
+    """
+    private_name: str
+
+    def __set_name__(self, owner, name: str) -> None:
+        self.private_name = "_" + name
+
+    def __get__(self, obj, objtype=None) -> typing.Any:
+        if obj is None:
+            # I (hejung) think if obj is None objtype will always be set
+            # to the class of the obj
+            obj = objtype
+        val = getattr(obj, self.private_name)
+        return val
+
+    def __set__(self, obj, val) -> None:
+        setattr(obj, self.private_name, val)
+
+
+class DescriptorOutputTrajType(DescriptorWithDefaultOnInstanceAndClass):
+    """
+    Check the value given is in the set of allowed values before setting.
+
+    Used to check ``output_traj_type`` of MDEngines for consistency when setting.
+    """
+    # set of allowed values, e.g., trajectory file endings (without "." and all lower case)
+    ALLOWED_VALUES: set[str] = set()
+
+    def __set_name__(self, owner, name: str) -> None:
+        if not self.ALLOWED_VALUES:
+            # make sure we can only instantiate with ALLOWED_VALUES set,
+            # i.e. make this class a sort of ABC :)
+            raise NotImplementedError(f"Can not instantiate {type(self)} "  # pragma: no cover
+                                      "without allowed trajectory types set. "
+                                      "Set ``ALLOWED_VALUES`` to a set of strings.")
+        super().__set_name__(owner, name)
+
+    def __set__(self, obj, val: str) -> None:
+        if (val := val.lower()) not in self.ALLOWED_VALUES:
+            raise ValueError("output_traj_type must be one of "
+                             + f"{self.ALLOWED_VALUES}, but was {val}."
+                             )
+        super().__set__(obj, val)
+
+    def __get__(self, obj, objtype=None) -> str:
+        return super().__get__(obj=obj, objtype=objtype)
 
 
 class FlagChangeList(collections.abc.MutableSequence):

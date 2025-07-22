@@ -157,16 +157,18 @@ class MDEngine(abc.ABC):
     @abc.abstractmethod
     def output_traj_type(self) -> str:
         """
-        Return a string with the ending (without ".") of the trajectory type this engine uses
+        Return a string with the ending (without ".") of the trajectory type this
+        engine uses.
 
         NOTE: This should not be implemented as a property in subclasses as it
         must be available at the classlevel too, i.e. cls.output_traj_type must
         also return the string.
-        If you want/need to check the values (i.e. you would like to execute
-        code like in a property) have a look at the descriptor implementation
-        in gromacs/mdengine.py, which checks for allowed values (at least when
-        set on an instance) but is accessible from the class level too, e.g.
-        like a 'classproperty' (which is not a thing in python).
+        So this should just be overwritten with a string with the correct value,
+        or if your engine supports multiple output_traj_types you should have a
+        look at the descriptor implementation in asyncmd/tools.py (and, e.g.,
+        used in asyncmd/gromacs/mdengine.py), which checks for allowed values
+        (at least when set on an instance) but is accessible from the class
+        level too, i.e. like a 'classproperty' (which is not a thing in python).
         """
         raise NotImplementedError
 

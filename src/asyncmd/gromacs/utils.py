@@ -53,31 +53,42 @@ def nstout_from_mdp(mdp: MDP, traj_type: str = "TRR") -> int:
         Raised when the given MDP would result in no output for the given
         trajectory format `traj_type`.
     """
-    if traj_type.upper() == "TRR":
-        keys = ["nstxout", "nstvout", "nstfout"]
-    elif traj_type.upper() == "XTC":
-        keys = ["nstxout-compressed", "nstxtcout"]
-    else:
-        raise ValueError("traj_type must be one of 'TRR' or 'XTC'.")
-
-    vals = []
-    for k in keys:
+    def get_value_from_mdp(k):
         try:
             v = mdp[k]
         except KeyError:
-            # not set, defaults to 0, so we ignore it
-            pass
+            # not set, defaults to 0
+            v = float("inf")
         else:
             # need to check for 0 (== no output!) in case somone puts the
             # defaults (or reads an mdout.mdp where gmx lists all the defaults)
             if not v:
                 v = float("inf")
-            vals += [v]
+        return v
 
-    nstout = min(vals, default=None)
-    if (nstout is None) or (nstout == float("inf")):
+    if traj_type.upper() == "TRR":
+        keys = ["nstxout"]
+    elif traj_type.upper() == "XTC":
+        keys = ["nstxout-compressed", "nstxtcout"]
+    else:
+        raise ValueError("traj_type must be one of 'TRR' or 'XTC'.")
+    vals = []
+    for k in keys:
+        vals += [get_value_from_mdp(k=k)]
+    if (nstout := min(vals)) == float("inf"):
         raise ValueError(f"The MDP you passed results in no {traj_type} "
                          + "trajectory output.")
+    if traj_type.upper == "TRR":
+        # additional checks that nstvout and nstfout are multiples of nstxout
+        # (if they are defined)
+        additional_keys = ["nstvout", "nstfout"]
+        for k in additional_keys:
+            if (v := get_value_from_mdp(k=k)) != float("inf"):
+                if v % nstout:
+                    logger.warning("%s trajectory output is not a multiple of "
+                                   "the nstxout frequency (%s=%d, nstxout=%d).",
+                                   k, k, v, nstout)
+
     return nstout
 
 
