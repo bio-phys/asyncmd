@@ -53,6 +53,9 @@ Issues = "https://github.com/bio-phys/asyncmd/issues"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+asyncmd = ["py.typed"]
+
 # pylint configuration
 [tool.pylint.main]
 # Return non-zero exit code if any of these messages/categories are detected,
