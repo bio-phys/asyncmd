@@ -40,6 +40,7 @@ from .tools import (ensure_executable_available,
                     remove_file_if_exist_async,
                     remove_file_if_exist,
                     )
+from .tools import attach_kwargs_to_object as _attach_kwargs_to_object
 from ._config import _SEMAPHORES
 
 
@@ -143,21 +144,7 @@ class SlurmClusterMediator:
         self._exclude_nodes: list[str] = []
         # make it possible to set any attribute via kwargs
         # check the type for attributes with default values
-        dval = object()
-        for kwarg, value in kwargs.items():
-            cval = getattr(self, kwarg, dval)
-            if cval is not dval:
-                if isinstance(value, type(cval)):
-                    # value is of same type as default so set it
-                    setattr(self, kwarg, value)
-                else:
-                    raise TypeError(f"Setting attribute {kwarg} with "
-                                    + f"mismatching type ({type(value)}). "
-                                    + f" Default type is {type(cval)}."
-                                    )
-            else:
-                # not previously defined, so warn that we ignore it
-                logger.warning("Ignoring unknown keyword-argument %s.", kwarg)
+        _attach_kwargs_to_object(obj=self, logger=logger, **kwargs)
         # this either checks for our defaults or whatever we just set via kwargs
         self.sacct_executable = ensure_executable_available(self.sacct_executable)
         self.sinfo_executable = ensure_executable_available(self.sinfo_executable)
@@ -659,21 +646,7 @@ class SlurmProcess:
         # we expect sbatch_script to be a path to a file
         # make it possible to set any attribute via kwargs
         # check the type for attributes with default values
-        dval = object()
-        for kwarg, value in kwargs.items():
-            cval = getattr(self, kwarg, dval)
-            if cval is not dval:
-                if isinstance(value, type(cval)):
-                    # value is of same type as default so set it
-                    setattr(self, kwarg, value)
-                else:
-                    raise TypeError(f"Setting attribute {kwarg} with "
-                                    + f"mismatching type ({type(value)}). "
-                                    + f" Default type is {type(cval)}."
-                                    )
-            else:
-                # not previously defined, so warn that we ignore it
-                logger.warning("Ignoring unknown keyword-argument %s.", kwarg)
+        _attach_kwargs_to_object(obj=self, logger=logger, **kwargs)
         # this either checks for our defaults or whatever we just set via kwargs
         ensure_executable_available(self.sbatch_executable)
         ensure_executable_available(self.scancel_executable)

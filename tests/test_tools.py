@@ -28,7 +28,7 @@ class Test_remove_file_if_exist:
         file_path = os.path.join(tmp_path, "test_file.dat")
         if file_exists:
             # make a file
-            os.mknod(file_path)
+            open(file_path, "w", encoding="locale").close()
         # remove it
         remove_file_if_exist(file_path)
         # and make sure it is gone
@@ -40,7 +40,7 @@ class Test_remove_file_if_exist:
         file_path = os.path.join(tmp_path, "test_file.dat")
         if file_exists:
             # make a file
-            os.mknod(file_path)
+            open(file_path, "w", encoding="locale").close()
         # remove it
         await remove_file_if_exist_async(file_path)
         # and make sure it is gone

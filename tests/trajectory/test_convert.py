@@ -138,18 +138,21 @@ class Test_TrajectoryConcatenator(TBase):
         if mda_transformations and not mda_transformations_setup_func:
             concatenator = TrajectoryConcatenator(
                 invert_v_for_negative_step=invert_v_for_negative_step,
+                remove_double_frames=remove_double_frames,
                 mda_transformations=self.mda_trafos,
                 mda_transformations_setup_func=None,
                                                   )
         elif not mda_transformations and mda_transformations_setup_func:
             concatenator = TrajectoryConcatenator(
                 invert_v_for_negative_step=invert_v_for_negative_step,
+                remove_double_frames=remove_double_frames,
                 mda_transformations=None,
                 mda_transformations_setup_func=self.mda_trafo_setup_func,
                                                   )
         elif not mda_transformations and not mda_transformations_setup_func:
             concatenator = TrajectoryConcatenator(
                 invert_v_for_negative_step=invert_v_for_negative_step,
+                remove_double_frames=remove_double_frames,
                 mda_transformations=None,
                 mda_transformations_setup_func=None,
                                                   )
@@ -159,14 +162,12 @@ class Test_TrajectoryConcatenator(TBase):
                 trajs=[self.ala_traj for _ in range(len(slices))],
                 slices=slices,
                 tra_out=tmpdir + "/tra_out.trr",
-                remove_double_frames=remove_double_frames,
                                                             )
         else:
             out_traj = concatenator.concatenate(
                 trajs=[self.ala_traj for _ in range(len(slices))],
                 slices=slices,
                 tra_out=tmpdir + "/tra_out.trr",
-                remove_double_frames=remove_double_frames,
                                                 )
         # get universes of in and out to compare
         u_original = mda.Universe(self.ala_traj.structure_file,

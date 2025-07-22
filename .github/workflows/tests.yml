@@ -7,8 +7,8 @@ on:
     branches: ["main"]
     tags: ["v*"]
   schedule:
-    # run test automatically every day at 3
-    - cron: "0 3 * * *"
+    # run test automatically every Monday at 3
+    - cron: "0 3 * * 1"
 
 defaults:
   run:

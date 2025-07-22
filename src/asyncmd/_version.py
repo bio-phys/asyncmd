@@ -12,6 +12,12 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+Helpers to populate asyncmd.__version__.
+
+If we are in a git-repository (and detect commits since the last version-tagged
+commit) we will add a git-hash to the version.
+"""
 import os
 import subprocess
 import importlib.metadata
@@ -22,20 +28,21 @@ def _get_git_hash_and_tag():
     git_hash = ""
     git_date = ""
     git_tag = ""
-    p = subprocess.Popen(
+    with subprocess.Popen(
             ["git", "log", "-1", "--format='%H || %as || %(describe:tags=true,match=v*)'"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=os.path.dirname(__file__),
-                         )
-    stdout, stderr = p.communicate()
-    if p.returncode == 0:
+                          ) as p:
+        stdout, _ = p.communicate()
+        returncode = p.returncode
+    if not returncode:
         git_hash, git_date, git_describe = (stdout.decode("utf-8")
                                             .replace("'", "").replace('"', '')
                                             .strip().split("||"))
         git_date = git_date.strip().replace("-", "")
         git_describe = git_describe.strip()
-        if "-" not in git_describe and git_describe != "":
+        if git_describe and "-" not in git_describe:
             # git-describe returns either the git-tag or (if we are not exactly
             #  at a tag) something like
             #  $GITTAG-$NUM_COMMITS_DISTANCE-$CURRENT_COMMIT_HASH
@@ -46,7 +53,7 @@ def _get_git_hash_and_tag():
 _version = importlib.metadata.version("asyncmd")
 _git_hash, _git_date, _git_tag = _get_git_hash_and_tag()
 __git_hash__ = _git_hash
-if _version == _git_tag or _git_hash == "":
+if _version == _git_tag or not _git_hash:
     # dont append git_hash to version, if it is a version-tagged commit or if
     # git_hash is empty (happens if git is installed but we are not in a repo)
     __version__ = _version

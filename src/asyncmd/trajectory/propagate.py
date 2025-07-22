@@ -17,31 +17,29 @@ This module contains classes for propagation of MD in segments and/or until a co
 
 Most notable are the InPartsTrajectoryPropagator and the ConditionalTrajectoryPropagator.
 Also of interest especially in the context of path sampling could be the function
-construct_TP_from_plus_and_minus_traj_segments, which can be used directly on the
+construct_tp_from_plus_and_minus_traj_segments, which can be used directly on the
 output of a ConditionalTrajectoryPropagator to generate trajectories connecting two
 fulfilled conditions.
 """
-import os
 import asyncio
-import aiofiles
-import aiofiles.os
 import collections.abc
+import copy
 import inspect
 import logging
+import os
+import typing
+
+import aiofiles
+import aiofiles.os
 import numpy as np
 
-from .trajectory import Trajectory
-from .functionwrapper import TrajectoryFunctionWrapper
-from .convert import TrajectoryConcatenator
 from ..mdengine import MDEngine
-from ..utils import (get_all_traj_parts,
-                     get_all_file_parts,
-                     nstout_from_mdconfig,
-                     )
-from ..tools import (remove_file_if_exist,
-                     remove_file_if_exist_async,
-                     FlagChangeList,
-                     )
+from ..tools import FlagChangeList, remove_file_if_exist_async
+from ..utils import (get_all_file_parts, get_all_traj_parts,
+                     nstout_from_mdconfig)
+from .convert import TrajectoryConcatenator
+from .functionwrapper import TrajectoryFunctionWrapper
+from .trajectory import Trajectory
 
 
 logger = logging.getLogger(__name__)
@@ -52,20 +50,18 @@ class MaxStepsReachedError(Exception):
     Error raised when the simulation terminated because the (user-defined)
     maximum number of integration steps/trajectory frames has been reached.
     """
-    pass
 
 
-# TODO: move to trajectory.convert?
-async def construct_TP_from_plus_and_minus_traj_segments(
+async def construct_tp_from_plus_and_minus_traj_segments(
+                                *,
                                 minus_trajs: "list[Trajectory]",
                                 minus_state: int,
                                 plus_trajs: "list[Trajectory]",
                                 plus_state: int,
                                 state_funcs: "list[TrajectoryFunctionWrapper]",
                                 tra_out: str,
-                                struct_out: str | None = None,
-                                overwrite: bool = False
-                                                         ) -> Trajectory:
+                                **concatenate_kwargs,
+                                ) -> Trajectory:
     """
     Construct a continuous TP from plus and minus segments until states.
 
@@ -87,11 +83,15 @@ async def construct_TP_from_plus_and_minus_traj_segments(
         the minus and plus state indices!
     tra_out : str
         Absolute or relative path to the output trajectory file.
-    struct_out : str, optional
-        Absolute or relative path to the output structure file, if None we will
-        use the structure file of the first minus_traj, by default None.
-    overwrite : bool, optional
-        Whether we should overwrite tra_out if it exists, by default False.
+    concatenate_kwargs : dict
+        All (other) keyword arguments will be passed as is to the
+        :meth:`TrajectoryConcatenator.concatenate` method. These include, e.g.,
+
+        - struct_out : str, optional
+            Absolute or relative path to the output structure file, if None we will
+            use the structure file of the first minus_traj, by default None.
+        - overwrite : bool, optional
+            Whether we should overwrite tra_out if it exists, by default False.
 
     Returns
     -------
@@ -179,33 +179,34 @@ async def construct_TP_from_plus_and_minus_traj_segments(
                                                     trajs=trajs,
                                                     slices=slices,
                                                     tra_out=tra_out,
-                                                    struct_out=struct_out,
-                                                    overwrite=overwrite,
+                                                    **concatenate_kwargs
                                                                  )
     return path_traj
 
 
+# pylint: disable-next=too-few-public-methods
 class _TrajectoryPropagator:
     # (private) superclass for InPartsTrajectoryPropagator and
     # ConditionalTrajectoryPropagator,
-    # here we keep the common functions shared between them
-    def __init__(self, engine_cls: type[MDEngine], engine_kwargs: dict,
+    # here we keep the common functions shared between them, currently
+    # this is only the file removal method and a bit of the init logic.
+    def __init__(self, *,
+                 engine_cls: type[MDEngine], engine_kwargs: dict[str, typing.Any],
                  walltime_per_part: float,
                  ) -> None:
         self.engine_cls = engine_cls
         self.engine_kwargs = engine_kwargs
         self.walltime_per_part = walltime_per_part
 
-    async def remove_parts(self, workdir: str, deffnm: str,
-                           file_endings_to_remove: list[str] = ["trajectories",
-                                                                "log"],
+    async def remove_parts(self, workdir: str, deffnm: str, *,
+                           file_endings_to_remove: list[str] | None = None,
                            remove_mda_offset_and_lock_files: bool = True,
                            remove_asyncmd_npz_caches: bool = True,
                            ) -> None:
         """
-        Remove all `$deffnm.part$num.$file_ending` files for file_endings.
+        Remove all ``$deffnm.part$num.$file_ending`` files for file_endings.
 
-        Can be useful to clean the `workdir` from temporary files if e.g. only
+        Can be useful to clean the ``workdir`` from temporary files if e.g. only
         the concatenate trajectory is of interest (like in TPS).
 
         Parameters
@@ -213,15 +214,30 @@ class _TrajectoryPropagator:
         workdir : str
             The directory to clean.
         deffnm : str
-            The `deffnm` that the files we clean must have.
-        file_endings_to_remove : list[str], optional
-            The strings in the list `file_endings_to_remove` indicate which
+            The ``deffnm`` that the files we clean must have.
+        file_endings_to_remove : list[str] | None, optional
+            The strings in the list ``file_endings_to_remove`` indicate which
             file endings to remove.
-            E.g. `file_endings_to_remove=["trajectories", "log"]` will result
-            in removal of trajectory parts and the log files. If you add "edr"
-            to the list we would also remove the edr files,
-            by default ["trajectories", "log"]
+            The 'special' string "trajectories" will be translated to the file
+            ending of the trajectories the engine produces, i.e. ``engine.output_traj_type``.
+            E.g. passing ``file_endings_to_remove=["trajectories", "log"]`` will
+            result in removal of trajectory parts and the log files. If you add
+            "edr" to the list we would also remove the edr files.
+            By default, i.e., if None the list will be ["trajectories", "log"].
+        remove_mda_offset_and_lock_files : bool, optional
+            Whether to remove any (hidden) offset and lock files generated by
+            MDAnalysis associated with the removed trajectory files (if they exist).
+            By default True.
+        remove_asyncmd_npz_caches : bool, optional
+            Whether to remove any (hidden) npz cache files generated by asyncmd
+            associated with the removed trajectory files (if they exist).
+            By default True.
         """
+        if file_endings_to_remove is None:
+            file_endings_to_remove = ["trajectories", "log"]
+        else:
+            # copy the list so we dont mutate what we got passed
+            file_endings_to_remove = copy.copy(file_endings_to_remove)
         if "trajectories" in file_endings_to_remove:
             # replace "trajectories" with the actual output traj type
             try:
@@ -240,7 +256,7 @@ class _TrajectoryPropagator:
                                                        )
             # make sure we dont miss anything because we have different
             # capitalization
-            if len(parts_to_remove) == 0:
+            if not parts_to_remove:
                 parts_to_remove = await get_all_file_parts(
                                                     folder=workdir,
                                                     deffnm=deffnm,
@@ -250,7 +266,7 @@ class _TrajectoryPropagator:
                                    for f in parts_to_remove
                                    )
                                  )
-            # TODO: the note below?
+            # TODO: address the note below?
             # NOTE: this is a bit hacky: we just try to remove the offset and
             #       lock files for every file we remove (since we do not know
             #       if the file we remove is a trajectory [and therefore
@@ -304,8 +320,9 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
     Useful to make full use of backfilling with short(ish) simulation jobs and
     also to run simulations that are longer than the timelimit.
     """
-    def __init__(self, n_steps: int, engine_cls: type[MDEngine],
-                 engine_kwargs: dict, walltime_per_part: float,
+    def __init__(self, n_steps: int, *,
+                 engine_cls: type[MDEngine], engine_kwargs: dict[str, typing.Any],
+                 walltime_per_part: float,
                  ) -> None:
         """
         Initialize an `InPartTrajectoryPropagator`.
@@ -328,11 +345,11 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
     async def propagate_and_concatenate(self,
                                         starting_configuration: Trajectory,
                                         workdir: str,
-                                        deffnm: str,
+                                        deffnm: str, *,
                                         tra_out: str,
-                                        overwrite: bool = False,
-                                        continuation: bool = False
-                                        ) -> tuple[Trajectory, int]:
+                                        continuation: bool = False,
+                                        **concatenate_kwargs,
+                                        ) -> Trajectory | None:
         """
         Chain :meth:`propagate` and :meth:`cut_and_concatenate` methods.
 
@@ -346,12 +363,18 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
             MD engine deffnm for trajectory parts and other files.
         tra_out : str
             Absolute or relative path for the concatenated output trajectory.
-        overwrite : bool, optional
-            Whether the output trajectory should be overwritten if it exists,
-            by default False.
         continuation : bool, optional
             Whether we are continuing a previous MD run (with the same deffnm
             and working directory), by default False.
+        concatenate_kwargs : dict
+            All (other) keyword arguments will be passed as is to the
+            :meth:`TrajectoryConcatenator.concatenate` method. These include, e.g.,
+
+            - struct_out : str, optional
+                Absolute or relative path to the output structure file, if None
+                we will use the structure file of the first traj, by default None.
+            - overwrite : bool, optional
+                Whether we should overwrite tra_out if it exists, by default False.
 
         Returns
         -------
@@ -365,17 +388,15 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
                                 deffnm=deffnm,
                                 continuation=continuation
                                      )
-        full_traj = await self.cut_and_concatenate(
-                                                trajs=trajs,
-                                                tra_out=tra_out,
-                                                overwrite=overwrite,
+        full_traj = await self.cut_and_concatenate(trajs=trajs, tra_out=tra_out,
+                                                   **concatenate_kwargs,
                                                    )
         return full_traj
 
     async def propagate(self,
                         starting_configuration: Trajectory,
                         workdir: str,
-                        deffnm: str,
+                        deffnm: str, *,
                         continuation: bool = False,
                         ) -> list[Trajectory]:
         """
@@ -402,7 +423,7 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
         Returns
         -------
         traj_segments : list[Trajectory]
-            List of trajectory (segements), ordered in time.
+            List of trajectory (segments), ordered in time.
         """
         engine = self.engine_cls(**self.engine_kwargs)
         if continuation:
@@ -414,8 +435,7 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
             if len(trajs) > 0:
                 # can only continue if we find the previous trajs
                 await engine.prepare_from_files(workdir=workdir, deffnm=deffnm)
-                step_counter = engine.steps_done
-                if step_counter >= self.n_steps:
+                if (step_counter := engine.steps_done) >= self.n_steps:
                     # already longer than what we want to do, bail out
                     return trajs
             else:
@@ -434,11 +454,10 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
             trajs = []
             step_counter = 0
 
-        while (step_counter < self.n_steps):
-            traj = await engine.run(nsteps=self.n_steps,
-                                    walltime=self.walltime_per_part,
-                                    steps_per_part=False,
-                                    )
+        while step_counter < self.n_steps:
+            traj = await engine.run_walltime(walltime=self.walltime_per_part,
+                                             max_steps=self.n_steps,
+                                             )
             step_counter = engine.steps_done
             trajs.append(traj)
         return trajs
@@ -446,7 +465,7 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
     async def cut_and_concatenate(self,
                                   trajs: list[Trajectory],
                                   tra_out: str,
-                                  overwrite: bool = False,
+                                  **concatenate_kwargs,
                                   ) -> Trajectory | None:
         """
         Cut and concatenate the trajectory until it has length n_steps.
@@ -455,7 +474,7 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
         containing n_steps integration steps. The expected input
         is a list of trajectories, e.g. the output of the :meth:`propagate`
         method.
-        Returns None if `self.n_steps` is zero.
+        Returns None if ``self.n_steps`` is zero.
 
         Parameters
         ----------
@@ -463,9 +482,15 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
             Trajectory segments to cut and concatenate.
         tra_out : str
             Absolute or relative path for the concatenated output trajectory.
-        overwrite : bool, optional
-            Whether the output trajectory should be overwritten if it exists,
-            by default False.
+        concatenate_kwargs : dict
+            All (other) keyword arguments will be passed as is to the
+            :meth:`TrajectoryConcatenator.concatenate` method. These include, e.g.,
+
+            - struct_out : str, optional
+                Absolute or relative path to the output structure file, if None
+                we will use the structure file of the first traj, by default None.
+            - overwrite : bool, optional
+                Whether we should overwrite tra_out if it exists, by default False.
 
         Returns
         -------
@@ -480,7 +505,7 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
         """
         # trajs is a list of trajectories, e.g. the return of propagate
         # tra_out and overwrite are passed directly to the Concatenator
-        if self.n_steps == 0:
+        if not self.n_steps:
             # no trajectories to concatenate, since self.n_steps=0
             # we return None
             return None
@@ -492,11 +517,6 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
             slices = [(0, None, 1) for _ in range(len(trajs))]
             last_part_idx = len(trajs) - 1
         else:
-            logger.warning("Trajectories do not exactly contain n_steps "
-                           "integration steps. Using a heuristic to find the "
-                           "correct last frame to include, note that this "
-                           "heuristic might fail if n_steps is not a multiple "
-                           "of the trajectory output frequency.")
             # need to find the subtrajectory that contains the correct number
             # of integration steps
             # first find the part in which we go over n_steps
@@ -508,23 +528,31 @@ class InPartsTrajectoryPropagator(_TrajectoryPropagator):
             last_part_len_steps = (trajs[last_part_idx].last_step
                                    - trajs[last_part_idx].first_step)
             steps_per_frame = last_part_len_steps / last_part_len_frames
-            frames_in_last_part = round((self.n_steps
-                                         - trajs[last_part_idx].first_step
-                                         )
-                                        / steps_per_frame)
+            frames_in_last_part = ((self.n_steps
+                                    - trajs[last_part_idx].first_step
+                                    )
+                                   / steps_per_frame)
+            log_str = ("Trajectories do not exactly contain n_steps integration steps. "
+                       "Using a heuristic to find the correct last frame to include."
+                       )
+            if frames_in_last_part != (frames_in_last_part_int := round(frames_in_last_part)):
+                log_str += (" Note that this heuristic might fail because n_steps"
+                            " is not a multiple of the trajectory output frequency."
+                            )
+                logger.warning(log_str)
+            else:
+                logger.info(log_str)
             # build slices
             slices = [(0, None, 1) for _ in range(last_part_idx)]
-            slices += [(0, frames_in_last_part + 1, 1)]
+            slices += [(0, frames_in_last_part_int + 1, 1)]
 
         # and concatenate
         full_traj = await TrajectoryConcatenator().concatenate_async(
                                    trajs=trajs[:last_part_idx + 1],
                                    slices=slices,
-                                   # take the structure file of the traj, as it
-                                   # comes from the engine directly
-                                   tra_out=tra_out, struct_out=None,
-                                   overwrite=overwrite,
-                                                                     )
+                                   tra_out=tra_out,
+                                   **concatenate_kwargs
+                                   )
         return full_traj
 
 
@@ -557,14 +585,17 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
     #       fulfill two conditions at the same time, it is the users
     #       responsibility to ensure that their conditions are sane
 
-    def __init__(self, conditions, engine_cls,
-                 engine_kwargs: dict,
+    # Note: max_steps and max_frames are mutually exclusive and this is enforced,
+    # but pylint does not know that, so we tell it to not be mad for one arg more
+    # pylint: disable-next=too-many-arguments
+    def __init__(self, conditions, *,
+                 engine_cls: type[MDEngine], engine_kwargs: dict[str, typing.Any],
                  walltime_per_part: float,
                  max_steps: int | None = None,
                  max_frames: int | None = None,
                  ):
         """
-        Initialize a `ConditionalTrajectoryPropagator`.
+        Initialize a :class:`ConditionalTrajectoryPropagator`.
 
         Parameters
         ----------
@@ -634,15 +665,16 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
                                                                         )
         self._conditions = FlagChangeList(conditions)
 
-    def _check_condition_funcs(self, conditions) -> list[bool]:
-        # use asyncio.iscorotinefunction to check the conditions
+    def _check_condition_funcs(self, conditions: collections.abc.Sequence,
+                               ) -> list[bool]:
+        # use asyncio.iscoroutinefunction to check the conditions
         condition_func_is_coroutine = [
                                 (inspect.iscoroutinefunction(c)
                                  or inspect.iscoroutinefunction(c.__call__))
                                 for c in conditions
                                        ]
         if not all(condition_func_is_coroutine):
-            # and warn if it is not a corotinefunction
+            # and warn if it is not a coroutinefunction
             logger.warning(
                     "It is recommended to use coroutinefunctions for all "
                     "conditions. This can easily be achieved by wrapping any "
@@ -656,10 +688,10 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
     async def propagate_and_concatenate(self,
                                         starting_configuration: Trajectory,
                                         workdir: str,
-                                        deffnm: str,
+                                        deffnm: str, *,
                                         tra_out: str,
-                                        overwrite: bool = False,
-                                        continuation: bool = False
+                                        continuation: bool = False,
+                                        **concatenate_kwargs
                                         ) -> tuple[Trajectory, int]:
         """
         Chain :meth:`propagate` and :meth:`cut_and_concatenate` methods.
@@ -674,16 +706,22 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
             MD engine deffnm for trajectory parts and other files.
         tra_out : str
             Absolute or relative path for the concatenated output trajectory.
-        overwrite : bool, optional
-            Whether the output trajectory should be overwritten if it exists,
-            by default False.
         continuation : bool, optional
             Whether we are continuing a previous MD run (with the same deffnm
             and working directory), by default False.
+        concatenate_kwargs : dict
+            All (other) keyword arguments will be passed as is to the
+            :meth:`TrajectoryConcatenator.concatenate` method. These include, e.g.,
+
+            - struct_out : str, optional
+                Absolute or relative path to the output structure file, if None
+                we will use the structure file of the first traj, by default None.
+            - overwrite : bool, optional
+                Whether we should overwrite tra_out if it exists, by default False.
 
         Returns
         -------
-        (traj_out, idx_of_condition_fullfilled) : (Trajectory, int)
+        (traj_out, idx_of_condition_fulfilled) : (Trajectory, int)
             The concatenated output trajectory from starting configuration
             until the first condition is True and the index to the condition
             function in `conditions`.
@@ -695,34 +733,34 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
             frames has been reached in :meth:`propagate`.
         """
         # this just chains propagate and cut_and_concatenate
-        # usefull for committor simulations, for e.g. TPS one should try to
+        # useful for committor simulations, for e.g. TPS one should try to
         # directly concatenate both directions to a full TP if possible
-        trajs, first_condition_fullfilled = await self.propagate(
+        trajs, first_condition_fulfilled = await self.propagate(
                                 starting_configuration=starting_configuration,
                                 workdir=workdir,
                                 deffnm=deffnm,
                                 continuation=continuation
-                                                              )
+                                )
         # NOTE: it should not matter too much speedwise that we recalculate
         #       the condition functions, they are expected to be wrapped funcs
         #       i.e. the second time we should just get the values from cache
-        full_traj, first_condition_fullfilled = await self.cut_and_concatenate(
+        full_traj, first_condition_fulfilled = await self.cut_and_concatenate(
                                                         trajs=trajs,
                                                         tra_out=tra_out,
-                                                        overwrite=overwrite,
-                                                                            )
-        return full_traj, first_condition_fullfilled
+                                                        **concatenate_kwargs
+                                                        )
+        return full_traj, first_condition_fulfilled
 
     async def propagate(self,
                         starting_configuration: Trajectory,
                         workdir: str,
-                        deffnm: str,
+                        deffnm: str, *,
                         continuation: bool = False,
                         ) -> tuple[list[Trajectory], int]:
         """
-        Propagate the trajectory until any condition is fullfilled.
+        Propagate the trajectory until any condition is fulfilled.
 
-        Return a list of trajecory segments and the first condition fullfilled.
+        Return a list of trajectory segments and the first condition fulfilled.
 
         Parameters
         ----------
@@ -738,10 +776,10 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
 
         Returns
         -------
-        (traj_segments, idx_of_condition_fullfilled) : (list[Trajectory], int)
-            List of trajectory (segements), the last entry is the one on which
-            the first condition is fullfilled at some frame, the ineger is the
-            index to the condition function in `conditions`.
+        (traj_segments, idx_of_condition_fulfilled) : (list[Trajectory], int)
+            List of trajectory (segments), the last entry is the one on which
+            the first condition is fulfilled at some frame, the integer is the
+            index to the condition function in ``conditions``.
 
         Raises
         ------
@@ -749,26 +787,26 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
             When the defined maximum number of integration steps/trajectory
             frames has been reached.
         """
-        # NOTE: curently this just returns a list of trajs + the condition
-        #       fullfilled
+        # NOTE: currently this just returns a list of trajs + the condition
+        #       fulfilled
         #       this feels a bit uncomfortable but avoids that we concatenate
         #       everything a quadrillion times when we use the results
-        # check first if the start configuration is fullfilling any condition
+        # check first if the start configuration is fulfilling any condition
         cond_vals = await self._condition_vals_for_traj(starting_configuration)
         if np.any(cond_vals):
-            conds_fullfilled, frame_nums = np.where(cond_vals)
+            conds_fulfilled, frame_nums = np.where(cond_vals)
             # gets the frame with the lowest idx where any condition is True
             min_idx = np.argmin(frame_nums)
-            first_condition_fullfilled = conds_fullfilled[min_idx]
-            logger.error("Starting configuration (%s) is already fullfilling "
+            first_condition_fulfilled = conds_fulfilled[min_idx]
+            logger.error("Starting configuration (%s) is already fulfilling "
                          "the condition with idx %s.",
-                         starting_configuration, first_condition_fullfilled,
-                        )
+                         starting_configuration, first_condition_fulfilled,
+                         )
             # we just return the starting configuration/trajectory
             trajs = [starting_configuration]
-            return trajs, first_condition_fullfilled
+            return trajs, first_condition_fulfilled
 
-        # starting configuration does not fullfill any condition, lets do MD
+        # starting configuration does not fulfill any condition, lets do MD
         engine = self.engine_cls(**self.engine_kwargs)
         # Note: we first check for continuation because if we do not find a run
         # to continue we fallback to no continuation
@@ -793,16 +831,15 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
                                                  )
                 cond_vals = np.concatenate([np.asarray(s) for s in cond_vals],
                                            axis=1)
-                # see if we already fullfill a condition on the existing traj parts
-                any_cond_fullfilled = np.any(cond_vals)
-                if any_cond_fullfilled:
-                    conds_fullfilled, frame_nums = np.where(cond_vals)
+                # see if we already fulfill a condition on the existing traj parts
+                if (any_cond_fulfilled := np.any(cond_vals)):
+                    conds_fulfilled, frame_nums = np.where(cond_vals)
                     # gets the frame with the lowest idx where any cond is True
                     min_idx = np.argmin(frame_nums)
-                    first_condition_fullfilled = conds_fullfilled[min_idx]
-                    # already fullfill a condition, get out of here!
-                    return trajs, first_condition_fullfilled
-                # Did not fullfill any condition yet, so prepare the engine to
+                    first_condition_fulfilled = conds_fulfilled[min_idx]
+                    # already fulfill a condition, get out of here!
+                    return trajs, first_condition_fulfilled
+                # Did not fulfill any condition yet, so prepare the engine to
                 # continue the simulation until we reach any of the (new) conds
                 await engine.prepare_from_files(workdir=workdir, deffnm=deffnm)
 
@@ -816,42 +853,43 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
             trajs = []
 
         step_counter = engine.steps_done
-        any_cond_fullfilled = False
-        while ((not any_cond_fullfilled)
+        any_cond_fulfilled = False
+        while ((not any_cond_fulfilled)
                 and (step_counter <= self.max_steps)):
             traj = await engine.run_walltime(self.walltime_per_part)
             cond_vals = await self._condition_vals_for_traj(traj)
-            any_cond_fullfilled = np.any(cond_vals)
+            any_cond_fulfilled = np.any(cond_vals)
             step_counter = engine.steps_done
             trajs.append(traj)
-        if not any_cond_fullfilled:
+        if not any_cond_fulfilled:
             # left while loop because of max_frames reached
             raise MaxStepsReachedError(
                 f"Engine produced {step_counter} steps (>= {self.max_steps})."
                                        )
         # cond_vals are the ones for the last traj
         # here we get which conditions are True and at which frame
-        conds_fullfilled, frame_nums = np.where(cond_vals)
+        conds_fulfilled, frame_nums = np.where(cond_vals)
         # gets the frame with the lowest idx where any condition is True
         min_idx = np.argmin(frame_nums)
         # and now the idx to self.conditions for cond that was first fullfilled
         # NOTE/FIXME: if two conditions are reached simultaneously at min_idx,
         #       this will find the condition with the lower idx only
-        first_condition_fullfilled = conds_fullfilled[min_idx]
-        return trajs, first_condition_fullfilled
+        first_condition_fulfilled = conds_fulfilled[min_idx]
+        return trajs, first_condition_fulfilled
 
     async def cut_and_concatenate(self,
                                   trajs: list[Trajectory],
                                   tra_out: str,
-                                  overwrite: bool = False,
+                                  **concatenate_kwargs,
                                   ) -> tuple[Trajectory, int]:
         """
         Cut and concatenate the trajectory until the first condition is True.
 
-        Take a list of trajectory segments and form one continous trajectory
-        until the first frame that fullfills any condition. The expected input
-        is a list of trajectories, e.g. the output of the :meth:`propagate`
-        method.
+        Take a list of trajectory segments and form one continuous trajectory
+        until the first frame that fulfills any condition. The first frame in
+        that fulfills any condition is included in the trajectory.
+        The expected input is a list of trajectories, e.g. the output of the
+        :meth:`propagate` method.
 
         Parameters
         ----------
@@ -859,42 +897,42 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
             Trajectory segments to cut and concatenate.
         tra_out : str
             Absolute or relative path for the concatenated output trajectory.
-        overwrite : bool, optional
-            Whether the output trajectory should be overwritten if it exists,
-            by default False.
+        concatenate_kwargs : dict
+            All (other) keyword arguments will be passed as is to the
+            :meth:`TrajectoryConcatenator.concatenate` method. These include, e.g.,
+
+            - struct_out : str, optional
+                Absolute or relative path to the output structure file, if None
+                we will use the structure file of the first traj, by default None.
+            - overwrite : bool, optional
+                Whether we should overwrite tra_out if it exists, by default False.
 
         Returns
         -------
-        (traj_out, idx_of_condition_fullfilled) : (Trajectory, int)
+        (traj_out, idx_of_condition_fulfilled) : (Trajectory, int)
             The concatenated output trajectory from starting configuration
             until the first condition is True and the index to the condition
             function in `conditions`.
         """
-        # trajs is a list of trajectories, e.g. the return of propagate
-        # tra_out and overwrite are passed directly to the Concatenator
-        # NOTE: we assume that frame0 of traj0 does not fullfill any condition
-        #       and return only the subtrajectory from frame0 until any
-        #       condition is first True (the rest is ignored)
-        # get all func values and put them into one big array
+        # get all func values and put them into one big list
         cond_vals = await asyncio.gather(
                             *(self._condition_vals_for_traj(t) for t in trajs)
                                          )
         # cond_vals is a list (trajs) of lists (conditions)
         # take condition 0 (always present) to get the traj part lengths
         part_lens = [len(c[0]) for c in cond_vals]  # c[0] is 1d (np)array
-        cond_vals = np.concatenate([np.asarray(c) for c in cond_vals],
-                                   axis=1)
-        conds_fullfilled, frame_nums = np.where(cond_vals)
-        # gets the frame with the lowest idx where any condition is True
+        # get all occurrences where any condition is True
+        conds_fulfilled, frame_nums = np.where(
+                np.concatenate([np.asarray(c) for c in cond_vals], axis=1)
+                )
+        # get the index of the frame with the lowest number where any condition is True
         min_idx = np.argmin(frame_nums)
-        first_condition_fullfilled = conds_fullfilled[min_idx]
+        first_condition_fulfilled = conds_fulfilled[min_idx]
         first_frame_in_cond = frame_nums[min_idx]
         # find out in which part it is
-        last_part_idx = 0
-        frame_sum = part_lens[last_part_idx]
-        while first_frame_in_cond >= frame_sum:
-            last_part_idx += 1
-            frame_sum += part_lens[last_part_idx]
+        # nonzero always returns a tuple (first zero index below)
+        # and we only care for the first occurrence of True/nonzero (second zero index below)
+        last_part_idx = (np.cumsum(part_lens) >= first_frame_in_cond).nonzero()[0][0]
         # find the first frame in cond (counting from start of last part)
         _first_frame_in_cond = (first_frame_in_cond
                                 - sum(part_lens[:last_part_idx]))  # >= 0
@@ -910,12 +948,10 @@ class ConditionalTrajectoryPropagator(_TrajectoryPropagator):
         full_traj = await TrajectoryConcatenator().concatenate_async(
                                    trajs=trajs[:last_part_idx + 1],
                                    slices=slices,
-                                   # take the structure file of the traj, as it
-                                   # comes from the engine directly
-                                   tra_out=tra_out, struct_out=None,
-                                   overwrite=overwrite,
-                                                                     )
-        return full_traj, first_condition_fullfilled
+                                   tra_out=tra_out,
+                                   **concatenate_kwargs
+                                   )
+        return full_traj, first_condition_fulfilled
 
     async def _condition_vals_for_traj(self, traj: Trajectory
                                        ) -> list[np.ndarray]:

@@ -23,6 +23,13 @@ Currently in here are:
 
 - ensure_executable_available
 - remove_file_if_exist and remove_file_if_exist_async
+- attach_kwargs_to_object: a function to attach kwargs to an object as properties
+  or attributes. This does type checking and warns when previously unset things
+  are set. It is used, e.g., in the GmxEngine and SlurmProcess classes.
+- DescriptorWithDefaultOnInstanceAndClass and DescriptorOutputTrajType: two descriptor
+  classes to make default values accessible on the class level but still enable checks
+  when setting on the instance level (like a property), used in the GmxEngine classes
+  but could/should be useful for any MDEngine class
 - FlagChangeList (and its typed sibling): lists with some sugar to remember if
   their content has changed
 
@@ -30,6 +37,7 @@ Currently in here are:
 import collections
 import os
 import shutil
+import logging
 import typing
 import aiofiles
 
@@ -62,11 +70,11 @@ def ensure_executable_available(executable: str) -> str:
         executable = os.path.abspath(executable)
         if not os.access(executable, os.X_OK):
             raise ValueError(f"{executable} must be executable.")
-    elif shutil.which(executable) is not None:
+    elif (which_exe := shutil.which(executable)) is not None:
         # see if we find it in $PATH
-        executable = shutil.which(executable)
+        executable = which_exe
     else:
-        raise ValueError(f"{executable} must be an existing path or accesible "
+        raise ValueError(f"{executable} must be an existing path or accessible "
                          + "via the $PATH environment variable.")
     return executable
 
@@ -83,7 +91,6 @@ def remove_file_if_exist(f: str):
     try:
         os.remove(f)
     except FileNotFoundError:
-        # TODO: should we info/warn if the file is not there?
         pass
 
 
@@ -99,14 +106,105 @@ async def remove_file_if_exist_async(f: str):
     try:
         await aiofiles.os.remove(f)
     except FileNotFoundError:
-        # TODO: should we info/warn if the file is not there?
         pass
+
+
+def attach_kwargs_to_object(obj, *, logger: logging.Logger,
+                            **kwargs
+                            ) -> None:
+    """
+    Set all kwargs as object attributes/properties, error on mismatching type.
+
+    Warn when we set an unknown (i.e. previously undefined attribute/property)
+
+    Parameters
+    ----------
+    obj : object
+        The object to attach the kwargs to.
+    logger: logging.Logger
+        The logger to use for logging.
+    **kwargs : dict
+        Zero to N keyword arguments.
+    """
+    dval = object()
+    for kwarg, value in kwargs.items():
+        if (cval := getattr(obj, kwarg, dval)) is not dval:
+            if isinstance(value, type(cval)):
+                # value is of same type as default so set it
+                setattr(obj, kwarg, value)
+            else:
+                raise TypeError(f"Setting attribute {kwarg} with "
+                                + f"mismatching type ({type(value)}). "
+                                + f" Default type is {type(cval)}."
+                                )
+        else:
+            # not previously defined, so warn that we ignore it
+            logger.warning("Ignoring unknown keyword-argument %s.", kwarg)
+
+
+class DescriptorWithDefaultOnInstanceAndClass:
+    """
+    A descriptor that makes the (default) value of the private attribute
+    ``_name`` of the class it is attached to accessible as ``name`` on both the
+    class and the instance level.
+    Accessing the default value works from the class-level, i.e. without
+    instantiating the object, but note that setting on the class level
+    overwrites the descriptor and does not call ``__set__``.
+    Setting from an instance calls __set__ and therefore only sets the attribute
+    for the given instance (and also runs potential checks done in ``__set__``).
+    Also see the python docs:
+    https://docs.python.org/3/howto/descriptor.html#customized-names
+    """
+    private_name: str
+
+    def __set_name__(self, owner, name: str) -> None:
+        self.private_name = "_" + name
+
+    def __get__(self, obj, objtype=None) -> typing.Any:
+        if obj is None:
+            # I (hejung) think if obj is None objtype will always be set
+            # to the class of the obj
+            obj = objtype
+        val = getattr(obj, self.private_name)
+        return val
+
+    def __set__(self, obj, val) -> None:
+        setattr(obj, self.private_name, val)
+
+
+class DescriptorOutputTrajType(DescriptorWithDefaultOnInstanceAndClass):
+    """
+    Check the value given is in the set of allowed values before setting.
+
+    Used to check ``output_traj_type`` of MDEngines for consistency when setting.
+    """
+    # set of allowed values, e.g., trajectory file endings (without "." and all lower case)
+    ALLOWED_VALUES: set[str] = set()
+
+    def __set_name__(self, owner, name: str) -> None:
+        if not self.ALLOWED_VALUES:
+            # make sure we can only instantiate with ALLOWED_VALUES set,
+            # i.e. make this class a sort of ABC :)
+            raise NotImplementedError(f"Can not instantiate {type(self)} "  # pragma: no cover
+                                      "without allowed trajectory types set. "
+                                      "Set ``ALLOWED_VALUES`` to a set of strings.")
+        super().__set_name__(owner, name)
+
+    def __set__(self, obj, val: str) -> None:
+        if (val := val.lower()) not in self.ALLOWED_VALUES:
+            raise ValueError("output_traj_type must be one of "
+                             + f"{self.ALLOWED_VALUES}, but was {val}."
+                             )
+        super().__set__(obj, val)
+
+    def __get__(self, obj, objtype=None) -> str:
+        return super().__get__(obj=obj, objtype=objtype)
 
 
 class FlagChangeList(collections.abc.MutableSequence):
     """A list that knows if it has been changed after initializing."""
 
-    def __init__(self, data: typing.Iterable) -> None:
+    def __init__(self, data: collections.abc.Iterable) -> None:
         """
         Initialize a `FlagChangeList`.
 
@@ -165,10 +263,10 @@ class FlagChangeList(collections.abc.MutableSequence):
         self._data.insert(index, value)
         self._changed = True
 
-    def __add__(self, other: typing.Iterable):
+    def __add__(self, other: collections.abc.Iterable):
         return FlagChangeList(data=self._data + list(other))
 
-    def __iadd__(self, other: typing.Iterable):
+    def __iadd__(self, other: collections.abc.Iterable):
         for val in other:
             self.append(val)
         return self
@@ -183,7 +281,7 @@ class TypedFlagChangeList(FlagChangeList):
     `data=["abc"]` (and not `data=["a", "b", "c"]`).
     """
 
-    def __init__(self, data: typing.Iterable, dtype: typing.Type) -> None:
+    def __init__(self, data: collections.abc.Iterable, dtype: type) -> None:
         """
         Initialize a `TypedFlagChangeList`.
 
@@ -193,7 +291,7 @@ class TypedFlagChangeList(FlagChangeList):
             (Initial) data for this `TypedFlagChangeList`.
         dtype : Callable datatype
             The datatype for all entries in this `TypedFlagChangeList`. Will be
-            called on every value seperately and is expected to convert to the
+            called on every value separately and is expected to convert to the
             desired datatype.
         """
         self._dtype = dtype  # set first to use in _convert_type method
@@ -203,19 +301,19 @@ class TypedFlagChangeList(FlagChangeList):
         super().__init__(data=typed_data)
 
     @property
-    def dtype(self) -> typing.Type:
+    def dtype(self) -> type:
         """
         All values in this `TypedFlagChangeList` are converted to dtype.
 
         Returns
         -------
-        typing.Type
+        type
         """
         return self._dtype
 
-    def _ensure_iterable(self, data) -> typing.Iterable:
+    def _ensure_iterable(self, data) -> collections.abc.Iterable:
         if getattr(data, '__iter__', None) is None:
-            # convienience for singular options,
+            # convenience for singular options,
             # if it has no iter attribute we assume it is the only item
             data = [data]
         elif isinstance(data, str):
@@ -225,7 +323,7 @@ class TypedFlagChangeList(FlagChangeList):
         return data
 
     def _convert_type(self, value,
-                      index: typing.Optional[int | slice] = None) -> list:
+                      index: int | slice | None = None) -> list:
         # here we ignore index, but passing it should in principal make it
         # possible to use different dtypes for different indices
         if isinstance(index, int):
@@ -252,14 +350,14 @@ class TypedFlagChangeList(FlagChangeList):
         self._data.insert(index, typed_value)
         self._changed = True
 
-    def __add__(self, other: typing.Iterable):
+    def __add__(self, other: collections.abc.Iterable):
         # cast other to an iterable as we expect it (excluding the strings)
         other = self._ensure_iterable(other)
         ret = TypedFlagChangeList(data=self._data + list(other),
                                   dtype=self._dtype)
         return ret
 
-    def __iadd__(self, other: typing.Iterable):
+    def __iadd__(self, other: collections.abc.Iterable):
         # cast other to an iterable as we expect it (excluding the strings)
         other = self._ensure_iterable(other)
         for val in other:

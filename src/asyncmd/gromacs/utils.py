@@ -12,6 +12,11 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
+"""
+This file implements gromacs-specific variants of the utility functions related to MD usage.
+
+The general variants of these functions can be found in asyncmd.utils.
+"""
 import os
 import logging
 import aiofiles.os
@@ -48,30 +53,42 @@ def nstout_from_mdp(mdp: MDP, traj_type: str = "TRR") -> int:
         Raised when the given MDP would result in no output for the given
         trajectory format `traj_type`.
     """
+    def get_value_from_mdp(k):
+        try:
+            v = mdp[k]
+        except KeyError:
+            # not set, defaults to 0
+            v = float("inf")
+        else:
+            # need to check for 0 (== no output!) in case somone puts the
+            # defaults (or reads an mdout.mdp where gmx lists all the defaults)
+            if not v:
+                v = float("inf")
+        return v
+
     if traj_type.upper() == "TRR":
-        keys = ["nstxout", "nstvout", "nstfout"]
+        keys = ["nstxout"]
     elif traj_type.upper() == "XTC":
         keys = ["nstxout-compressed", "nstxtcout"]
     else:
         raise ValueError("traj_type must be one of 'TRR' or 'XTC'.")
-
     vals = []
     for k in keys:
-        try:
-            # need to check for 0 (== no output!) in case somone puts the
-            # defaults (or reads an mdout.mdp where gmx lists all the defaults)
-            v = mdp[k]
-            if v == 0:
-                v = float("inf")
-            vals += [v]
-        except KeyError:
-            # not set, defaults to 0, so we ignore it
-            pass
-
-    nstout = min(vals, default=None)
-    if (nstout is None) or (nstout == float("inf")):
+        vals += [get_value_from_mdp(k=k)]
+    if (nstout := min(vals)) == float("inf"):
         raise ValueError(f"The MDP you passed results in no {traj_type} "
-                         +"trajectory output.")
+                         + "trajectory output.")
+    if traj_type.upper == "TRR":
+        # additional checks that nstvout and nstfout are multiples of nstxout
+        # (if they are defined)
+        additional_keys = ["nstvout", "nstfout"]
+        for k in additional_keys:
+            if (v := get_value_from_mdp(k=k)) != float("inf"):
+                if v % nstout:
+                    logger.warning("%s trajectory output is not a multiple of "
+                                   "the nstxout frequency (%s=%d, nstxout=%d).",
+                                   k, k, v, nstout)
+
     return nstout
 
 
@@ -128,7 +145,7 @@ async def get_all_file_parts(folder: str, deffnm: str, file_ending: str) -> "lis
     """
     def partnum_suffix(num):
         # construct gromacs num part suffix from simulation_part
-        num_suffix = ".part{:04d}".format(num)
+        num_suffix = f".part{num:04d}"
         return num_suffix
 
     if not file_ending.startswith("."):
