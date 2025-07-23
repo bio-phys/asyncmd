@@ -51,7 +51,7 @@ class SlurmError(RuntimeError):
     """Generic error superclass for all SLURM errors."""
 
 
-class SlurmCancelationError(SlurmError):
+class SlurmCancellationError(SlurmError):
     """Error raised when something goes wrong canceling a SLURM job."""
 
 
@@ -84,7 +84,7 @@ _SLURM_STATE_TO_EXITCODE = {
     "NODE_FAIL": 2,
     "OUT_OF_MEMORY": 1,  # Job experienced out of memory error.
     "PENDING": None,  # Job is awaiting resource allocation.
-    # NOTE: preemption means interupting a process to later restart it,
+    # NOTE: preemption means interrupting a process to later restart it,
     #       i.e. None is probably the right thing to return
     "PREEMPTED": None,  # Job terminated due to preemption.
     "RUNNING": None,  # Job currently has an allocation.
@@ -128,12 +128,12 @@ class SlurmClusterMediator:
     sacct_executable = "sacct"
     # wait for at least 5 s between two sacct calls
     min_time_between_sacct_calls = 5
-    # NOTE: We track the number of failed/successfull jobs associated with each
+    # NOTE: We track the number of failed/successful jobs associated with each
     #       node and use this information to decide if a node is broken
     # number of 'suspected fail' counts that a node needs to accumulate for us
     # to declare it broken
     num_fails_for_broken_node = 3
-    # minimum number of successfuly completed jobs we need to see on a node to
+    # minimum number of successfully completed jobs we need to see on a node to
     # decrease the 'suspected fail' counter by one
     success_to_fail_ratio = 50
     # TODO/FIXME: currently we have some tolerance until a node is declared
@@ -1114,7 +1114,7 @@ class SlurmProcess:
 
         Raises
         ------
-        SlurmCancelationError
+        SlurmCancellationError
             If scancel has non-zero returncode.
         RuntimeError
             If no jobid is known, e.g. because the job was never submitted.
@@ -1126,7 +1126,7 @@ class SlurmProcess:
                 scancel_out = subprocess.check_output(shlex.split(scancel_cmd),
                                                       text=True)
             except subprocess.CalledProcessError as e:
-                raise SlurmCancelationError(
+                raise SlurmCancellationError(
                         "Something went wrong canceling the slurm job "
                         + f"{self._jobid}. scancel had exitcode {e.returncode}"
                         + f" and output {e.output}."
@@ -1314,6 +1314,7 @@ def set_slurm_settings(sinfo_executable: typing.Optional[str] = None,
         results in no excluded nodes.
     """
     global SlurmProcess
+    # TODO: check if cluster_mediator is set?!
     if sinfo_executable is not None:
         SlurmProcess._slurm_cluster_mediator.sinfo_executable = sinfo_executable
     if sacct_executable is not None:
