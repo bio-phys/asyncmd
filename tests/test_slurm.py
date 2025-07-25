@@ -17,7 +17,8 @@ import logging
 from unittest.mock import patch, PropertyMock
 
 import asyncmd
-from asyncmd.slurm import SlurmClusterMediator, SlurmProcess
+from asyncmd.slurm import SlurmProcess
+from asyncmd.slurm.cluster_mediator import SlurmClusterMediator
 
 
 LOGGER = logging.getLogger(__name__)
@@ -42,7 +43,7 @@ class Test_SlurmProcess:
                             caplog, monkeypatch):
         if add_non_protected_sbatch_options_to_keep:
             # add a dummy option that we want to keep in the dict
-            # (Need to redefine the dict [mot use update] to not chnage the
+            # (Need to redefine the dict [mot use update] to not change the
             #  originally passed in value from parametrize for the next round)
             sbatch_options = dict({"other_keep_option": "TO_KEEP_TOO"},
                                   **sbatch_options)
@@ -51,7 +52,7 @@ class Test_SlurmProcess:
         with monkeypatch.context() as m:
             # monkeypatch to make sure we can execute the tests without slurm
             # (SlurmProcess checks if sbatch and friends are executable at init)
-            m.setattr("asyncmd.slurm.ensure_executable_available",
+            m.setattr("asyncmd.slurm.process.ensure_executable_available",
                       lambda _: "/usr/bin/true")
             with caplog.at_level(logging.WARNING):
                 slurm_proc = SlurmProcess(jobname="test",
@@ -64,7 +65,7 @@ class Test_SlurmProcess:
         # (i.e. if we should have removed something)
         if len(sbatch_options) != expected_opt_len:
             warn_str = f"Removing sbatch option '{opt_name}' from 'sbatch_options'"
-            warn_str += " because it is used internaly by the `SlurmProcess`."
+            warn_str += " because it is used internally by the `SlurmProcess`."
             assert warn_str in caplog.text
 
     @pytest.mark.parametrize(["sbatch_options", "time", "expect_warn"],
@@ -79,14 +80,14 @@ class Test_SlurmProcess:
         with monkeypatch.context() as m:
             # monkeypatch to make sure we can execute the tests without slurm
             # (SlurmProcess checks if sbatch and friends are executable at init)
-            m.setattr("asyncmd.slurm.ensure_executable_available",
+            m.setattr("asyncmd.slurm.process.ensure_executable_available",
                       lambda _: "/usr/bin/true")
             with caplog.at_level(logging.DEBUG):
                 slurm_proc = SlurmProcess(jobname="test",
                                           sbatch_script="/usr/bin/true",
                                           time=time,
                                           sbatch_options=sbatch_options)
-        # make sure we remove time from sbatch_options if given seperately
+        # make sure we remove time from sbatch_options if given separately
         if time is not None:
             assert len(slurm_proc.sbatch_options) == 0
         # make sure we get the warning when we remove it due to double option
@@ -114,7 +115,7 @@ class Test_SlurmProcess:
         with monkeypatch.context() as m:
             # monkeypatch to make sure we can execute the tests without slurm
             # (SlurmProcess checks if sbatch and friends are executable at init)
-            m.setattr("asyncmd.slurm.ensure_executable_available",
+            m.setattr("asyncmd.slurm.process.ensure_executable_available",
                       lambda _: "/usr/bin/true")
             slurm_proc = SlurmProcess(jobname="test",
                                       sbatch_script="/usr/bin/true",
@@ -214,7 +215,7 @@ class MockSubprocess:
 @patch("asyncmd.slurm.SlurmProcess.slurm_cluster_mediator", new_callable=PropertyMock)
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.abspath", return_value="/usr/bin/true")
-@patch("asyncmd.slurm.logger")
+@patch("asyncmd.slurm.process.logger")
 @patch("subprocess.check_output", return_value="node1\nnode2\n")
 def test_terminate(
     mock_check_output,
