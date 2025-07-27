@@ -75,10 +75,9 @@ class SlurmClusterMediator:
     # TODO /FIXME: currently we have some tolerance until a node is declared
     #             broken but as soon as it is broken it will stay that forever?!
     #             (here forever means until we reinitialize SlurmClusterMediator)
-    # TODO: make _jobids a set?! (they should be unique anyway!!)
 
     def __init__(self, **kwargs) -> None:
-        self._exclude_nodes: list[str] = []
+        self._exclude_nodes: set[str] = set()
         # make it possible to set any attribute via kwargs
         # check the type for attributes with default values
         _attach_kwargs_to_object(obj=self, logger=logger, **kwargs)
@@ -88,8 +87,8 @@ class SlurmClusterMediator:
         self._node_job_fails: dict[str, int] = collections.Counter()
         self._node_job_successes: dict[str, int] = collections.Counter()
         self._all_nodes = self.list_all_nodes()
-        self._jobids: list[str] = []  # list of jobids of jobs we know about
-        self._jobids_sacct: list[str] = []  # list of jobids we monitor actively via sacct
+        self._jobids: set[str] = set()  # set of jobids of jobs we know about
+        self._jobids_sacct: set[str] = set()  # set of jobids we monitor actively via sacct
         # we will store the info about jobs in a dict keys are jobids
         # values are dicts with key queried option and value the (parsed)
         # return value
@@ -142,14 +141,16 @@ class SlurmClusterMediator:
                                                       )
 
     @property
-    def exclude_nodes(self) -> list[str]:
-        """Return a list with all nodes excluded from job submissions."""
+    def exclude_nodes(self) -> set[str]:
+        """Return a set with all nodes excluded from job submissions."""
         return self._exclude_nodes.copy()
 
     @exclude_nodes.setter
-    def exclude_nodes(self, val: list[str] | None) -> None:
+    def exclude_nodes(self, val: set[str] | collections.abc.Iterable[str] | None) -> None:
         if val is None:
-            val = []
+            val = set()
+        else:
+            val = set(val)
         self._exclude_nodes = val
 
     def list_all_nodes(self) -> list[str]:
@@ -189,8 +190,8 @@ class SlurmClusterMediator:
                                     "nodelist": [],
                                     }
             # add the jobid to the sacct calls only **after** we set the defaults
-            self._jobids.append(jobid)
-            self._jobids_sacct.append(jobid)
+            self._jobids.add(jobid)
+            self._jobids_sacct.add(jobid)
             logger.debug("Registered job with id %s for sacct monitoring.",
                          jobid,
                          )
@@ -214,7 +215,7 @@ class SlurmClusterMediator:
             del self._jobinfo[jobid]
             try:
                 self._jobids_sacct.remove(jobid)
-            except ValueError:
+            except KeyError:
                 pass  # already not actively monitored anymore
             logger.debug("Removed job with id %s from sacct monitoring.",
                          jobid,
@@ -281,10 +282,10 @@ class SlurmClusterMediator:
         finally:
             # and put the three back into the semaphore
             _SEMAPHORES["MAX_FILES_OPEN"].release()
-        # only jobid (and possibly clustername) returned, semikolon to separate
+        # only jobid (and possibly clustername) returned, semicolon to separate
         logger.debug("sacct returned %s.", sacct_return)
         # sacct returns one line per substep, we only care for the whole job
-        # so our regexp checks explictly for jobid only
+        # so our regexp checks explicitly for jobid only
         # (the substeps have .$NUM suffixes)
         for match in self._match_mainstep_line_regexp.finditer(sacct_return):
             splits = match.group().split("||||")
@@ -307,7 +308,6 @@ class SlurmClusterMediator:
                     # (then the _jobinfo dict will not contain the job anymore
                     #  and we get the KeyError from the jobid)
                     # we go to the next jobid as we are not monitoring this one
-                    # TODO: do we want/need to log this?!
                     continue
                 else:
                     if last_seen_state == state:
@@ -394,8 +394,8 @@ class SlurmClusterMediator:
 
         Check if a job failed and if yes determine heuristically if it failed
         because of a node failure.
-        Also call the respective functions to update counters for successfull
-        and unsuccessfull job executions on each of the involved nodes.
+        Also call the respective functions to update counters for successful
+        and unsuccessful job executions on each of the involved nodes.
 
         Parameters
         ----------
@@ -425,9 +425,8 @@ class SlurmClusterMediator:
                 # this should catch 'FAILED', 'NODE_FAIL' and 'BOOT_FAIL'
                 # but excludes 'CANCELLED', 'DEADLINE', 'OUT_OF_MEMORY',
                 # 'REVOKE' and 'TIMEOUT'
-                # TODO: is this what we want?
-                # I (hejung) think yes, the later 5 are quite probably not a
-                # node failure but a code/user error
+                # I (hejung) think this is the list we want, the later 5 are
+                # quite probably not a node failure but a code/user error
                 log_str += " MARKING NODES AS POSSIBLY BROKEN."
                 logger.debug(log_str, *log_args)
                 self._note_job_fail_on_nodes(nodelist=nodelist)
@@ -448,7 +447,7 @@ class SlurmClusterMediator:
                 # declare it broken
                 logger.info("Adding node %s to list of excluded nodes.", node)
                 if node not in self._exclude_nodes:
-                    self._exclude_nodes.append(node)
+                    self._exclude_nodes.add(node)
                 else:
                     logger.error("Node %s already in exclude node list.", node)
         # failsaves

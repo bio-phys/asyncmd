@@ -18,12 +18,12 @@ This file contains functions to set/change the configuration of the slurm module
 - set_all_slurm_settings
 - set_slurm_settings
 """
-# TODO: a word on each of the functions in the docstring above?!
 from .process import SlurmProcess
 from .cluster_mediator import SlurmClusterMediator
 
 
-def set_all_slurm_settings(sinfo_executable: str = "sinfo",
+# pylint: disable-next=too-many-arguments
+def set_all_slurm_settings(*, sinfo_executable: str = "sinfo",
                            sacct_executable: str = "sacct",
                            sbatch_executable: str = "sbatch",
                            scancel_executable: str = "scancel",
@@ -66,8 +66,9 @@ def set_all_slurm_settings(sinfo_executable: str = "sinfo",
         List of nodes to exclude in job submissions, by default None, which
         results in no excluded nodes.
     """
+    # pylint: disable-next=global-variable-not-assigned
     global SlurmProcess
-    SlurmProcess._slurm_cluster_mediator = SlurmClusterMediator(
+    SlurmProcess.slurm_cluster_mediator = SlurmClusterMediator(
                     sinfo_executable=sinfo_executable,
                     sacct_executable=sacct_executable,
                     min_time_between_sacct_calls=min_time_between_sacct_calls,
@@ -79,7 +80,8 @@ def set_all_slurm_settings(sinfo_executable: str = "sinfo",
     SlurmProcess.scancel_executable = scancel_executable
 
 
-def set_slurm_settings(sinfo_executable: str | None = None,
+# pylint: disable-next=too-many-arguments
+def set_slurm_settings(*, sinfo_executable: str | None = None,
                        sacct_executable: str | None = None,
                        sbatch_executable: str | None = None,
                        scancel_executable: str | None = None,
@@ -119,21 +121,32 @@ def set_slurm_settings(sinfo_executable: str | None = None,
         List of nodes to exclude in job submissions, by default None, which
         results in no excluded nodes.
     """
+    # pylint: disable-next=global-variable-not-assigned
     global SlurmProcess
-    # TODO: check if cluster_mediator is set?!
+    # collect options for slurm cluster mediator
+    mediator_options: dict[str, str | int | list[str]] = {}
     if sinfo_executable is not None:
-        SlurmProcess._slurm_cluster_mediator.sinfo_executable = sinfo_executable
+        mediator_options["sinfo_executable"] = sinfo_executable
     if sacct_executable is not None:
-        SlurmProcess._slurm_cluster_mediator.sacct_executable = sacct_executable
+        mediator_options["sacct_executable"] = sacct_executable
+    if min_time_between_sacct_calls is not None:
+        mediator_options["min_time_between_sacct_calls"] = min_time_between_sacct_calls
+    if num_fails_for_broken_node is not None:
+        mediator_options["num_fails_for_broken_node"] = num_fails_for_broken_node
+    if success_to_fail_ratio is not None:
+        mediator_options["success_to_fail_ratio"] = success_to_fail_ratio
+    if exclude_nodes is not None:
+        mediator_options["exclude_nodes"] = exclude_nodes
+    # and set them either on a new mediator or on the already initialized class
+    if SlurmProcess.slurm_cluster_mediator is None:
+        # initialize the mediator with given options (all else will be default)
+        SlurmProcess.slurm_cluster_mediator = SlurmClusterMediator(**mediator_options)
+    else:
+        # set the given options on the already initialized class
+        for opt, val in mediator_options.items():
+            setattr(SlurmProcess.slurm_cluster_mediator, opt, val)
+    # and set the two SlurmProcess attributes directly
     if sbatch_executable is not None:
         SlurmProcess.sbatch_executable = sbatch_executable
     if scancel_executable is not None:
         SlurmProcess.scancel_executable = scancel_executable
-    if min_time_between_sacct_calls is not None:
-        SlurmProcess._slurm_cluster_mediator.min_time_between_sacct_calls = min_time_between_sacct_calls
-    if num_fails_for_broken_node is not None:
-        SlurmProcess._slurm_cluster_mediator.num_fails_for_broken_node = num_fails_for_broken_node
-    if success_to_fail_ratio is not None:
-        SlurmProcess._slurm_cluster_mediator.success_to_fail_ratio = success_to_fail_ratio
-    if exclude_nodes is not None:
-        SlurmProcess._slurm_cluster_mediator.exclude_nodes = exclude_nodes

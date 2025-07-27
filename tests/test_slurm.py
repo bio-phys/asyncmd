@@ -20,10 +20,23 @@ from unittest.mock import patch, PropertyMock, Mock, AsyncMock, ANY
 
 from asyncmd.slurm import SlurmProcess
 from asyncmd.slurm.cluster_mediator import SlurmClusterMediator
-from asyncmd.slurm.constants_and_errors import SlurmSubmissionError
+from asyncmd.slurm.constants_and_errors import SlurmSubmissionError, SlurmError
 
 
 class Test_SlurmProcess:
+    def test_init_error_without_slurm(self, monkeypatch):
+        with monkeypatch.context() as m:
+            # monkeypatch to make sure we can execute the tests without slurm
+            # (SlurmProcess checks if sbatch and friends are executable at init)
+            # i.e. make sure everything works as expected with and without slurm
+            m.setattr("asyncmd.slurm.process.ensure_executable_available",
+                      lambda _: "/usr/bin/true")
+            # But set the cluster_mediator to None to test the init error
+            m.setattr("asyncmd.slurm.SlurmProcess.slurm_cluster_mediator",
+                      None)
+            with pytest.raises(SlurmError):
+                _ = SlurmProcess(jobname="test", sbatch_script="/usr/bin/true")
+
     @pytest.mark.parametrize("add_non_protected_sbatch_options_to_keep", [True, False])
     @pytest.mark.parametrize(["sbatch_options", "opt_name", "expected_opt_len"],
                              [({"job-name": "TO_REMOVE"}, "job-name", 0),
@@ -55,6 +68,10 @@ class Test_SlurmProcess:
             # (SlurmProcess checks if sbatch and friends are executable at init)
             m.setattr("asyncmd.slurm.process.ensure_executable_available",
                       lambda _: "/usr/bin/true")
+            # mock the cluster_mediator to be able to initialize the SlurmProcess
+            mediator_mock = Mock(SlurmClusterMediator)
+            m.setattr("asyncmd.slurm.SlurmProcess.slurm_cluster_mediator",
+                      mediator_mock)
             with caplog.at_level(logging.WARNING):
                 slurm_proc = SlurmProcess(jobname="test",
                                           sbatch_script="/usr/bin/true",
@@ -83,6 +100,10 @@ class Test_SlurmProcess:
             # (SlurmProcess checks if sbatch and friends are executable at init)
             m.setattr("asyncmd.slurm.process.ensure_executable_available",
                       lambda _: "/usr/bin/true")
+            # mock the cluster_mediator to be able to initialize the SlurmProcess
+            mediator_mock = Mock(SlurmClusterMediator)
+            m.setattr("asyncmd.slurm.SlurmProcess.slurm_cluster_mediator",
+                      mediator_mock)
             with caplog.at_level(logging.DEBUG):
                 slurm_proc = SlurmProcess(jobname="test",
                                           sbatch_script="/usr/bin/true",
@@ -118,6 +139,10 @@ class Test_SlurmProcess:
             # (SlurmProcess checks if sbatch and friends are executable at init)
             m.setattr("asyncmd.slurm.process.ensure_executable_available",
                       lambda _: "/usr/bin/true")
+            # mock the cluster_mediator to be able to initialize the SlurmProcess
+            mediator_mock = Mock(SlurmClusterMediator)
+            m.setattr("asyncmd.slurm.SlurmProcess.slurm_cluster_mediator",
+                      mediator_mock)
             slurm_proc = SlurmProcess(jobname="test",
                                       sbatch_script="/usr/bin/true",
                                       time=time_in_h)
@@ -140,7 +165,7 @@ class Test_SlurmProcess:
                       lambda _: "/usr/bin/true")
             mediator_mock = Mock(SlurmClusterMediator)
             type(mediator_mock).exclude_nodes = PropertyMock(return_value=exclude_nodes)
-            m.setattr("asyncmd.slurm.SlurmProcess._slurm_cluster_mediator",
+            m.setattr("asyncmd.slurm.SlurmProcess.slurm_cluster_mediator",
                       mediator_mock)
             slurm_proc = SlurmProcess(jobname="test",
                                       sbatch_script="/usr/bin/true",
@@ -195,8 +220,8 @@ class Test_SlurmProcess:
             m.setattr("asyncmd.slurm.process.ensure_executable_available",
                       lambda _: "/usr/bin/true")
             mediator_mock = Mock(SlurmClusterMediator)
-            type(mediator_mock).exclude_nodes = PropertyMock(return_value=[])
-            m.setattr("asyncmd.slurm.SlurmProcess._slurm_cluster_mediator",
+            type(mediator_mock).exclude_nodes = PropertyMock(return_value=set())
+            m.setattr("asyncmd.slurm.SlurmProcess.slurm_cluster_mediator",
                       mediator_mock)
             slurm_proc = SlurmProcess(jobname="test",
                                       sbatch_script="/usr/bin/true",
@@ -335,7 +360,7 @@ class MockSubprocess:
         return 0
 
 
-@patch("asyncmd.slurm.SlurmProcess.slurm_cluster_mediator", new_callable=PropertyMock)
+@patch("asyncmd.slurm.SlurmProcess.slurm_cluster_mediator", new=Mock(SlurmClusterMediator))
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.abspath", return_value="/usr/bin/true")
 @patch("asyncmd.slurm.process.logger")
@@ -345,7 +370,6 @@ def test_terminate(
     mock_logger,
     mock_isfile,
     mock_abspath,
-    mock_slurm_cluster_mediator,
 ):
     slurm_process = SlurmProcess(jobname="test", sbatch_script="/usr/bin/true")
     slurm_process._jobid = "15283217"

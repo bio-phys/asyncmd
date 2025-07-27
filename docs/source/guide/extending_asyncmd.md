@@ -101,7 +101,7 @@ If the option/key is present but without associated value(s) the list in the dic
 ```
 
 ```{eval-rst}
-.. autoclass:: asyncmd.slurm.SlurmClusterMediator
+.. autoclass:: asyncmd.slurm.cluster_mediator.SlurmClusterMediator
     :class-doc-from: both
     :member-order: groupwise
     :members:

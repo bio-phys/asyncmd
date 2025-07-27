@@ -29,7 +29,10 @@ import os
 import aiofiles
 
 from .cluster_mediator import SlurmClusterMediator
-from .constants_and_errors import SlurmCancellationError, SlurmSubmissionError
+from .constants_and_errors import (SlurmCancellationError,
+                                   SlurmSubmissionError,
+                                   SlurmError,
+                                   )
 from ..tools import (ensure_executable_available,
                      remove_file_if_exist_async,
                      remove_file_if_exist,
@@ -55,18 +58,29 @@ class SlurmProcess:
         Name or path to the scancel executable, by default "scancel".
     sleep_time : int
         Time (in seconds) between checks if the underlying job has finished
-        when using `self.wait`.
+        when using `self.wait`. By default 15 s.
+    stdfiles_removal : str
+        Whether to remove the stdout, stderr (and possibly stdin) files.
+        Possible values are:
+
+        - "success": remove on successful completion, i.e. zero returncode)
+        - "no": never remove
+        - "yes"/"always": remove on job completion independent of
+          returncode and also when using :meth:`terminate`
+
+        By default "success".
     """
 
     # use same instance of class for all SlurmProcess instances
     try:
-        _slurm_cluster_mediator = SlurmClusterMediator()
+        slurm_cluster_mediator = SlurmClusterMediator()
     except ValueError:
-        _slurm_cluster_mediator = None
+        slurm_cluster_mediator = None
         # we raise a ValueError if sacct/sinfo are not available
         logger.warning("Could not initialize SLURM cluster handling. "
                        "If you are sure SLURM (sinfo/sacct/etc) is available "
-                       "try calling `asyncmd.config.set_slurm_settings()` "
+                       "try calling `asyncmd.config.set_all_slurm_settings()` "
+                       "or `asyncmd.config.set_slurm_setting()` "
                        "with the appropriate arguments.")
     # we can not simply wait for the subprocess, since slurm exits directly
     # so we will sleep for this long between checks if slurm-job completed
@@ -79,12 +93,13 @@ class SlurmProcess:
     #       stderr and stdout
     sbatch_executable = "sbatch"
     scancel_executable = "scancel"
+    # default value for stdfile_removal
+    _stdfiles_removal = "success"
 
     def __init__(self, jobname: str, sbatch_script: str, *,
                  workdir: str | None = None,
                  time: float | None = None,
                  sbatch_options: dict | None = None,
-                 stdfiles_removal: str = "success",
                  **kwargs) -> None:
         """
         Initialize a `SlurmProcess`.
@@ -113,14 +128,6 @@ class SlurmProcess:
             ``--contiguous`` the dictionary needs to be ``{"contiguous": ""}``.
             See the SLURM documentation for a full list of sbatch options
             (https://slurm.schedmd.com/sbatch.html).
-        stdfiles_removal : str
-            Whether to remove the stdout, stderr (and possibly stdin) files.
-            Possible values are:
-
-             - "success": remove on successful completion, i.e. zero returncode)
-             - "no": never remove
-             - "yes"/"always": remove on job completion independent of
-               returncode and also when using :meth:`terminate`
 
         Raises
         ------
@@ -128,6 +135,13 @@ class SlurmProcess:
             If the value set via init kwarg for a attribute does not match the
             default/original type for that attribute.
         """
+        if not isinstance(self.slurm_cluster_mediator, SlurmClusterMediator):
+            raise SlurmError(
+                "SLURM monitoring not initialized. Please call "
+                "`asyncmd.config.set_slurm_setting()` or "
+                "`asyncmd.config.set_all_slurm_settings` with appropriate "
+                "arguments to ensure `sinfo` and `sacct` executables are available."
+                )
         # we expect sbatch_script to be a path to a file
         # make it possible to set any attribute via kwargs
         # check the type for attributes with default values
@@ -149,7 +163,6 @@ class SlurmProcess:
         if sbatch_options is None:
             sbatch_options = {}
         self.sbatch_options = sbatch_options
-        self.stdfiles_removal = stdfiles_removal
         self._jobid: None | str = None
         # dict with jobinfo cached from slurm cluster mediator
         self._jobinfo: dict[str, typing.Any] = {}
@@ -174,7 +187,7 @@ class SlurmProcess:
         # NOTE: this should be called every time we modify sbatch_options or self.time!
         # This is the list of sbatch options we use ourself, they should not
         # be in the dict to avoid unforeseen effects. We treat 'time' special
-        # because we want to allow for it to be specified via sbtach_options if
+        # because we want to allow for it to be specified via sbatch_options if
         # it is not set via the attribute self.time.
         reserved_sbatch_options = ["job-name", "chdir", "output", "error",
                                    "input", "exclude", "parsable"]
@@ -293,18 +306,6 @@ class SlurmProcess:
                              + f"but was {val.lower()}.")
         self._stdfiles_removal = val.lower()
 
-    @property
-    def slurm_cluster_mediator(self) -> SlurmClusterMediator:
-        """
-        The (singleton) `SlurmClusterMediator` instance of this `SlurmProcess`.
-        """
-        if self._slurm_cluster_mediator is None:
-            raise RuntimeError("SLURM monitoring not initialized. Please call"
-                               + "`asyncmd.config.set_slurm_settings()`"
-                               + " with appropriate arguments.")
-
-        return self._slurm_cluster_mediator
-
     async def submit(self, stdin: str | None = None) -> None:
         """
         Submit the job via sbatch.
@@ -394,7 +395,7 @@ class SlurmProcess:
                 f"sbatch stdout: {sbatch_stdout} \n"
                 f"sbatch stderr: {sbatch_stderr} \n"
                 ) from e
-        logger.info("Submited SLURM job with jobid %s.", jobid)
+        logger.info("Submitted SLURM job with jobid %s.", jobid)
         self._jobid = jobid
         self.slurm_cluster_mediator.monitor_register_job(jobid=jobid)
         # get jobinfo (these will probably just be the defaults but at
@@ -647,7 +648,6 @@ async def create_slurmprocess_submit(jobname: str,
                                      workdir: str | None = None,
                                      time: float | None = None,
                                      sbatch_options: dict | None = None,
-                                     stdfiles_removal: str = "success",
                                      stdin: str | None = None,
                                      **kwargs,
                                      ):
@@ -678,15 +678,6 @@ async def create_slurmprocess_submit(jobname: str,
         ``--contiguous`` the dictionary needs to be ``{"contiguous": ""}``.
         See the SLURM documentation for a full list of sbatch options
         (https://slurm.schedmd.com/sbatch.html).
-    stdfiles_removal : str
-        Whether to remove the stdout, stderr (and possibly stdin) files.
-        Possible values are:
-
-         - "success": remove on sucessful completion, i.e. zero returncode)
-         - "no": never remove
-         - "yes"/"always": remove on job completion independent of
-           returncode and also when using :meth:`terminate`
-
     stdin : str or None
         If given it is interpreted as a file to which we connect the batch
         scripts stdin via sbatchs ``--input`` option. This enables sending
@@ -704,7 +695,6 @@ async def create_slurmprocess_submit(jobname: str,
     proc = SlurmProcess(jobname=jobname, sbatch_script=sbatch_script,
                         workdir=workdir, time=time,
                         sbatch_options=sbatch_options,
-                        stdfiles_removal=stdfiles_removal,
                         **kwargs)
     await proc.submit(stdin=stdin)
     return proc
