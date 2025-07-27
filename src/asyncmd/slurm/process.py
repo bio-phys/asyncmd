@@ -683,7 +683,7 @@ async def create_slurmprocess_submit(jobname: str,
         scripts stdin via sbatchs ``--input`` option. This enables sending
         data to the processes stdin via :meth:`communicate`.
         Note that if it is desired to send data to the process the process
-        has to be submited with stdin.
+        has to be submitted with stdin.
     kwargs: dict, optional
         Additional keyword arguments to be passed to :meth`SlurmProcess.__init__`.
 

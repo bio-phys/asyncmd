@@ -146,11 +146,8 @@ class SlurmClusterMediator:
         return self._exclude_nodes.copy()
 
     @exclude_nodes.setter
-    def exclude_nodes(self, val: set[str] | collections.abc.Iterable[str] | None) -> None:
-        if val is None:
-            val = set()
-        else:
-            val = set(val)
+    def exclude_nodes(self, val: set[str] | collections.abc.Iterable[str]) -> None:
+        val = set(val)
         self._exclude_nodes = val
 
     def list_all_nodes(self) -> list[str]:

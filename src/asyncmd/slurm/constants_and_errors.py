@@ -59,10 +59,11 @@ SLURM_STATE_TO_EXITCODE: dict[str, int | None] = {
     "PREEMPTED": None,  # Job terminated due to preemption.
     "RUNNING": None,  # Job currently has an allocation.
     "REQUEUED": None,  # Job was requeued.
+    # TODO: when can resizing happen? what should we return? For now we go with not finished,
+    #       i.e. None
     # Job is about to change size.
-    #"RESIZING" TODO: when does this happen? what should we return?
-    # Sibling was removed from cluster due to other cluster starting the
-    # job.
+    "RESIZING": None,
+    # Sibling was removed from cluster due to other cluster starting the job.
     "REVOKED": 1,
     # Job has an allocation, but execution has been suspended and CPUs have
     # been released for other jobs.
