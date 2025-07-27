@@ -128,10 +128,12 @@ set_max_files_open()
 
 
 # SLURM semaphore stuff:
-# TODO: move this to slurm.py? and initialize only if slurm is available?
 # slurm max job semaphore, if the user sets it it will be used,
 # otherwise we can use an unlimited number of synchronous slurm-jobs
 # (if the simulation requires that much)
+# Note: We set this here to make sure the semaphore is there independently of if
+# slurm is available to make sure it is set if slurm becomes available later by
+# (re)setting, e.g., the paths to sinfo/sacct/sbatch and friends
 def set_slurm_max_jobs(num: int | None) -> None:
     """
     Set the maximum number of simultaneously submitted SLURM jobs.
