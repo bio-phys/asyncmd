@@ -64,7 +64,7 @@ asyncmd = ["py.typed"]
 fail-on = ["E"]
 
 # Specify a score threshold under which the program will exit with error.
-fail-under = 9.6
+fail-under = 9.92
 
 # List of plugins (as comma separated values of python module names) to load,
 # usually to register additional checkers.
