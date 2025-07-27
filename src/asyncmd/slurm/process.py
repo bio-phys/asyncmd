@@ -339,8 +339,7 @@ class SlurmProcess:
         sbatch_cmd += f" --output=./{self._stdout_name(use_slurm_symbols=True)}"
         sbatch_cmd += f" --error=./{self._stderr_name(use_slurm_symbols=True)}"
         if self.time is not None:
-            timelimit_str = self._slurm_timelimit_from_time_in_hours(self.time)
-            sbatch_cmd += f" --time={timelimit_str}"
+            sbatch_cmd += f" --time={self._slurm_timelimit_from_time_in_hours(self.time)}"
         # keep a ref to the stdin value, we need it in communicate
         self._stdin = stdin
         if stdin is not None:
@@ -349,6 +348,7 @@ class SlurmProcess:
         exclude_nodes = self.slurm_cluster_mediator.exclude_nodes
         if len(exclude_nodes) > 0:
             sbatch_cmd += f" --exclude={','.join(exclude_nodes)}"
+        # add all other (user-defined) sbatch options
         for key, val in self.sbatch_options.items():
             sbatch_cmd += f" --{key}={val}" if val else f" --{key}"
         sbatch_cmd += f" --parsable {self.sbatch_script}"
@@ -369,29 +369,31 @@ class SlurmProcess:
             sbatch_proc.kill()
             raise e from None
         else:
-            sbatch_return = stdout.decode()
+            sbatch_stdout = stdout.decode()
+            sbatch_stderr = stderr.decode()
+            if (returncode := sbatch_proc.returncode):
+                raise SlurmSubmissionError(
+                    "Could not submit SLURM job. "
+                    f"sbatch had non-zero returncode ({returncode}). \n"
+                    f"sbatch stdout: {sbatch_stdout} \n"
+                    f"sbatch stderr: {sbatch_stderr} \n"
+                    )
         finally:
             _SEMAPHORES["MAX_FILES_OPEN"].release()
         # only jobid (and possibly clustername) returned, semicolon to separate
         logger.debug("sbatch returned stdout: %s, stderr: %s.",
-                     sbatch_return, stderr.decode())
-        jobid = sbatch_return.split(";")[0].strip()
+                     sbatch_stdout, sbatch_stderr)
+        jobid = sbatch_stdout.split(";")[0].strip()
         # make sure jobid is an int/ can be cast as one
-        err = False
         try:
-            jobid_int = int(jobid)
-        except ValueError:
+            _ = int(jobid)
+        except ValueError as e:
             # can not cast to int, so probably something went wrong submitting
-            err = True
-        else:
-            if str(jobid_int) != jobid:
-                err = True
-        if err:
-            raise SlurmSubmissionError("Could not submit SLURM job."
-                                       + f" Exit code was: {sbatch_return} \n"
-                                       + f"sbatch stdout: {stdout.decode()} \n"
-                                       + f"sbatch stderr: {stderr.decode()} \n"
-                                       )
+            raise SlurmSubmissionError(
+                "Could not submit SLURM job, failed to parse sbatch return as a jobid. "
+                f"sbatch stdout: {sbatch_stdout} \n"
+                f"sbatch stderr: {sbatch_stderr} \n"
+                ) from e
         logger.info("Submited SLURM job with jobid %s.", jobid)
         self._jobid = jobid
         self.slurm_cluster_mediator.monitor_register_job(jobid=jobid)

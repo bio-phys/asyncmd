@@ -14,14 +14,13 @@
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import pytest
 import logging
-from unittest.mock import patch, PropertyMock
+import os
+import shlex
+from unittest.mock import patch, PropertyMock, Mock, AsyncMock, ANY
 
-import asyncmd
 from asyncmd.slurm import SlurmProcess
 from asyncmd.slurm.cluster_mediator import SlurmClusterMediator
-
-
-LOGGER = logging.getLogger(__name__)
+from asyncmd.slurm.constants_and_errors import SlurmSubmissionError
 
 
 class Test_SlurmProcess:
@@ -37,10 +36,12 @@ class Test_SlurmProcess:
                               ({"keep_option": "TO_KEEP"}, "keep_option", 1),
                               ]
                              )
-    def test__sanitize_sbatch_options_remove_protected(self,
+    def test__sanitize_sbatch_options_remove_protected(
+                            self,
                             add_non_protected_sbatch_options_to_keep,
                             sbatch_options, opt_name, expected_opt_len,
-                            caplog, monkeypatch):
+                            caplog, monkeypatch
+                            ):
         if add_non_protected_sbatch_options_to_keep:
             # add a dummy option that we want to keep in the dict
             # (Need to redefine the dict [mot use update] to not change the
@@ -123,6 +124,128 @@ class Test_SlurmProcess:
         slurm_timelimit = slurm_proc._slurm_timelimit_from_time_in_hours(
                                                                 time=time_in_h)
         assert slurm_timelimit == beauty
+
+    @pytest.mark.parametrize(["time", "time_beauty", "exclude_nodes"],
+                             [(None, "", []),
+                              (1., "60:0", ["ravc4011"]),
+                              (1., "60:0", ["ravc4011", "ravc4012"]),
+                              ]
+                             )
+    @pytest.mark.asyncio
+    async def test_submit(self, monkeypatch, time, time_beauty, exclude_nodes):
+        with monkeypatch.context() as m:
+            # monkeypatch to make sure we can execute the tests without slurm
+            # (SlurmProcess checks if sbatch and friends are executable at init)
+            m.setattr("asyncmd.slurm.process.ensure_executable_available",
+                      lambda _: "/usr/bin/true")
+            mediator_mock = Mock(SlurmClusterMediator)
+            type(mediator_mock).exclude_nodes = PropertyMock(return_value=exclude_nodes)
+            m.setattr("asyncmd.slurm.SlurmProcess._slurm_cluster_mediator",
+                      mediator_mock)
+            slurm_proc = SlurmProcess(jobname="test",
+                                      sbatch_script="/usr/bin/true",
+                                      time=time,
+                                      )
+            # this will be the mock for the returned Process object that
+            # asyncio.create_subprocess_exec returns
+            mock_sbatch_asyncio_subprocess = AsyncMock(
+                                        )
+            # it needs to have a communicate method (that returns the jobid as stdout)
+            # and should have the returncode property set to zero
+            # NOTE: ideally only set returncode after calling communicate,
+            #       but this should not matter too much
+            mock_sbatch_asyncio_subprocess.configure_mock(
+                **{"communicate.return_value": (b"12345", b""),
+                   }
+                )
+            type(mock_sbatch_asyncio_subprocess).returncode = PropertyMock(return_value=0)
+            # this mocks asyncio.create_subproccess_exec with sbatch as subprocess
+            mock_slurm_sbatch_exec_completed = AsyncMock(
+                                        return_value=mock_sbatch_asyncio_subprocess,
+                                        )
+            m.setattr("asyncio.create_subprocess_exec", mock_slurm_sbatch_exec_completed)
+            await slurm_proc.submit()
+            # make sure we called sbatch correctly
+            # TODO: we fix the order here... is this what we want?!
+            sbatch_cmd_beauty = "sbatch --job-name='test' "
+            sbatch_cmd_beauty += f"--chdir='{os.path.abspath(os.getcwd())}' "
+            sbatch_cmd_beauty += "--output='./test.out.%j' --error='./test.err.%j' "
+            if time is not None:
+                sbatch_cmd_beauty += f"--time='{time_beauty}' "
+            if exclude_nodes:
+                sbatch_cmd_beauty += f"--exclude={','.join(exclude_nodes)} "
+            sbatch_cmd_beauty += "--parsable /usr/bin/true"
+            mock_slurm_sbatch_exec_completed.assert_awaited_once_with(
+                                                    *shlex.split(sbatch_cmd_beauty),
+                                                    stdout=ANY,
+                                                    stderr=ANY,
+                                                    cwd=os.path.abspath(os.getcwd()),
+                                                    close_fds=True,
+                                                    )
+            # make sure we called communicate on the Process
+            mock_sbatch_asyncio_subprocess.communicate.assert_called_once()
+
+    @pytest.mark.parametrize("sbatch_return",
+                             ["non-zero", "non-int"])
+    @pytest.mark.asyncio
+    async def test_submit_fail(self, monkeypatch, sbatch_return):
+        with monkeypatch.context() as m:
+            # monkeypatch to make sure we can execute the tests without slurm
+            # (SlurmProcess checks if sbatch and friends are executable at init)
+            m.setattr("asyncmd.slurm.process.ensure_executable_available",
+                      lambda _: "/usr/bin/true")
+            mediator_mock = Mock(SlurmClusterMediator)
+            type(mediator_mock).exclude_nodes = PropertyMock(return_value=[])
+            m.setattr("asyncmd.slurm.SlurmProcess._slurm_cluster_mediator",
+                      mediator_mock)
+            slurm_proc = SlurmProcess(jobname="test",
+                                      sbatch_script="/usr/bin/true",
+                                      )
+            # this will be the mock for the returned Process object that
+            # asyncio.create_subprocess_exec returns
+            mock_sbatch_asyncio_subprocess = AsyncMock(
+                                        )
+            # it needs to have a communicate method (that returns the jobid as stdout)
+            # and should have the returncode property set to (non-)zero
+            # NOTE: ideally only set returncode after calling communicate,
+            #       but this should not matter too much
+            if sbatch_return == "non-zero":
+                # make sure that communicate returns something sane nevertheless
+                mock_attrs = {"communicate.return_value": (b"12345", b""),
+                              }
+                # and we fail only because of returncode non-zero!
+                return_code = 1
+            elif sbatch_return == "non-int":
+                # make sure sbatch communicate returns something not parsable as int
+                mock_attrs = {"communicate.return_value": (b"SMTH WENT WRONG", b"SMTH WENT WRONG"),
+                              }
+                # but make sure returncode is zero so we dont fail because of it!
+                return_code = 0
+            mock_sbatch_asyncio_subprocess.configure_mock(**mock_attrs)
+            type(mock_sbatch_asyncio_subprocess).returncode = PropertyMock(return_value=return_code)
+            # this mocks asyncio.create_subproccess_exec with sbatch as subprocess
+            mock_slurm_sbatch_exec_completed = AsyncMock(
+                                        return_value=mock_sbatch_asyncio_subprocess,
+                                        )
+            m.setattr("asyncio.create_subprocess_exec", mock_slurm_sbatch_exec_completed)
+            with pytest.raises(SlurmSubmissionError):
+                # this should rais as our returncode is non-zero
+                await slurm_proc.submit()
+            # but still make sure we called sbatch correctly
+            # TODO: we fix the order here... is this what we want?!
+            sbatch_cmd_beauty = "sbatch --job-name='test' "
+            sbatch_cmd_beauty += f"--chdir='{os.path.abspath(os.getcwd())}' "
+            sbatch_cmd_beauty += "--output='./test.out.%j' --error='./test.err.%j' "
+            sbatch_cmd_beauty += "--parsable /usr/bin/true"
+            mock_slurm_sbatch_exec_completed.assert_awaited_once_with(
+                                                    *shlex.split(sbatch_cmd_beauty),
+                                                    stdout=ANY,
+                                                    stderr=ANY,
+                                                    cwd=os.path.abspath(os.getcwd()),
+                                                    close_fds=True,
+                                                    )
+            # make sure we called communicate on the Process
+            mock_sbatch_asyncio_subprocess.communicate.assert_called_once()
 
 
 class MockSlurmExecCompleted:
