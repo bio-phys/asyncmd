@@ -21,13 +21,18 @@ import io
 import os
 import abc
 import logging
+import typing
 import zipfile
 import collections
 
 import numpy as np
 
 
-from .._config import _GLOBALS
+from .._config import _GLOBALS, _GLOBALS_KEYS
+
+
+if typing.TYPE_CHECKING:  # pragma: no cover
+    import h5py
 
 
 logger = logging.getLogger(__name__)
@@ -37,6 +42,21 @@ class ValuesAlreadyStoredError(ValueError):
     """
     Error raised by :class:`TrajectoryFunctionValueCache` classes when trying to
     append values for a func_id that is already present.
+    """
+
+
+class NoValuesCachedForTrajectoryInH5PYError(ValueError):
+    """
+    Error raised by :class:`OneH5PYGroupTrajectoryFunctionValueCache` when
+    instantiating with a read-only h5py_cache in which no values for the given
+    :class:`Trajectory` (hash) are stored.
+    """
+
+
+class CanNotChangeReadOnlyH5PYError(PermissionError):
+    """
+    Error raised by :class:`OneH5PYGroupTrajectoryFunctionValueCache` when trying
+    to change (append or clear) an instance with a read-only h5py_cache.
     """
 
 
@@ -287,13 +307,20 @@ class TrajectoryFunctionValueCacheInNPZ(TrajectoryFunctionValueCache):
             os.unlink(self.fname_npz)  # and remove the file if it exists
 
 
-class TrajectoryFunctionValueCacheInH5PY(TrajectoryFunctionValueCache):
+class OneH5PYGroupTrajectoryFunctionValueCache(TrajectoryFunctionValueCache):
     """
-    Interface for caching trajectory function values in a given h5py group.
+    Interface for caching trajectory function values in one given h5py group, used
+    as composite class in :class:`TrajectoryFunctionValueCacheInH5PY`.
 
-    Gets the centrally set ``H5PY_CACHE`` configuration variable in ``__init__``
-    and uses it as ``h5py.Group`` to store the cached values in.
-    The values will be stored in this group in a subgroup (defined by
+    Can also be used on h5py files/groups open in read-only mode, then appending
+    and clearing will raise errors.
+
+    This class also contains a classmethod to copy over all cached values from
+    a given h5py (cache) group to another h5py (cache) group. This method is
+    (optionally) used when a new h5py cache is registered to transfer all values
+    from all previously registered caches.
+
+    The values will be stored in the given group in a subgroup (defined by
     ``self._H5PY_PATHS['prefix']``) and then by trajectory hash, i.e. the full path
     becomes '$self._H5PY_PATHS['prefix']/$TRAJ_HASH/'.
     Within this path/group there are two subgroups, one for the func_ids and one
@@ -309,19 +336,31 @@ class TrajectoryFunctionValueCacheInH5PY(TrajectoryFunctionValueCache):
                    "prefix": "asyncmd/TrajectoryFunctionValueCache",
                    }
 
-    def __init__(self, traj_hash: int, traj_files: list[str]) -> None:
+    def __init__(self, traj_hash: int, traj_files: list[str],
+                 h5py_cache: "h5py.Group | h5py.File",
+                 ) -> None:
         super().__init__(traj_hash, traj_files)
+        self.h5py_cache = h5py_cache
+        self._read_only = h5py_cache.file.mode == "r"
         try:
-            self._h5py_cache = _GLOBALS["H5PY_CACHE"]
-        except KeyError as e:
-            raise RuntimeError(
-                f"Can not initialize a {type(self)} without global h5py cache set!"
-                " Try calling `asyncmd.config.register_h5py_cache` first."
-                ) from e
-
-        self._root_grp = self._h5py_cache.require_group(
+            self._root_grp = self.h5py_cache.require_group(
                             f"{self._H5PY_PATHS['prefix']}/{self._traj_hash}"
-                                                        )
+                                                           )
+        except ValueError as exc:
+            # value error is raised when the group does not exist
+            # (and we can not create it because the file is read-only)
+            if self._read_only:
+                # but check to be sure
+                raise NoValuesCachedForTrajectoryInH5PYError(
+                    f"No values stored for traj_hash ({traj_hash}) and h5py_cache "
+                    f"({h5py_cache}) is in read-only mode, i.e. no values to "
+                    "retrieve and no way of appending new ones."
+                    ) from exc
+            # This hopefully never happens: The file is not in read-only mode,
+            # but we get a ValueError. Since we dont know what happened, we just
+            # reraise the error (and we dont expect to get coverage for this line)
+            raise exc  # pragma: no cover
+
         self._ids_grp = self._root_grp.require_group(self._H5PY_PATHS["ids"])
         self._vals_grp = self._root_grp.require_group(self._H5PY_PATHS["vals"])
         # keep a list of func_ids we have cached values for in memory
@@ -329,6 +368,59 @@ class TrajectoryFunctionValueCacheInH5PY(TrajectoryFunctionValueCache):
         self._func_ids: list[str] = [self._ids_grp[str(idx)].asstr()[()]
                                      for idx in range(len(self._ids_grp.keys()))
                                      ]
+
+    @classmethod
+    def add_values_for_all_trajectories(cls, src_h5py_cache: "h5py.Group | h5py.File",
+                                        dst_h5py_cache: "h5py.Group | h5py.File",
+                                        ) -> None:
+        """
+        Add all cached function values for all trajectories from src_h5py_cache to dst_h5py_cache.
+
+        Adds values for all trajectory objects independently of if they are currently
+        initialized.
+        Only values that do not exist in dst_h5py_cache are added, existing values
+        are ignored.
+
+        Parameters
+        ----------
+        src_h5py_cache : h5py.Group | h5py.File
+            The source h5py_cache.
+        dst_h5py_cache : h5py.Group | h5py.File
+            The destination h5py_cache.
+        """
+        # get the h5 groups that contains the traj_hashs as groups, i.e. the prefix
+        src_grp = src_h5py_cache.require_group(cls._H5PY_PATHS["prefix"])
+        dst_grp = dst_h5py_cache.require_group(cls._H5PY_PATHS["prefix"])
+        # iterate over all traj (hash) in src to see if we copy them
+        for traj_hash in src_grp:
+            if traj_hash not in dst_grp:
+                # easy, no values at all stored for this traj (hash) in dst at all
+                # copy the whole group
+                dst_grp.copy(source=src_grp[traj_hash], dest=dst_grp)
+                continue  # and on to the next traj (hash)
+            # need to iterate over all func_ids in src and see if we copy them
+            # get the func_id and func values groups in dst and src
+            dst_id_grp = dst_grp[traj_hash][cls._H5PY_PATHS["ids"]]
+            dst_val_grp = dst_grp[traj_hash][cls._H5PY_PATHS["vals"]]
+            src_id_grp = src_grp[traj_hash][cls._H5PY_PATHS["ids"]]
+            src_val_grp = src_grp[traj_hash][cls._H5PY_PATHS["vals"]]
+            # func_id list to compare with each other
+            func_ids_in_dst = [dst_id_grp[str(idx)].asstr()[()]
+                               for idx in range(len(dst_id_grp.keys()))
+                               ]
+            func_ids_in_src = [src_id_grp[str(idx)].asstr()[()]
+                               for idx in range(len(src_id_grp.keys()))
+                               ]
+            for idx_in_src, func_id in enumerate(func_ids_in_src):
+                if func_id not in func_ids_in_dst:
+                    # copy it over to append/create the new datasets for func_ids and values
+                    name = str(len(func_ids_in_dst))
+                    dst_val_grp.copy(source=src_val_grp[str(idx_in_src)],
+                                     dest=dst_val_grp, name=name)
+                    dst_id_grp.copy(source=src_id_grp[str(idx_in_src)],
+                                    dest=dst_id_grp, name=name)
+                    # Append func_id to func_ids_in_dst so we get the next name correct
+                    func_ids_in_dst.append(func_id)
 
     def __len__(self) -> int:
         return len(self._func_ids)
@@ -344,6 +436,11 @@ class TrajectoryFunctionValueCacheInH5PY(TrajectoryFunctionValueCache):
         raise KeyError(f"Key not found (key={key}).")
 
     def append(self, func_id: str, values: np.ndarray) -> None:
+        if self._read_only:
+            raise CanNotChangeReadOnlyH5PYError(
+                f"Can not append to a h5py cache ({self.h5py_cache}) opened "
+                "in read-only mode."
+                )
         if func_id in self:
             raise ValuesAlreadyStoredError(
                             "There are already values stored for func_id "
@@ -356,6 +453,11 @@ class TrajectoryFunctionValueCacheInH5PY(TrajectoryFunctionValueCache):
         self._func_ids.append(func_id)
 
     def clear_all_values(self) -> None:
+        if self._read_only:
+            raise CanNotChangeReadOnlyH5PYError(
+                f"Can not clear a h5py cache ({self.h5py_cache}) opened "
+                "in read-only mode."
+                )
         # delete and recreate the id and values h5py subgroups
         del self._root_grp[self._H5PY_PATHS["ids"]]
         del self._root_grp[self._H5PY_PATHS["vals"]]
@@ -363,3 +465,140 @@ class TrajectoryFunctionValueCacheInH5PY(TrajectoryFunctionValueCache):
         self._vals_grp = self._root_grp.require_group(self._H5PY_PATHS["vals"])
         # and empty the in-memory func-id list
         self._func_ids = []
+
+
+class TrajectoryFunctionValueCacheInH5PY(TrajectoryFunctionValueCache):
+    """
+    Interface for caching trajectory function values in multiple h5py groups.
+
+    This class combines multiple :class:`OneH5PYGroupTrajectoryFunctionValueCache`
+    (one for each h5py cache group asyncmd knows about) and retrieves the cached
+    values from any of the associated :class:`OneH5PYGroupTrajectoryFunctionValueCache`
+    objects.
+    Only one h5py group can be writeable at a time, i.e. cached values will only
+    be added to the one writeable cache group, but will be retrieved from all
+    associated read-only h5py groups/ :class:`OneH5PYGroupTrajectoryFunctionValueCache`
+    objects.
+    Trying to append to this class with no writeable cache group registered
+    results in a logged error and no append takes place, clearing will raise a
+    :class:`CanNotChangeReadOnlyH5PYError`.
+    """
+
+    def __init__(self, traj_hash: int, traj_files: list[str]) -> None:
+        super().__init__(traj_hash, traj_files)
+        # sort out which writeable (if any) and which fallback read-only stores we use
+        writeable_h5py_cache: "h5py.Group | h5py.File | None" = _GLOBALS.get(
+            _GLOBALS_KEYS.H5PY_CACHE, None
+            )
+        read_only_h5py_caches: "list[h5py.Group | h5py.File]" = _GLOBALS.get(
+            _GLOBALS_KEYS.H5PY_CACHE_READ_ONLY_FALLBACKS, []
+            )
+        if (writeable_h5py_cache is None) and (not read_only_h5py_caches):
+            raise RuntimeError(
+                f"Can not initialize a {type(self)} without any h5py cache set!"
+                " Try calling `asyncmd.config.register_h5py_cache` first."
+                )
+        # setup (writeable) main cache if we have it
+        if writeable_h5py_cache is None:
+            logger.warning("Initializing a Trajectory cache in h5py with only "
+                           "read-only h5py.Groups associated. Newly calculated "
+                           "function values will not be cached!")
+            self._main_cache = None
+        else:
+            self._main_cache = OneH5PYGroupTrajectoryFunctionValueCache(
+                                        traj_hash=traj_hash,
+                                        traj_files=traj_files,
+                                        h5py_cache=writeable_h5py_cache,
+                                        )
+        # setup all fallback caches (if any)
+        self._fallback_caches = []
+        for cache in read_only_h5py_caches:
+            try:
+                self._fallback_caches += [OneH5PYGroupTrajectoryFunctionValueCache(
+                                                traj_hash=traj_hash,
+                                                traj_files=traj_files,
+                                                h5py_cache=cache,
+                                                )
+                                          ]
+            except NoValuesCachedForTrajectoryInH5PYError:
+                # we just dont add this cache to our list since it contains
+                # no values for us (the trajectory we are associated to)
+                pass
+
+    # bind this classmethod here too, because it is useful to have access to
+    # everywhere the TrajectoryFunctionValueCacheInH5PY is used
+    add_values_for_all_trajectories = (
+        OneH5PYGroupTrajectoryFunctionValueCache.add_values_for_all_trajectories
+        )
+
+    def deregister_h5py_cache(self, h5py_cache: "h5py.File | h5py.Group") -> None:
+        """
+        Deregister the given h5py_cache as a source of cached values.
+
+        Parameters
+        ----------
+        h5py_cache : h5py.File | h5py.Group
+            The h5py_cache to deregister/remove from caching
+        """
+        if self._main_cache is not None:
+            if self._main_cache.h5py_cache is h5py_cache:
+                logger.warning(
+                    "Deregistering the writeable (main) cache (%s). "
+                    "Newly calculated function values will not be cached!",
+                    h5py_cache
+                    )
+                self._main_cache = None
+                # found it so it can not be a fallback_cache, so get out of here
+                return
+        idx_to_remove = None
+        for i, cache in enumerate(self._fallback_caches):
+            if cache.h5py_cache is h5py_cache:
+                idx_to_remove = i
+                break  # found it and there can only be one with this h5py_cache
+        if idx_to_remove is not None:
+            del self._fallback_caches[idx_to_remove]
+
+    def __len__(self) -> int:
+        length = 0
+        if self._main_cache is not None:
+            length += len(self._main_cache)
+        length += sum(len(cache) for cache in self._fallback_caches)
+        return length
+
+    def __iter__(self) -> collections.abc.Generator[str]:
+        # just loop trough all potential caches
+        if self._main_cache is not None:
+            yield from self._main_cache
+        for cache in self._fallback_caches:
+            yield from cache
+
+    def __getitem__(self, key: str) -> np.ndarray:
+        # again just loop over all potential caches
+        if self._main_cache is not None:
+            if key in self._main_cache:
+                return self._main_cache[key]
+        for cache in self._fallback_caches:
+            if key in cache:
+                return cache[key]
+        # if we got until here the key is not in there
+        raise KeyError(f"Key not found (key={key}).")
+
+    def append(self, func_id: str, values: np.ndarray) -> None:
+        if self._main_cache is None:
+            logger.error("Can not append (store) cached function values because "
+                         "no h5py cache is open in writeable mode! "
+                         "Try calling `asyncmd.config.register_h5py_cache` with "
+                         "a **writeable** h5py.Group or h5py.File."
+                         )
+            return
+        self._main_cache.append(func_id=func_id, values=values)
+
+    def clear_all_values(self) -> None:
+        if self._main_cache is None:
+            raise CanNotChangeReadOnlyH5PYError(
+                        "Can not clear cached function values because "
+                        "no h5py cache is open in writeable mode! "
+                        "Try calling `asyncmd.config.register_h5py_cache` with "
+                        "a **writeable** h5py.Group or h5py.File."
+                        )
+        self._main_cache.clear_all_values()

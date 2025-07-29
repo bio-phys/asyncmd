@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import pytest
+import logging
 import os
 import pickle
 import numpy as np
@@ -25,7 +26,9 @@ from asyncmd.config import _GLOBALS  # noqa: F401
 from asyncmd.trajectory.trajectory_cache import (TrajectoryFunctionValueCacheInMemory,
                                                  TrajectoryFunctionValueCacheInNPZ,
                                                  TrajectoryFunctionValueCacheInH5PY,
+                                                 OneH5PYGroupTrajectoryFunctionValueCache,
                                                  ValuesAlreadyStoredError,
+                                                 CanNotChangeReadOnlyH5PYError,
                                                  )
 from asyncmd.trajectory.functionwrapper import TrajectoryFunctionWrapper
 
@@ -667,3 +670,189 @@ class Test_TrajectoryFunctionValueCache(TBase):
         with pytest.raises(RuntimeError):
             TrajectoryFunctionValueCacheInH5PY(traj_hash=traj_hash,
                                                traj_files=traj_files)
+
+    # Note: this test is only for h5py, since that is the only cache source that
+    #       allows for multiple cache files used simultaneously
+    @pytest.mark.parametrize("copy_h5py", [True, False])
+    def test_h5py_multiple_cache_sources(self, tmp_path, copy_h5py, caplog):
+        h5py = pytest.importorskip("h5py", minversion=None,
+                                   reason="Requires 'h5py' to run.",
+                                   )
+        # make our first cache file (writeable)
+        fname_traj_cache = tmp_path / "traj_cache.h5"
+        h5file = h5py.File(fname_traj_cache, mode="w")
+        asyncmd.config.register_h5py_cache(h5py_group=h5file)
+
+        # make some values to append
+        traj_hash = self.make_trajectory_hash()
+        traj_files = [tmp_path / "traj_name.traj"]
+        n_cached_cvs = 5
+        n_initial_cvs = 2  # number of CVs to add initially
+        traj_len = 123
+        cv_dims = [1] + [self.ran_gen.integers(300)
+                         for _ in range(n_cached_cvs - 1)
+                         ]
+        test_data_func_ids = [self.make_func_id() for _ in range(n_cached_cvs)]
+        test_data_func_values = [self.make_func_values(traj_len, cv_dim)
+                                 for cv_dim in cv_dims]
+        # append it
+        cache = TrajectoryFunctionValueCacheInH5PY(traj_hash=traj_hash,
+                                                   traj_files=traj_files)
+        for func_id, func_values in zip(test_data_func_ids[:n_initial_cvs],
+                                        test_data_func_values[:n_initial_cvs]):
+            cache.append(func_id=func_id, values=func_values)
+        assert len(cache) == n_initial_cvs  # make sure length is as expected
+        # now reset the cache to a new one
+        # call deregister in config to remove it from the _GLOBALS dict
+        asyncmd.config.deregister_h5py_cache(h5py_group=h5file)
+        # but also on the cache (because it will not be called on this cache,
+        # since it is not attached to a trajectory)
+        cache.deregister_h5py_cache(h5py_cache=h5file)
+        # make sure the cache has no values cached after deregistering
+        assert len(cache) == 0
+        # close the initial file, reopen it read-only
+        h5file.close()
+        h5file_r_with_data = h5py.File(fname_traj_cache, mode="r")
+        # and create a new (writeable) file
+        fname_traj_cache2 = tmp_path / "traj_cache2.h5"
+        h5file_w_empty = h5py.File(fname_traj_cache2, mode="w")
+        # and create an new (unwriteable) empty file (but with a prefix group)
+        fname_traj_cache3 = tmp_path / "traj_cache3.h5"
+        # create an empty file but with the prefix group
+        h5file_r_empty = h5py.File(fname_traj_cache3, mode="w")
+        _ = h5file_r_empty.require_group("asyncmd/TrajectoryFunctionValueCache")
+        h5file_r_empty.close()
+        # and open it read-only
+        h5file_r_empty = h5py.File(fname_traj_cache3, mode="r")
+        # register the file we just opened in read-only (to which we saved the values)
+        asyncmd.config.register_h5py_cache(h5py_group=h5file_r_with_data)
+        # and the empty read-only file
+        asyncmd.config.register_h5py_cache(h5py_group=h5file_r_empty)
+        # create a new cache (which should now be read-only)
+        cache = TrajectoryFunctionValueCacheInH5PY(traj_hash=traj_hash,
+                                                   traj_files=traj_files)
+        # make sure it is all there as expected
+        for func_id, func_values in zip(test_data_func_ids[:n_initial_cvs],
+                                        test_data_func_values[:n_initial_cvs]):
+            assert np.all(np.equal(cache[func_id], func_values))
+        # The next line just to test that deregistering an unknown
+        # (not registered) cache also works
+        asyncmd.config.deregister_h5py_cache(h5py_group=h5file_w_empty)
+        cache.deregister_h5py_cache(h5py_cache=h5file_w_empty)
+        # now deregister both registered read only caches and add them again
+        asyncmd.config.deregister_h5py_cache(h5py_group=h5file_r_with_data)
+        cache.deregister_h5py_cache(h5py_cache=h5file_r_with_data)
+        asyncmd.config.deregister_h5py_cache(h5py_group=h5file_r_empty)
+        cache.deregister_h5py_cache(h5py_cache=h5file_r_empty)
+        # now register them again
+        asyncmd.config.register_h5py_cache(h5py_group=h5file_r_with_data)
+        asyncmd.config.register_h5py_cache(h5py_group=h5file_r_empty)
+        # and instantiate a new cache so it uses the now set h5py caches
+        cache = TrajectoryFunctionValueCacheInH5PY(traj_hash=traj_hash,
+                                                   traj_files=traj_files)
+        # make sure we cant clear it
+        with pytest.raises(CanNotChangeReadOnlyH5PYError):
+            cache.clear_all_values()
+        # and make sure we can not append, currently it does not raise
+        # but just log an error (and naturally does not append)
+        with caplog.at_level(logging.ERROR):
+            cache.append(func_id=test_data_func_ids[n_initial_cvs + 1],
+                         values=test_data_func_values[n_initial_cvs + 1])
+        assert "Can not append" in caplog.text
+        assert len(cache) == n_initial_cvs  # make sure length is as expected
+        # now register the writeable h5py_cache
+        asyncmd.config.register_h5py_cache(h5py_group=h5file_w_empty,
+                                           copy_h5py=copy_h5py,
+                                           )
+        # and create a new cache (which should now use both the writeable and
+        # read-only caches)
+        cache = TrajectoryFunctionValueCacheInH5PY(traj_hash=traj_hash,
+                                                   traj_files=traj_files)
+        # append the rest
+        for func_id, func_values in zip(test_data_func_ids[n_initial_cvs:],
+                                        test_data_func_values[n_initial_cvs:]):
+            cache.append(func_id=func_id, values=func_values)
+        assert len(cache) == n_cached_cvs  # make sure length is as expected
+        # now deregister and close the initial cache file
+        asyncmd.config.deregister_h5py_cache(h5py_group=h5file_r_with_data)
+        # but also on the cache (because it will not be called on this cache,
+        # since it is not attached to a trajectory)
+        cache.deregister_h5py_cache(h5py_cache=h5file_r_with_data)
+        # make sure the cache has the correct length
+        if not copy_h5py:
+            # we did not copy the initially appended values, so we dont have them
+            # accessible after deregistering the cache
+            assert len(cache) == n_cached_cvs - n_initial_cvs
+        else:
+            # we should have them all
+            assert len(cache) == n_cached_cvs
+        h5file_r_with_data.close()
+        # and reopen the initial file as writeable file
+        h5file_a_reopend = h5py.File(fname_traj_cache, mode="r+")
+        # register it with copying to see if adding/copying some values for a traj works
+        # (this will copy the remaining CVs we just added into the initial cache,
+        #  because copy_h5py=True, such that the initial cache file now in all cases
+        #  contains all n_cached_cvs)
+        asyncmd.config.register_h5py_cache(h5py_group=h5file_a_reopend, copy_h5py=True)
+        # the line above should remove all caches except the one we just added
+        # (because we use copy_h5py=True)
+        # so close all files we dont need
+        h5file_w_empty.close()
+        h5file_r_empty.close()
+        # now init a ne cache to make sure we use the most current cache setting
+        cache = TrajectoryFunctionValueCacheInH5PY(traj_hash=traj_hash,
+                                                   traj_files=traj_files)
+        # and make sure everything is there, i.e. all n_cached_cvs values
+        assert len(cache) == n_cached_cvs
+        for func_id, func_values in zip(test_data_func_ids, test_data_func_values):
+            assert np.all(np.equal(cache[func_id], func_values))
+        # and finally to see that we get a KeyError for non-existing values
+        # (and after exhausting all cache options)
+        # for this reopen and re-add one of the caches (with data to make sure it
+        # will be attached to the cache class) as read-only
+        h5file_r_with_data = h5py.File(fname_traj_cache2, mode="r")
+        asyncmd.config.register_h5py_cache(h5py_group=h5file_r_with_data, copy_h5py=False)
+        cache = TrajectoryFunctionValueCacheInH5PY(traj_hash=traj_hash,
+                                                   traj_files=traj_files)
+        with pytest.raises(KeyError):
+            _ = cache["NOT_SET_KEY"]
+
+    def test_OneH5PYGroupTrajectoryFunctionValueCache_raises_on_read_only(self, tmp_path):
+        h5py = pytest.importorskip("h5py", minversion=None,
+                                   reason="Requires 'h5py' to run.",
+                                   )
+        # make some values to append
+        traj_hash = self.make_trajectory_hash()
+        traj_files = [tmp_path / "traj_name.traj"]
+        n_cached_cvs = 2
+        traj_len = 123
+        cv_dims = [1] + [self.ran_gen.integers(300)
+                         for _ in range(n_cached_cvs - 1)
+                         ]
+        test_data_func_ids = [self.make_func_id() for _ in range(n_cached_cvs)]
+        test_data_func_values = [self.make_func_values(traj_len, cv_dim)
+                                 for cv_dim in cv_dims]
+
+        # make our first cache file (writeable)
+        fname_traj_cache = tmp_path / "traj_cache.h5"
+        # open and directly close it after making sure there is a group
+        # for the trajectory cached values and funcIDs (but the groups are empty,
+        # i.e. no values and funcIDs in there)
+        h5file = h5py.File(fname_traj_cache, mode="w")
+        root_grp = h5file.require_group(f"asyncmd/TrajectoryFunctionValueCache/{traj_hash}")
+        _ = root_grp.require_group("FunctionIDs")
+        _ = root_grp.require_group("FunctionValues")
+        h5file.close()
+        # reopen in read-only
+        h5file = h5py.File(fname_traj_cache, mode="r")
+        # now init the (sub)cache class
+        cache = OneH5PYGroupTrajectoryFunctionValueCache(traj_hash=traj_hash,
+                                                         traj_files=traj_files,
+                                                         h5py_cache=h5file)
+        # and make sure it know it is read-only
+        assert cache._read_only
+        # and raises
+        with pytest.raises(CanNotChangeReadOnlyH5PYError):
+            cache.append(func_id=test_data_func_ids[0], values=test_data_func_values[0])
+        with pytest.raises(CanNotChangeReadOnlyH5PYError):
+            cache.clear_all_values()

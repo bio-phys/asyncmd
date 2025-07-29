@@ -32,7 +32,7 @@ import typing
 import MDAnalysis as mda
 import numpy as np
 
-from .._config import _GLOBALS
+from .._config import _GLOBALS, _GLOBALS_KEYS
 from .trajectory_cache import (TrajectoryFunctionValueCache,
                                TrajectoryFunctionValueCacheInH5PY,
                                TrajectoryFunctionValueCacheInMemory,
@@ -42,6 +42,7 @@ from .trajectory_cache import (TrajectoryFunctionValueCache,
 if typing.TYPE_CHECKING:  # pragma: no cover
     # only import for typing to avoid circular imports
     from .functionwrapper import TrajectoryFunctionWrapper
+    import h5py
 
 
 logger = logging.getLogger(__name__)
@@ -70,8 +71,6 @@ def _update_cache_type_for_all_trajectories(copy_content: bool = True,
     Update the cache type for each :class:`Trajectory` currently in existence.
 
     By default the content of the current caches is copied to the new caches.
-    This will only have an effect if the globally set ``cache_type`` differs
-    from what each `Trajectory` currently uses.
     See :func:`asyncmd.config.set_trajectory_cache_type` to set the ``cache_type``.
     To clear the old/previously set caches (after copying their values), pass
     ``clear_old_cache=True``.
@@ -88,6 +87,20 @@ def _update_cache_type_for_all_trajectories(copy_content: bool = True,
         traj.update_cache_type(copy_content=copy_content,
                                clear_old_cache=clear_old_cache,
                                )
+
+
+def _deregister_h5py_cache_for_all_trajectories(h5py_group: "h5py.File | h5py.Group"
+                                                ) -> None:
+    """
+    Deregister the given h5py_group as cache from all :class:`Trajectory` objects.
+
+    Parameters
+    ----------
+    h5py_group : h5py.Group | h5py.File
+        The h5py_group to deregister.
+    """
+    for traj in _TRAJECTORIES_BY_HASH.values():
+        traj._deregister_h5py_cache(h5py_group)
 
 
 def _forget_all_trajectories() -> None:
@@ -116,9 +129,8 @@ def _forget_trajectory(traj_hash: int) -> None:
     the same underlying trajectory_files. Usually you do not want this as it
     results in unnecessary calculations if the same wrapped and cached function
     is applied to both objects. This function exists as a hidden function as it
-    is used when deleting a :class:`Trajectory` (i.e. calling its `__del__`
-    method) and it might be helpful under certain circumstances. Use only if
-    you know why you are using it!
+    might be helpful under certain circumstances. Use only if you know why you
+    are using it!
 
     Parameters
     ----------
@@ -458,12 +470,12 @@ class Trajectory:
         cache type).
         """
         cache = self._CACHE_CLASS_FOR_TYPE[
-                                _GLOBALS["TRAJECTORY_FUNCTION_CACHE_TYPE"]
+                                _GLOBALS[_GLOBALS_KEYS.TRAJECTORY_FUNCTION_CACHE_TYPE]
                                            ](traj_hash=self.trajectory_hash,
                                              traj_files=self.trajectory_files,
                                              )
         # only try to read npz files if our cache is empty and not already npz
-        if not cache and _GLOBALS["TRAJECTORY_FUNCTION_CACHE_TYPE"] != "npz":
+        if not cache and _GLOBALS[_GLOBALS_KEYS.TRAJECTORY_FUNCTION_CACHE_TYPE] != "npz":
             # cache is empty at initialization
             # check if we can find a npz-cache to populate from
             if os.path.isfile(
@@ -490,8 +502,6 @@ class Trajectory:
         Update the :class:`TrajectoryFunctionValueCache` this :class:`Trajectory` uses.
 
         By default the content of the current cache is copied to the new cache.
-        This will only have an effect if the globally set ``cache_type`` differs
-        from what this `Trajectory` currently uses.
         See :func:`asyncmd.config.set_trajectory_cache_type` to set the ``cache_type``.
         To clear the old/previously set cache (after copying its values), pass
         ``clear_old_cache=True``.
@@ -504,10 +514,7 @@ class Trajectory:
         clear_old_cache : bool, optional
             Whether to clear the old/previously set cache, by default False.
         """
-        cache_type = _GLOBALS["TRAJECTORY_FUNCTION_CACHE_TYPE"]
-        if isinstance(self._cache, self._CACHE_CLASS_FOR_TYPE[cache_type]):
-            logger.info("Cache type is already %s. Not doing anything.", cache_type)
-            return
+        cache_type = _GLOBALS[_GLOBALS_KEYS.TRAJECTORY_FUNCTION_CACHE_TYPE]
         # init the new cache
         cache = self._CACHE_CLASS_FOR_TYPE[cache_type](
                                             traj_hash=self.trajectory_hash,
@@ -535,6 +542,25 @@ class Trajectory:
         classes ``clear_all_values`` method.
         """
         self._cache.clear_all_values()
+
+    def _deregister_h5py_cache(self, h5py_group: "h5py.File | h5py.Group") -> None:
+        """
+        Deregister the given h5py_cache as a source of cached values.
+
+        Parameters
+        ----------
+        h5py_cache : h5py.File | h5py.Group
+            The h5py_cache to deregister/remove from caching
+
+        Raises
+        ------
+        RuntimeError
+            When the cache type is not a h5py cache and no deregistering is possible.
+        """
+        if not isinstance(self._cache, TrajectoryFunctionValueCacheInH5PY):
+            raise RuntimeError(
+                "Can only deregister h5py caches when cache_type is 'h5py'.")
+        self._cache.deregister_h5py_cache(h5py_cache=h5py_group)
 
     def _retrieve_cached_values(self, func_wrapper: "TrajectoryFunctionWrapper",
                                 ) -> np.ndarray | None:

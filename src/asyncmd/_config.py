@@ -15,6 +15,8 @@
 """
 Configuration dictionaries to influence asyncmd runtime behavior.
 
+Also define the keys in the dictionaries we will use (see the "_KEYS" classes below).
+
 NOTE: This file **only** contains the dictionaries with the values
       and **no** functions to set them, the funcs all live in 'config.py'.
       The idea here is that we can then without any issues import additional
@@ -31,3 +33,27 @@ _SEMAPHORES: dict[str, asyncio.BoundedSemaphore] = {}
 # These semaphores are optional (i.e. can be None, which means unlimited)
 # e.g. slurm_max_jobs
 _OPT_SEMAPHORES: dict[str, asyncio.BoundedSemaphore | None] = {}
+
+
+class _GlobalsKeys(typing.NamedTuple):
+    TRAJECTORY_FUNCTION_CACHE_TYPE: str = "TRAJECTORY_FUNCTION_CACHE_TYPE"
+    H5PY_CACHE: str = "H5PY_CACHE"
+    H5PY_CACHE_READ_ONLY_FALLBACKS: str = "H5PY_CACHE_READ_ONLY_FALLBACKS"
+
+
+_GLOBALS_KEYS = _GlobalsKeys()
+
+
+class _SemaphoresKeys(typing.NamedTuple):
+    MAX_PROCESS: str = "MAX_PROCESS"
+    MAX_FILES_OPEN: str = "MAX_FILES_OPEN"
+
+
+_SEMAPHORES_KEYS = _SemaphoresKeys()
+
+
+class _OptSemaphoresKeys(typing.NamedTuple):
+    SLURM_MAX_JOB: str = "SLURM_MAX_JOB"
+
+
+_OPT_SEMAPHORES_KEYS = _OptSemaphoresKeys()
