@@ -34,7 +34,7 @@ import aiofiles
 import numpy as np
 
 
-from .._config import _SEMAPHORES, _OPT_SEMAPHORES
+from .._config import _SEMAPHORES, _OPT_SEMAPHORES, _SEMAPHORES_KEYS, _OPT_SEMAPHORES_KEYS
 from .. import slurm
 from ..tools import ensure_executable_available, remove_file_if_exist_async
 from ..tools import attach_kwargs_to_object as _attach_kwargs_to_object
@@ -233,7 +233,7 @@ class PyTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
 
     async def _get_values_for_trajectory_sync(self, traj: Trajectory) -> np.ndarray:
         loop = asyncio.get_running_loop()
-        async with _SEMAPHORES["MAX_PROCESS"]:
+        async with _SEMAPHORES[_SEMAPHORES_KEYS.MAX_PROCESS]:
             # fill in additional kwargs (if any)
             if len(self.call_kwargs) > 0:
                 func = functools.partial(self.function, **self._call_kwargs)
@@ -488,7 +488,7 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                          " Are you sure your `slurm_jobname` is unique?",
                          sbatch_fname,
                          )
-        async with _SEMAPHORES["MAX_FILES_OPEN"]:
+        async with _SEMAPHORES[_SEMAPHORES_KEYS.MAX_FILES_OPEN]:
             async with aiofiles.open(sbatch_fname, 'w', encoding="locale") as f:
                 await f.write(script)
         # NOTE: we set returncode to 2 (what slurmprocess returns in case of
@@ -556,8 +556,8 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
             fname_results = result_file
         # use a separate thread to load so we dont block with the io
         loop = asyncio.get_running_loop()
-        async with _SEMAPHORES["MAX_FILES_OPEN"]:
-            async with _SEMAPHORES["MAX_PROCESS"]:
+        async with _SEMAPHORES[_SEMAPHORES_KEYS.MAX_FILES_OPEN]:
+            async with _SEMAPHORES[_SEMAPHORES_KEYS.MAX_PROCESS]:
                 with ThreadPoolExecutor(
                             max_workers=1,
                             thread_name_prefix="SlurmTrajFunc_load_thread",
@@ -574,8 +574,8 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
                              slurm_workdir: str,
                              ) -> tuple[int, slurm.SlurmProcess, bytes, bytes]:
         # submit and run slurm-job
-        if _OPT_SEMAPHORES["SLURM_MAX_JOB"] is not None:
-            await _OPT_SEMAPHORES["SLURM_MAX_JOB"].acquire()
+        if _OPT_SEMAPHORES[_OPT_SEMAPHORES_KEYS.SLURM_MAX_JOB] is not None:
+            await _OPT_SEMAPHORES[_OPT_SEMAPHORES_KEYS.SLURM_MAX_JOB].acquire()
         slurm_proc = await slurm.create_slurmprocess_submit(
                                         jobname=self.slurm_jobname,
                                         sbatch_script=sbatch_fname,
@@ -604,5 +604,5 @@ class SlurmTrajectoryFunctionWrapper(TrajectoryFunctionWrapper):
         else:
             return slurm_proc.returncode, slurm_proc, stdout, stderr
         finally:
-            if _OPT_SEMAPHORES["SLURM_MAX_JOB"] is not None:
-                _OPT_SEMAPHORES["SLURM_MAX_JOB"].release()
+            if _OPT_SEMAPHORES[_OPT_SEMAPHORES_KEYS.SLURM_MAX_JOB] is not None:
+                _OPT_SEMAPHORES[_OPT_SEMAPHORES_KEYS.SLURM_MAX_JOB].release()

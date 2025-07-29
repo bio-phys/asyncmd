@@ -33,7 +33,7 @@ from .constants_and_errors import (SlurmError,
 from ..tools import (ensure_executable_available,
                      attach_kwargs_to_object as _attach_kwargs_to_object,
                      )
-from .._config import _SEMAPHORES
+from .._config import _SEMAPHORES, _SEMAPHORES_KEYS
 
 
 logger = logging.getLogger(__name__)
@@ -262,7 +262,7 @@ class SlurmClusterMediator:
         sacct_cmd += " --delimiter='||||'"  # use 4 "|" as separator char(s)
         # 3 file descriptors: stdin,stdout,stderr
         # (note that one semaphore counts for 3 files!)
-        await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
+        await _SEMAPHORES[_SEMAPHORES_KEYS.MAX_FILES_OPEN].acquire()
         sacct_proc = await asyncio.create_subprocess_exec(
                                                 *shlex.split(sacct_cmd),
                                                 stdout=asyncio.subprocess.PIPE,
@@ -278,7 +278,7 @@ class SlurmClusterMediator:
             sacct_return = stdout.decode()
         finally:
             # and put the three back into the semaphore
-            _SEMAPHORES["MAX_FILES_OPEN"].release()
+            _SEMAPHORES[_SEMAPHORES_KEYS.MAX_FILES_OPEN].release()
         # only jobid (and possibly clustername) returned, semicolon to separate
         logger.debug("sacct returned %s.", sacct_return)
         # sacct returns one line per substep, we only care for the whole job

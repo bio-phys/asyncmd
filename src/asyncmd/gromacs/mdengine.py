@@ -34,7 +34,7 @@ import aiofiles.os
 import aiofiles.ospath
 
 from .. import slurm
-from .._config import _OPT_SEMAPHORES, _SEMAPHORES
+from .._config import _OPT_SEMAPHORES, _SEMAPHORES, _OPT_SEMAPHORES_KEYS, _SEMAPHORES_KEYS
 from ..mdengine import EngineCrashedError, MDEngine
 from ..tools import (
     ensure_executable_available,
@@ -695,7 +695,7 @@ class GmxEngine(MDEngine):
         # I (hejung) think this is what we want as the prepare methods check
         # for leftover files with the same deffnm, so if only the mdp is there
         # we can (and want to) just overwrite it without raising an err
-        async with _SEMAPHORES["MAX_FILES_OPEN"]:
+        async with _SEMAPHORES[_SEMAPHORES_KEYS.MAX_FILES_OPEN]:
             mdp_obj.write(mdp_in, overwrite=True)
         mdp_out = os.path.join(workdir, deffnm + "_mdout.mdp")
         cmd_str = self._grompp_cmd(mdp_in=mdp_in, tpr_out=tpr_out,
@@ -705,7 +705,7 @@ class GmxEngine(MDEngine):
         # 3 file descriptors: stdin, stdout, stderr
         # NOTE: The max open files semaphores counts for 3 open files, so we
         #       only need it once
-        await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
+        await _SEMAPHORES[_SEMAPHORES_KEYS.MAX_FILES_OPEN].acquire()
         grompp_proc = await asyncio.create_subprocess_exec(
                                                 *shlex.split(cmd_str),
                                                 stdout=asyncio.subprocess.PIPE,
@@ -732,7 +732,7 @@ class GmxEngine(MDEngine):
                          str(return_code) if return_code is not None else "not available")
         finally:
             # release the semaphore
-            _SEMAPHORES["MAX_FILES_OPEN"].release()
+            _SEMAPHORES[_SEMAPHORES_KEYS.MAX_FILES_OPEN].release()
 
     async def prepare_from_files(self, workdir: str, deffnm: str) -> None:
         """
@@ -762,7 +762,7 @@ class GmxEngine(MDEngine):
                            "checkpoint file and continuing anyway."
                            )
         # load the 'old' mdp_in
-        async with _SEMAPHORES["MAX_FILES_OPEN"]:
+        async with _SEMAPHORES[_SEMAPHORES_KEYS.MAX_FILES_OPEN]:
             self.mdp = MDP(os.path.join(self.workdir, f"{deffnm}.mdp"))
         self._engine_state.deffnm = deffnm
         # Note that we dont need to explicitly check for the tpr existing,
@@ -798,7 +798,7 @@ class GmxEngine(MDEngine):
         # *always* called before any gmx_mdrun, used to reserve resources
         # for local gmx we need 3 file descriptors: stdin, stdout, stderr
         # (one max files semaphore counts for 3 open files)
-        await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
+        await _SEMAPHORES[_SEMAPHORES_KEYS.MAX_FILES_OPEN].acquire()
 
     async def _cleanup_gmx_mdrun(self,
                                  # the next two arguments are only used by SlurmGmxEngine
@@ -808,7 +808,7 @@ class GmxEngine(MDEngine):
                                  ) -> None:
         # *always* called after any gmx_mdrun, use to release resources
         # release the semaphore for the 3 file descriptors
-        _SEMAPHORES["MAX_FILES_OPEN"].release()
+        _SEMAPHORES[_SEMAPHORES_KEYS.MAX_FILES_OPEN].release()
 
     async def run(self, nsteps: int | None = None, walltime: float | None = None,
                   steps_per_part: bool = False,
@@ -1115,7 +1115,7 @@ class SlurmGmxEngine(GmxEngine):
             #       need to remove files
             logger.error("Overwriting existing submission file (%s).",
                          fname)
-        async with _SEMAPHORES["MAX_FILES_OPEN"]:
+        async with _SEMAPHORES[_SEMAPHORES_KEYS.MAX_FILES_OPEN]:
             async with aiofiles.open(fname, 'w') as f:
                 await f.write(script)
         return await slurm.create_slurmprocess_submit(
@@ -1129,17 +1129,17 @@ class SlurmGmxEngine(GmxEngine):
                                                             )
 
     async def _acquire_resources_gmx_mdrun(self) -> None:
-        if _OPT_SEMAPHORES["SLURM_MAX_JOB"] is not None:
+        if _OPT_SEMAPHORES[_OPT_SEMAPHORES_KEYS.SLURM_MAX_JOB] is not None:
             logger.debug("SLURM_MAX_JOB semaphore is %s before acquiring.",
-                         _OPT_SEMAPHORES['SLURM_MAX_JOB'])
-            await _OPT_SEMAPHORES["SLURM_MAX_JOB"].acquire()
+                         _OPT_SEMAPHORES[_OPT_SEMAPHORES_KEYS.SLURM_MAX_JOB])
+            await _OPT_SEMAPHORES[_OPT_SEMAPHORES_KEYS.SLURM_MAX_JOB].acquire()
         else:
             logger.debug("SLURM_MAX_JOB semaphore is None")
 
     async def _cleanup_gmx_mdrun(self, workdir: str, run_name: str | None = None,
                                  ) -> None:
-        if _OPT_SEMAPHORES["SLURM_MAX_JOB"] is not None:
-            _OPT_SEMAPHORES["SLURM_MAX_JOB"].release()
+        if _OPT_SEMAPHORES[_OPT_SEMAPHORES_KEYS.SLURM_MAX_JOB] is not None:
+            _OPT_SEMAPHORES[_OPT_SEMAPHORES_KEYS.SLURM_MAX_JOB].release()
         # remove the sbatch script
         name = self._name_from_name_or_none(run_name=run_name)
         fname = os.path.join(workdir, name + ".slurm")

@@ -34,7 +34,7 @@ except ImportError:
     from MDAnalysis.coordinates.base import Timestep as mda_Timestep
 from scipy import constants
 
-from .._config import _SEMAPHORES
+from .._config import _SEMAPHORES, _SEMAPHORES_KEYS
 from .trajectory import Trajectory
 
 
@@ -262,8 +262,8 @@ class TrajectoryConcatenator:
                                       overwrite=overwrite,
                                       )
         loop = asyncio.get_running_loop()
-        async with _SEMAPHORES["MAX_FILES_OPEN"]:
-            async with _SEMAPHORES["MAX_PROCESS"]:
+        async with _SEMAPHORES[_SEMAPHORES_KEYS.MAX_FILES_OPEN]:
+            async with _SEMAPHORES[_SEMAPHORES_KEYS.MAX_PROCESS]:
                 with ThreadPoolExecutor(max_workers=1,
                                         thread_name_prefix="concat_thread",
                                         ) as pool:
@@ -478,8 +478,8 @@ class FrameExtractor(abc.ABC):
                                        overwrite=overwrite,
                                        )
         loop = asyncio.get_running_loop()
-        async with _SEMAPHORES["MAX_FILES_OPEN"]:
-            async with _SEMAPHORES["MAX_PROCESS"]:
+        async with _SEMAPHORES[_SEMAPHORES_KEYS.MAX_FILES_OPEN]:
+            async with _SEMAPHORES[_SEMAPHORES_KEYS.MAX_PROCESS]:
                 with ThreadPoolExecutor(max_workers=1,
                                         thread_name_prefix="concat_thread",
                                         ) as pool:

@@ -4,7 +4,9 @@ This section is relevant for developers of {py:mod}`asyncmd`, e.g. when you want
 
 This section also contains the interface of the classes, which are used under the hood by various user facing-classes in {py:mod}`asyncmd` to interact with the SLURM queueing system.
 Namely there is the {py:class}`SlurmProcess <asyncmd.slurm.SlurmProcess>`, which emulates the interface of {py:class}`asyncio.subprocess.Process` and which is used to submit and wait for single SLURM jobs.
-Additionally (one level deeper under the hood) there is the {py:class}`SlurmClusterMediator <asyncmd.slurm.SlurmClusterMediator>`, which is a singleton class acting as the central communication point between the single {py:class}`SlurmProcess <asyncmd.slurm.SlurmProcess>` and the SLURM commands ("sacct", "sbatch", etc.).
+In the spirit of {py:mod}`asyncio`s subprocess module, there is also the coroutine-function {py:func}`create_slurmprocess_submit <asyncmd.slurm.create_slurmprocess_submit>`, which can be used to create and directly submit a {py:class}`SlurmProcess <asyncmd.slurm.SlurmProcess>` (just like {py:func}`asyncio.create_subprocess_exec`).
+Additionally (one level deeper under the hood) there is the {py:class}`SlurmClusterMediator <asyncmd.slurm.cluster_mediator.SlurmClusterMediator>`, which is a singleton class acting as the central communication point between the single {py:class}`SlurmProcess <asyncmd.slurm.SlurmProcess>` and the SLURM commands ("sacct", "sbatch", etc.).
+Finally there is also a number of slurm-specific exceptions documented below.
 
 ```{seealso}
 The example notebook on the {doc}`SlurmProcess </examples_link/05_developer_topics/slurm/SlurmProcess>`.
@@ -38,6 +40,10 @@ Currently defined are:
 - {py:class}`asyncmd.mdengine.EngineError` (a generic error, should be raised when no more specific error applies)
 
 - {py:class}`asyncmd.mdengine.EngineCrashedError` (should be raised when the wrapped MD engine code raises an exception during the MD integration)
+
+```{note}
+You should also register and implement the corresponding [utility functions](utility-functions-for-common-MD-operations) for your engine.
+```
 
 ```{eval-rst}
 .. autoclass:: asyncmd.mdengine.MDEngine
@@ -93,6 +99,17 @@ If the option/key is present but without associated value(s) the list in the dic
 ## SLURM interface classes
 
 ```{eval-rst}
+.. note ::
+    The function below is an alias for/imported from
+
+    .. function:: asyncmd.slurm.process.create_slurmprocess_submit
+
+    **Note:** It is recommended/preferred to use :func:`asyncmd.slurm.create_slurmprocess_submit`.
+
+.. autofunction:: asyncmd.slurm.create_slurmprocess_submit
+```
+
+```{eval-rst}
 .. autoclass:: asyncmd.slurm.SlurmProcess
     :class-doc-from: both
     :member-order: groupwise
@@ -106,4 +123,12 @@ If the option/key is present but without associated value(s) the list in the dic
     :member-order: groupwise
     :members:
     :inherited-members:
+```
+
+```{eval-rst}
+.. autoexception:: asyncmd.slurm.constants_and_errors.SlurmError
+
+.. autoexception:: asyncmd.slurm.constants_and_errors.SlurmCancellationError
+
+.. autoexception:: asyncmd.slurm.constants_and_errors.SlurmSubmissionError
 ```

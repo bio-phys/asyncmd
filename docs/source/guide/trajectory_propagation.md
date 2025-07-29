@@ -39,5 +39,12 @@ The example notebooks on the {doc}`InPartsTrajectoryPropagator </examples_link/0
     :special-members:
     :inherited-members:
 
+.. note ::
+    The function below is an alias for/imported from
+
+    .. function:: asyncmd.trajectory.propagate.construct_tp_from_plus_and_minus_traj_segments
+
+    **Note:** It is recommended/preferred to use :func:`asyncmd.trajectory.construct_tp_from_plus_and_minus_traj_segments`.
+
 .. autofunction:: asyncmd.trajectory.construct_tp_from_plus_and_minus_traj_segments
 ```

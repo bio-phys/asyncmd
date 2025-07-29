@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Improved handling of h5py caches: Improved `asyncmd.config.register_h5py_cache` method and added `asyncmd.config.deregister_h5py_cache` method. It is now possible to use (multiple) read-only h5py cache sources to retrieve values from, even if no writeable cache source is registered. Also add an option to copy over all values from (read-only or writeable) previously registered h5py cache sources, when registering a new h5py cache source.
 - "py.typed" file to support type checking
 
 ## [0.4.0] - 2025-07-22

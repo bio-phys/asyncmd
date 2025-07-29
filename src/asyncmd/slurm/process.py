@@ -38,7 +38,7 @@ from ..tools import (ensure_executable_available,
                      remove_file_if_exist,
                      attach_kwargs_to_object as _attach_kwargs_to_object,
                      )
-from .._config import _SEMAPHORES
+from .._config import _SEMAPHORES, _SEMAPHORES_KEYS
 
 
 logger = logging.getLogger(__name__)
@@ -356,7 +356,7 @@ class SlurmProcess:
         logger.debug("About to execute sbatch_cmd %s.", sbatch_cmd)
         # 3 file descriptors: stdin,stdout,stderr
         # Note: one semaphore counts for 3 open files!
-        await _SEMAPHORES["MAX_FILES_OPEN"].acquire()
+        await _SEMAPHORES[_SEMAPHORES_KEYS.MAX_FILES_OPEN].acquire()
         sbatch_proc = await asyncio.create_subprocess_exec(
                                                 *shlex.split(sbatch_cmd),
                                                 stdout=asyncio.subprocess.PIPE,
@@ -380,7 +380,7 @@ class SlurmProcess:
                     f"sbatch stderr: {sbatch_stderr} \n"
                     )
         finally:
-            _SEMAPHORES["MAX_FILES_OPEN"].release()
+            _SEMAPHORES[_SEMAPHORES_KEYS.MAX_FILES_OPEN].release()
         # only jobid (and possibly clustername) returned, semicolon to separate
         logger.debug("sbatch returned stdout: %s, stderr: %s.",
                      sbatch_stdout, sbatch_stderr)
@@ -468,7 +468,7 @@ class SlurmProcess:
             return self._stdout_data, self._stderr_data
         # we read them in binary mode to get bytes objects back, this way they
         # behave like the bytes objects returned by asyncio.subprocess
-        async with _SEMAPHORES["MAX_FILES_OPEN"]:
+        async with _SEMAPHORES[_SEMAPHORES_KEYS.MAX_FILES_OPEN]:
             stdout_fname = os.path.join(
                                     self.workdir,
                                     self._stdout_name(use_slurm_symbols=False),
@@ -577,7 +577,7 @@ class SlurmProcess:
                 raise ValueError("Can only send input to a SlurmProcess "
                                  "created/submitted with stdin (file) given.")
             # write the given input to stdin file
-            async with _SEMAPHORES["MAX_FILES_OPEN"]:
+            async with _SEMAPHORES[_SEMAPHORES_KEYS.MAX_FILES_OPEN]:
                 async with aiofiles.open(os.path.join(self.workdir,
                                                       f"{self._stdin}"),
                                          "wb",
@@ -652,11 +652,11 @@ async def create_slurmprocess_submit(jobname: str,
                                      **kwargs,
                                      ):
     """
-    Create and submit a SlurmProcess.
+    Create and submit a :class:`SlurmProcess`.
 
-    All arguments are directly passed trough to :meth:`SlurmProcess.__init__`
+    All arguments are directly passed trough to :class:`SlurmProcess` initialization
     and :meth:`SlurmProcess.submit`.
-    All additional keyword arguments are passed to :meth`SlurmProcess.__init__`.
+    All additional keyword arguments are passed to :class:`SlurmProcess` initialization.
 
     Parameters
     ----------
