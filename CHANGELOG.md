@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2025-07-29
+
 ### Added
 
 - Improved handling of h5py caches: Improved `asyncmd.config.register_h5py_cache` method and added `asyncmd.config.deregister_h5py_cache` method. It is now possible to use (multiple) read-only h5py cache sources to retrieve values from, even if no writeable cache source is registered. Also add an option to copy over all values from (read-only or writeable) previously registered h5py cache sources, when registering a new h5py cache source.
@@ -56,7 +58,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - First release on PyPi
 
-[unreleased]: https://github.com/bio-phys/asyncmd/compare/v0.4.0...HEAD
+
+[unreleased]: https://github.com/bio-phys/asyncmd/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/bio-phys/asyncmd/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/bio-phys/asyncmd/compare/v0.3.3...v0.4.0
 [0.3.3]: https://github.com/bio-phys/asyncmd/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/bio-phys/asyncmd/releases/tag/v0.3.2
