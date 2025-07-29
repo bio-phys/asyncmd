@@ -36,6 +36,7 @@ guide/frame_extraction_and_trajectory_concatenation
 guide/trajectory_propagation
 guide/gromacs
 guide/configuration
+guide/utils
 guide/extending_asyncmd
 ```
 

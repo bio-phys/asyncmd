@@ -41,6 +41,10 @@ Currently defined are:
 
 - {py:class}`asyncmd.mdengine.EngineCrashedError` (should be raised when the wrapped MD engine code raises an exception during the MD integration)
 
+```{note}
+You should also register and implement the corresponding [utility functions](utility-functions-for-common-MD-operations) for your engine.
+```
+
 ```{eval-rst}
 .. autoclass:: asyncmd.mdengine.MDEngine
     :members:
