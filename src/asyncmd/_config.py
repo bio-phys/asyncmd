@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 """
-Configuration dictionaries to influence asyncmd runtime behavior.
+Configuration dictionaries to influence asyncmd runtime behavior and resource usage.
 
 Also define the keys in the dictionaries we will use (see the "_KEYS" classes below).
 
@@ -46,6 +46,14 @@ _GLOBALS_KEYS = _GlobalsKeys()
 
 class _SemaphoresKeys(typing.NamedTuple):
     MAX_PROCESS: str = "MAX_PROCESS"
+    # NOTE: Each MAX_FILES_OPEN semaphore counts for 3 open files!
+    #       The reason is that we open 3 files at the same time for each
+    #       subprocess (stdin, stdout, stderr), but semaphores can only be
+    #       decreased (awaited) once at a time. The problem with just awaiting
+    #       it three times in a row is that we can get deadlocked by getting
+    #       1-2 semaphores and waiting for the next (last) semaphore in all
+    #       threads. The problem is that this semaphore will never be freed
+    #       without any process getting a semaphore...
     MAX_FILES_OPEN: str = "MAX_FILES_OPEN"
 
 

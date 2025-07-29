@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 """
-This module contains the implementation of functions configuring asyncmd behavior.
+This module contains the implementation of functions configuring asyncmd resource usage.
 
 It also import the configuration functions for submodules (like slurm) to make
 them accessible to users in one central place.
