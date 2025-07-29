@@ -39,6 +39,7 @@ extensions = [
     'sphinx.ext.autosummary',
     'sphinx.ext.autodoc',
     'sphinx.ext.napoleon',
+    "sphinx.ext.intersphinx",
     'myst_nb',
         ]
 
@@ -102,6 +103,11 @@ autodoc_default_options = {
                     # document members (default = False)
                     "members": False,
                            }
+
+# -- Options for intersphinx extension ----------------------------------------
+intersphinx_mapping = {
+            "h5py": ("https://docs.h5py.org/en/stable", None),
+            }
 
 # -- Options for MyST (Parser)
 

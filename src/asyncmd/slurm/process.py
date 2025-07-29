@@ -652,11 +652,11 @@ async def create_slurmprocess_submit(jobname: str,
                                      **kwargs,
                                      ):
     """
-    Create and submit a SlurmProcess.
+    Create and submit a :class:`SlurmProcess`.
 
-    All arguments are directly passed trough to :meth:`SlurmProcess.__init__`
+    All arguments are directly passed trough to :class:`SlurmProcess` initialization
     and :meth:`SlurmProcess.submit`.
-    All additional keyword arguments are passed to :meth`SlurmProcess.__init__`.
+    All additional keyword arguments are passed to :class:`SlurmProcess` initialization.
 
     Parameters
     ----------

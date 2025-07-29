@@ -229,8 +229,8 @@ def register_h5py_cache(h5py_group: "h5py.Group | h5py.File", copy_h5py: bool = 
     The arguments ``copy_content`` and ``clear_old_cache`` are directly passed
     to :func:`set_trajectory_cache_type`.
 
-    Note that a ``h5py.File`` is just a slightly special ``h5py.Group``, so you
-    can pass either. :mod:`asyncmd` will use either the file or the group as
+    Note that a :class:`h5py.File` is just a slightly special :class:`h5py.Group`,
+    so you can pass either. :mod:`asyncmd` will use either the file or the group as
     the root of its own stored values.
     E.g. you will have ``h5py_group["asyncmd/TrajectoryFunctionValueCache"]``
     always pointing to the cached trajectory values and if ``h5py_group`` is

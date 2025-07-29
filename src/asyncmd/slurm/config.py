@@ -17,6 +17,9 @@ This file contains functions to set/change the configuration of the slurm module
 
 - set_all_slurm_settings
 - set_slurm_settings
+
+These functions are also imported in "asyncmd.config", i.e. the central place
+for configuration functions.
 """
 from .process import SlurmProcess
 from .cluster_mediator import SlurmClusterMediator
