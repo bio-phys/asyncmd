@@ -23,6 +23,8 @@ usage/installation
 usage/basic_gromacs_example
 ```
 
+You might also want to have a look at the [example jupyter notebooks](example-notebooks) below.
+
 ## User guide
 
 This section provides more in-depth explanations on various topics, such as the {py:class}`Trajectory <asyncmd.Trajectory>` object or the use of complex stopping criteria for MD simulations. It also includes a section on modifying and extending asyncmd for your own use-case.
@@ -52,6 +54,7 @@ community/support
 community/contributing
 ```
 
+(example-notebooks)=
 ## Example notebooks
 
 This section contains example jupyter notebooks (also included in the repository) on various topics and starts with a brief description of all notebooks.
