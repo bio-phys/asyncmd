@@ -438,7 +438,7 @@ class GmxEngine(MDEngine):
         return self._engine_state.frames_done
 
     async def apply_constraints(self, conf_in: Trajectory, conf_out_name: str, *,
-                                wdir: str = ".") -> Trajectory:
+                                workdir: str = ".") -> Trajectory:
         """
         Apply constraints to given configuration.
 
@@ -448,7 +448,7 @@ class GmxEngine(MDEngine):
             A (one-frame) trajectory, only the first frame will be used.
         conf_out_name : str
             Output path for the constrained configuration.
-        wdir : str, optional
+        workdir : str
             Working directory for the constraint engine, by default ".",
             a subfolder with random name will be created.
 
@@ -459,13 +459,13 @@ class GmxEngine(MDEngine):
         """
         return await self._0step_md(conf_in=conf_in,
                                     conf_out_name=conf_out_name,
-                                    wdir=wdir,
+                                    wdir=workdir,
                                     constraints=True,
                                     generate_velocities=False,
                                     )
 
     async def generate_velocities(self, conf_in: Trajectory, conf_out_name: str, *,
-                                  wdir: str = ".", constraints: bool = True,
+                                  workdir: str = ".", constraints: bool = True,
                                   ) -> Trajectory:
         """
         Generate random Maxwell-Boltzmann velocities for given configuration.
@@ -476,10 +476,10 @@ class GmxEngine(MDEngine):
             A (one-frame) trajectory, only the first frame will be used.
         conf_out_name : str
             Output path for the velocity randomized configuration.
-        wdir : str, optional
+        workdir : str
             Working directory for the constraint engine, by default ".",
             a subfolder with random name will be created.
-        constraints : bool, optional
+        constraints : bool
             Whether to also apply constraints, by default True.
 
         Returns
@@ -490,7 +490,7 @@ class GmxEngine(MDEngine):
         """
         return await self._0step_md(conf_in=conf_in,
                                     conf_out_name=conf_out_name,
-                                    wdir=wdir,
+                                    wdir=workdir,
                                     constraints=constraints,
                                     generate_velocities=True,
                                     )
