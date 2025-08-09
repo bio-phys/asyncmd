@@ -43,7 +43,7 @@ from ..tools import (
     DescriptorOutputTrajType as _DescriptorOutputTrajType,
 )
 from ..trajectory.trajectory import Trajectory
-from ..trajectory import NoModificationFrameExtractor
+from ..trajectory.convert import NoModificationFrameExtractor
 from .mdconfig import MDP
 from .utils import get_all_traj_parts, nstout_from_mdp
 
