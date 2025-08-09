@@ -28,9 +28,10 @@ import typing
 from ._config import (_GLOBALS, _SEMAPHORES, _OPT_SEMAPHORES,
                       _GLOBALS_KEYS, _SEMAPHORES_KEYS, _OPT_SEMAPHORES_KEYS,
                       )
-from .trajectory.trajectory import (_update_cache_type_for_all_trajectories,
-                                    _deregister_h5py_cache_for_all_trajectories,
-                                    )
+from .trajectory.trajectory import (
+    update_cache_type_for_all_trajectories as _update_cache_type_for_all_trajectories,
+    deregister_h5py_cache_for_all_trajectories as _deregister_h5py_cache_for_all_trajectories,
+    )
 from .trajectory.trajectory_cache import (
         TrajectoryFunctionValueCacheInH5PY as _TrajectoryFunctionValueCacheInH5PY,
         )

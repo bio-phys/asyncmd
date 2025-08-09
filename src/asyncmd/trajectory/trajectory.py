@@ -64,9 +64,9 @@ def clear_all_cache_values_for_all_trajectories() -> None:
         traj.clear_all_cache_values()
 
 
-def _update_cache_type_for_all_trajectories(copy_content: bool = True,
-                                            clear_old_cache: bool = False,
-                                            ) -> None:
+def update_cache_type_for_all_trajectories(copy_content: bool = True,
+                                           clear_old_cache: bool = False,
+                                           ) -> None:
     """
     Update the cache type for each :class:`Trajectory` currently in existence.
 
@@ -89,8 +89,8 @@ def _update_cache_type_for_all_trajectories(copy_content: bool = True,
                                )
 
 
-def _deregister_h5py_cache_for_all_trajectories(h5py_group: "h5py.File | h5py.Group"
-                                                ) -> None:
+def deregister_h5py_cache_for_all_trajectories(h5py_group: "h5py.File | h5py.Group"
+                                               ) -> None:
     """
     Deregister the given h5py_group as cache from all :class:`Trajectory` objects.
 
@@ -100,7 +100,7 @@ def _deregister_h5py_cache_for_all_trajectories(h5py_group: "h5py.File | h5py.Gr
         The h5py_group to deregister.
     """
     for traj in _TRAJECTORIES_BY_HASH.values():
-        traj._deregister_h5py_cache(h5py_group)
+        traj.deregister_h5py_cache(h5py_group)
 
 
 def _forget_all_trajectories() -> None:
@@ -550,14 +550,14 @@ class Trajectory:
         """
         self._cache.clear_all_values()
 
-    def _deregister_h5py_cache(self, h5py_group: "h5py.File | h5py.Group") -> None:
+    def deregister_h5py_cache(self, h5py_group: "h5py.File | h5py.Group") -> None:
         """
-        Deregister the given h5py_cache as a source of cached values.
+        Deregister the given h5py_group as a source of cached values.
 
         Parameters
         ----------
-        h5py_cache : h5py.File | h5py.Group
-            The h5py_cache to deregister/remove from caching
+        h5py_group : h5py.File | h5py.Group
+            The h5py_group to deregister/remove from caching
 
         Raises
         ------
