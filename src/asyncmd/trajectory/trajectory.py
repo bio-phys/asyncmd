@@ -64,9 +64,9 @@ def clear_all_cache_values_for_all_trajectories() -> None:
         traj.clear_all_cache_values()
 
 
-def _update_cache_type_for_all_trajectories(copy_content: bool = True,
-                                            clear_old_cache: bool = False,
-                                            ) -> None:
+def update_cache_type_for_all_trajectories(copy_content: bool = True,
+                                           clear_old_cache: bool = False,
+                                           ) -> None:
     """
     Update the cache type for each :class:`Trajectory` currently in existence.
 
@@ -89,8 +89,8 @@ def _update_cache_type_for_all_trajectories(copy_content: bool = True,
                                )
 
 
-def _deregister_h5py_cache_for_all_trajectories(h5py_group: "h5py.File | h5py.Group"
-                                                ) -> None:
+def deregister_h5py_cache_for_all_trajectories(h5py_group: "h5py.File | h5py.Group"
+                                               ) -> None:
     """
     Deregister the given h5py_group as cache from all :class:`Trajectory` objects.
 
@@ -100,7 +100,7 @@ def _deregister_h5py_cache_for_all_trajectories(h5py_group: "h5py.File | h5py.Gr
         The h5py_group to deregister.
     """
     for traj in _TRAJECTORIES_BY_HASH.values():
-        traj._deregister_h5py_cache(h5py_group)
+        traj.deregister_h5py_cache(h5py_group)
 
 
 def _forget_all_trajectories() -> None:
@@ -214,6 +214,7 @@ class Trajectory:
            "memory": TrajectoryFunctionValueCacheInMemory,
     }
     _file_data: _TrajectoryFileData  # type annotation for stuff we set in __new__
+    _semaphores_by_func_id: collections.defaultdict[str, asyncio.BoundedSemaphore]
 
     # Note: We want __init__ and __new__ to have the same call signature
     #       (at least for users, __new__ takes `old_workdir`...).
@@ -258,18 +259,20 @@ class Trajectory:
         #       The _TrajectoryFileData dataclass therefore contains everything
         #       (and only those things) we need in __new__
         # self._file_data
+        # NOTE:
+        # self._semaphores_by_func_id is also set by __new__, because otherwise
+        # we could have a (rare) condition in which we overwrite the dict with
+        # a fresh dict in __init__ for an existing Trajectory that just in this
+        # moment already has a function applied to it (i.e. a semaphore bound).
+        # Then we could apply the same func twice because the two invocations
+        # would get different dicts and could both get a different semaphore.
+        # self._semaphores_by_func_id
         # properties
         self.nstout = nstout  # use the setter to make basic sanity checks
         # store for all (immutable) properties we read from the trajectory files
         self._property_data: None | _TrajectoryPropertyData = None
         # setup cache for functions applied to this traj
         self._cache = self._setup_cache()
-        # Locking mechanism such that only one application of a specific
-        # CV func can run at any given time on this trajectory
-        self._semaphores_by_func_id: collections.defaultdict[
-            str,
-            asyncio.BoundedSemaphore,
-        ] = collections.defaultdict(asyncio.BoundedSemaphore)
 
     def __new__(cls,
                 trajectory_files: list[str] | str, structure_file: str,
@@ -313,6 +316,10 @@ class Trajectory:
                                     workdir=current_workdir,
                                     trajectory_hash=traj_hash,
                                     )
+            # Setup locking mechanism such that only one application of a specific
+            # CV func can run at any given time on this trajectory
+            obj._semaphores_by_func_id = collections.defaultdict(
+                                                    asyncio.BoundedSemaphore)
             # and add us to the global trajectory registry
             _TRAJECTORIES_BY_HASH[traj_hash] = obj
             return obj
@@ -543,14 +550,14 @@ class Trajectory:
         """
         self._cache.clear_all_values()
 
-    def _deregister_h5py_cache(self, h5py_group: "h5py.File | h5py.Group") -> None:
+    def deregister_h5py_cache(self, h5py_group: "h5py.File | h5py.Group") -> None:
         """
-        Deregister the given h5py_cache as a source of cached values.
+        Deregister the given h5py_group as a source of cached values.
 
         Parameters
         ----------
-        h5py_cache : h5py.File | h5py.Group
-            The h5py_cache to deregister/remove from caching
+        h5py_group : h5py.File | h5py.Group
+            The h5py_group to deregister/remove from caching
 
         Raises
         ------
@@ -847,9 +854,6 @@ class Trajectory:
                     # ignore if we already have them
                     pass
         state["_cache"] = None
-        state["_semaphores_by_func_id"] = collections.defaultdict(
-                                                    asyncio.BoundedSemaphore
-                                                                  )
         return state
 
     def __setstate__(self, d: dict) -> None:

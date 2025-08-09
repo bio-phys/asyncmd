@@ -34,8 +34,8 @@ class MDEngine(abc.ABC):
     Abstract base class to define a common interface for all :class:`MDEngine`.
     """
     @abc.abstractmethod
-    async def apply_constraints(self, conf_in: Trajectory,
-                                conf_out_name: str) -> Trajectory:
+    async def apply_constraints(self, conf_in: Trajectory, conf_out_name: str, *,
+                                workdir: str = ".") -> Trajectory:
         """
         Apply constraints to given conf_in, write conf_out_name and return it.
 
@@ -43,6 +43,7 @@ class MDEngine(abc.ABC):
         ----------
         conf_in : Trajectory
         conf_out_name : str
+        workdir: str
 
         Returns
         -------
