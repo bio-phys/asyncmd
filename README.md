@@ -13,6 +13,10 @@ asyncmd enables users to construct complex molecular dynamics (MD) workflows or 
 - propagation of MD until any or all user-supplied conditions are fulfilled on the trajectory
 - extract molecular configurations from trajectories to (re)start an arbitrary number of MD simulations from it
 
+**If you use asyncmd in published research please consider citing it as:**
+
+- Hendrik Jung and Gerhard Hummer, (2025). asyncmd: A python library to orchestrate complex molecular dynamics simulation campaigns on high performance computing systems. Journal of Open Source Software, 10(112), 8321, <https://doi.org/10.21105/joss.08321>
+
 ## Installation
 
 The following command will install asyncmd from [PyPi][pypi-link]:
