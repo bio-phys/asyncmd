@@ -1,0 +1,34 @@
+cff-version: "1.2.0"
+authors:
+- family-names: Jung
+  given-names: Hendrik
+  orcid: "https://orcid.org/0000-0002-2159-0391"
+- family-names: Hummer
+  given-names: Gerhard
+  orcid: "https://orcid.org/0000-0001-7768-746X"
+doi: 10.5281/zenodo.16572092
+message: If you use this software, please cite our article in the
+  Journal of Open Source Software.
+preferred-citation:
+  authors:
+  - family-names: Jung
+    given-names: Hendrik
+    orcid: "https://orcid.org/0000-0002-2159-0391"
+  - family-names: Hummer
+    given-names: Gerhard
+    orcid: "https://orcid.org/0000-0001-7768-746X"
+  date-published: 2025-08-14
+  doi: 10.21105/joss.08321
+  issn: 2475-9066
+  issue: 112
+  journal: Journal of Open Source Software
+  publisher:
+    name: Open Journals
+  start: 8321
+  title: "asyncmd: A python library to orchestrate complex molecular
+    dynamics simulation campaigns on high performance computing systems"
+  type: article
+  url: "https://joss.theoj.org/papers/10.21105/joss.08321"
+  volume: 10
+title: "asyncmd: A python library to orchestrate complex molecular
+  dynamics simulation campaigns on high performance computing systems"

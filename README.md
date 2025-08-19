@@ -1,6 +1,6 @@
 # asyncmd
 
-[![codecov][codecov-badge]][codecov-link] [![Documentation Status][rtd-badge]][rtd-link] [![PyPI][pypi-badge]][pypi-link]
+[![codecov][codecov-badge]][codecov-link] [![Documentation Status][rtd-badge]][rtd-link] [![PyPI][pypi-badge]][pypi-link] [![DOI][joss-badge]][joss-link]
 
 asyncmd is a library to write **concurrent** code to run and analyze molecular dynamics simulations using pythons **async/await** syntax.
 Computationally costly operations can be performed locally or submitted to a queuing system.
@@ -40,3 +40,6 @@ All contributions are appreciated! Please refer to the [documentation][rtd-link]
 
 [pypi-link]: https://pypi.org/project/asyncmd/
 [pypi-badge]: https://img.shields.io/pypi/v/asyncmd
+
+[joss-link]: https://doi.org/10.21105/joss.08321
+[joss-badge]: https://joss.theoj.org/papers/10.21105/joss.08321/status.svg

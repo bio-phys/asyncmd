@@ -82,7 +82,15 @@ html_theme_options = {
         {
             "name": "PyPI",
             "url": "https://pypi.org/project/asyncmd/",
-            "icon": "https://img.shields.io/pypi/dm/asyncmd",
+            # download stats are broken? (August 2025)
+            #"icon": "https://img.shields.io/pypi/dm/asyncmd",
+            "icon": "https://img.shields.io/pypi/v/asyncmd",
+            "type": "url",
+        },
+        {
+            "name": "JOSS",
+            "url": "https://doi.org/10.21105/joss.08321",
+            "icon": "https://joss.theoj.org/papers/10.21105/joss.08321/status.svg",
             "type": "url",
         },
     ],
