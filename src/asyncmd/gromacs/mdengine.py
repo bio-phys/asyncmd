@@ -466,10 +466,13 @@ class GmxEngine(MDEngine):
                                     )
 
     async def generate_velocities(self, conf_in: Trajectory, conf_out_name: str, *,
-                                  workdir: str = ".", constraints: bool = True,
+                                  workdir: str = ".",
                                   ) -> Trajectory:
         """
         Generate random Maxwell-Boltzmann velocities for given configuration.
+
+        This also applies constraints to the configuration (as gromacs does when
+        generating velocities).
 
         Parameters
         ----------
@@ -480,19 +483,16 @@ class GmxEngine(MDEngine):
         workdir : str
             Working directory for the constraint engine, by default ".",
             a subfolder with random name will be created.
-        constraints : bool
-            Whether to also apply constraints, by default True.
 
         Returns
         -------
         Trajectory
-            The configuration with random velocities and optionally constraints
-            enforced.
+            The configuration with random velocities and constraints enforced.
         """
         return await self._0step_md(conf_in=conf_in,
                                     conf_out_name=conf_out_name,
                                     wdir=workdir,
-                                    constraints=constraints,
+                                    constraints=True,
                                     generate_velocities=True,
                                     )
 
