@@ -13,9 +13,12 @@
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import pytest
+import os
 import logging
 
 import numpy as np
+import MDAnalysis as mda
+from MDAnalysis import transformations
 
 from asyncmd.gromacs import GmxEngine, MDP
 from asyncmd import Trajectory
@@ -209,3 +212,39 @@ class Test_GmxEngine:
         assert len(traj) == engine.nstout / nsteps + 1
         assert engine.steps_done == nsteps
         assert np.isclose(engine.time_done, nsteps * engine.dt)
+
+    @pytest.mark.slow
+    @needs_gmx_install
+    @pytest.mark.asyncio
+    async def test_generate_velocities(self, tmp_path):
+        initial_conf = Trajectory("tests/test_data/trajectory/ala_traj.trr",
+                                  "tests/test_data/trajectory/ala.tpr")
+        engine = GmxEngine(mdconfig=self.mdp_md_compressed_out,
+                           gro_file=self.gro,
+                           top_file=self.top)
+        new_conf = await engine.generate_velocities(
+                                    conf_in=initial_conf,
+                                    conf_out_name=os.path.join(tmp_path, "out.trr"),
+                                    workdir=tmp_path,
+                                    )
+        # TODO: this is essentially a smoke test...
+        #       ... what else can we test for except the length?!
+        assert len(new_conf) == 1
+
+    @pytest.mark.slow
+    @needs_gmx_install
+    @pytest.mark.asyncio
+    async def test_apply_constraints(self, tmp_path):
+        initial_conf = Trajectory("tests/test_data/trajectory/ala_traj.trr",
+                                  "tests/test_data/trajectory/ala.tpr")
+        engine = GmxEngine(mdconfig=self.mdp_md_compressed_out,
+                           gro_file=self.gro,
+                           top_file=self.top)
+        new_conf = await engine.apply_constraints(
+                                    conf_in=initial_conf,
+                                    conf_out_name=os.path.join(tmp_path, "out.trr"),
+                                    workdir=tmp_path,
+                                    )
+        # TODO: this is essentially a smoke test...
+        #       ... what else can we test for except the length?!
+        assert len(new_conf) == 1

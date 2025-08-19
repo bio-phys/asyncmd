@@ -43,6 +43,7 @@ from ..tools import (
     DescriptorOutputTrajType as _DescriptorOutputTrajType,
 )
 from ..trajectory.trajectory import Trajectory
+from ..trajectory.convert import NoModificationFrameExtractor
 from .mdconfig import MDP
 from .utils import get_all_traj_parts, nstout_from_mdp
 
@@ -438,7 +439,7 @@ class GmxEngine(MDEngine):
         return self._engine_state.frames_done
 
     async def apply_constraints(self, conf_in: Trajectory, conf_out_name: str, *,
-                                wdir: str = ".") -> Trajectory:
+                                workdir: str = ".") -> Trajectory:
         """
         Apply constraints to given configuration.
 
@@ -448,7 +449,7 @@ class GmxEngine(MDEngine):
             A (one-frame) trajectory, only the first frame will be used.
         conf_out_name : str
             Output path for the constrained configuration.
-        wdir : str, optional
+        workdir : str
             Working directory for the constraint engine, by default ".",
             a subfolder with random name will be created.
 
@@ -459,16 +460,19 @@ class GmxEngine(MDEngine):
         """
         return await self._0step_md(conf_in=conf_in,
                                     conf_out_name=conf_out_name,
-                                    wdir=wdir,
+                                    wdir=workdir,
                                     constraints=True,
                                     generate_velocities=False,
                                     )
 
     async def generate_velocities(self, conf_in: Trajectory, conf_out_name: str, *,
-                                  wdir: str = ".", constraints: bool = True,
+                                  workdir: str = ".",
                                   ) -> Trajectory:
         """
         Generate random Maxwell-Boltzmann velocities for given configuration.
+
+        This also applies constraints to the configuration (as gromacs does when
+        generating velocities).
 
         Parameters
         ----------
@@ -476,31 +480,25 @@ class GmxEngine(MDEngine):
             A (one-frame) trajectory, only the first frame will be used.
         conf_out_name : str
             Output path for the velocity randomized configuration.
-        wdir : str, optional
+        workdir : str
             Working directory for the constraint engine, by default ".",
             a subfolder with random name will be created.
-        constraints : bool, optional
-            Whether to also apply constraints, by default True.
 
         Returns
         -------
         Trajectory
-            The configuration with random velocities and optionally constraints
-            enforced.
+            The configuration with random velocities and constraints enforced.
         """
         return await self._0step_md(conf_in=conf_in,
                                     conf_out_name=conf_out_name,
-                                    wdir=wdir,
-                                    constraints=constraints,
+                                    wdir=workdir,
+                                    constraints=True,
                                     generate_velocities=True,
                                     )
 
     async def _0step_md(self, conf_in: Trajectory, conf_out_name: str, *,
                         wdir: str, constraints: bool, generate_velocities: bool,
                         ) -> Trajectory:
-        if not os.path.isabs(conf_out_name):
-            # assume conf_out is to be meant relative to wdir if not an abspath
-            conf_out_name = os.path.join(wdir, conf_out_name)
         # work in a subdirectory of wdir to make deleting easy
         # generate its name at random to make sure we can use multiple
         # engines with 0stepMDruns in the same wdir
@@ -560,21 +558,30 @@ class GmxEngine(MDEngine):
                     + "\n--------\n"
                     + f"stdout: \n--------\n {stdout.decode()}"
                                          )
-            # just get the output trajectory, it is only one configuration
-            shutil.move(os.path.join(swdir, (f"{run_name}{self._num_suffix(1)}"
-                                             + f".{conf_out_name.split('.')[-1]}")
-                                     ),
-                        conf_out_name)
-            shutil.rmtree(swdir)  # remove the whole directory we used as wdir
-            return Trajectory(
-                              trajectory_files=conf_out_name,
-                              # structure file of the conf_in because we
-                              # delete the other one with the folder
-                              structure_file=conf_in.structure_file,
-                              nstout=1,
-                              )
+            # just get the output trajectory, it should only be one configuration
+            # Note: we get the full-precision traj from gromacs and let
+            # the FrameExtractor (i.e. MDAnalysis) handle any potential conversions
+            engine_traj = Trajectory(
+                            trajectory_files=os.path.join(
+                                swdir, f"{run_name}{self._num_suffix(1)}.trr"
+                                ),
+                            structure_file=conf_in.structure_file,
+                            )
+            extractor = NoModificationFrameExtractor()
+            # Note: we use extract (and not extract_async) because otherwise
+            #       it can happen in super-rare circumstances that the Trajectory
+            #       we just instantiated is "replaced" by a Trajectory with the
+            #       same hash but a different filename/path, then the extraction
+            #       fails. If we dont await this can not happen since we do not
+            #       give up control in between.
+            out_traj = extractor.extract(outfile=conf_out_name,
+                                         traj_in=engine_traj,
+                                         idx=len(engine_traj) - 1,
+                                         )
+            return out_traj
         finally:
             await self._cleanup_gmx_mdrun(workdir=swdir, run_name=run_name)
+            shutil.rmtree(swdir)  # remove the whole directory we used as wdir
 
     async def prepare(self, starting_configuration: Trajectory | None | str,
                       workdir: str, deffnm: str) -> None:

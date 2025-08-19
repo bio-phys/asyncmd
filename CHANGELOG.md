@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- GmxEngine `apply_constraints` and `generate_velocities` methods: rename `wdir` argument to `workdir` to make it consistent with `prepare` and `prepare_from_files` (also add the `workdir` argument to the MDEngine ABC).
+
+### Fixed
+
+- a rare condition that could result in the same `TrajectoryFunctionWrapper` being applied twice to the same `Trajectory`, which resulted in unnecessary computations and a ValuesAlreadyStoredError when trying to cache the calculated values twice.
+
 ## [0.4.1] - 2025-07-29
 
 ### Added

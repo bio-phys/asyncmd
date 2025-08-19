@@ -13,6 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with asyncmd. If not, see <https://www.gnu.org/licenses/>.
 import pytest
+import os
+
 import MDAnalysis as mda
 import numpy as np
 
@@ -72,7 +74,7 @@ class TBase:
 
 
 class Test_TrajectoryConcatenator(TBase):
-    def test_init_and_concatenate_raises(self, tmpdir):
+    def test_init_and_concatenate_raises(self, tmp_path):
         # test for errors raised by init
         # if both mda_trafos and mda_trafo_setup_func are give we should raise
         # a ValueError
@@ -86,26 +88,26 @@ class Test_TrajectoryConcatenator(TBase):
         # check for FileExistsError when we write the same file twice
         _ = concatenator.concatenate(trajs=[self.ala_traj],
                                      slices=[(0, 5, 1)],
-                                     tra_out=tmpdir + "/tra_out.trr",
+                                     tra_out=os.path.join(tmp_path, "tra_out.trr"),
                                      )
         # this time must err
         with pytest.raises(FileExistsError):
             _ = concatenator.concatenate(trajs=[self.ala_traj],
                                          slices=[(0, 5, 1)],
-                                         tra_out=tmpdir + "/tra_out.trr",
+                                         tra_out=os.path.join(tmp_path, "tra_out.trr"),
                                          )
         # this time it must not err since we pass overwrite=True
         _ = concatenator.concatenate(trajs=[self.ala_traj],
                                      slices=[(0, 5, 1)],
-                                     tra_out=tmpdir + "/tra_out.trr",
+                                     tra_out=os.path.join(tmp_path, "tra_out.trr"),
                                      overwrite=True,
                                      )
         # check for FileNotFoundError raised when struct_out is not found
         with pytest.raises(FileNotFoundError):
             _ = concatenator.concatenate(trajs=[self.ala_traj],
                                          slices=[(0, 5, 1)],
-                                         tra_out=tmpdir + "/tra_out2.trr",
-                                         struct_out=tmpdir + "/does_not_exist.tpr",
+                                         tra_out=os.path.join(tmp_path, "tra_out2.trr"),
+                                         struct_out=os.path.join(tmp_path, "does_not_exist.tpr"),
                                          )
 
     @pytest.mark.parametrize("slices", [[(0, 18, 1)],
@@ -129,7 +131,7 @@ class Test_TrajectoryConcatenator(TBase):
                              )
     @pytest.mark.parametrize("use_async", [True, False])
     @pytest.mark.asyncio
-    async def test_concatenate(self, tmpdir, slices, use_async,
+    async def test_concatenate(self, tmp_path, slices, use_async,
                                invert_v_for_negative_step,
                                remove_double_frames,
                                mda_transformations,  # whether we use simple mda trafos
@@ -159,16 +161,16 @@ class Test_TrajectoryConcatenator(TBase):
         # actual concatenation
         if use_async:
             out_traj = await concatenator.concatenate_async(
-                trajs=[self.ala_traj for _ in range(len(slices))],
-                slices=slices,
-                tra_out=tmpdir + "/tra_out.trr",
-                                                            )
+                    trajs=[self.ala_traj for _ in range(len(slices))],
+                    slices=slices,
+                    tra_out=os.path.join(tmp_path, "tra_out.trr"),
+                    )
         else:
             out_traj = concatenator.concatenate(
-                trajs=[self.ala_traj for _ in range(len(slices))],
-                slices=slices,
-                tra_out=tmpdir + "/tra_out.trr",
-                                                )
+                    trajs=[self.ala_traj for _ in range(len(slices))],
+                    slices=slices,
+                    tra_out=os.path.join(tmp_path, "tra_out.trr"),
+                    )
         # get universes of in and out to compare
         u_original = mda.Universe(self.ala_traj.structure_file,
                                   *self.ala_traj.trajectory_files)
@@ -222,7 +224,7 @@ class Test_TrajectoryConcatenator(TBase):
 class TBase_FrameExtractors(TBase):
     # class for common test methods useful for all FrameExtractors
     async def test_extract(
-                self, idx, tmpdir, use_async,
+                self, idx, tmp_path, use_async,
                 mda_transformations,  # whether we use simple mda trafos
                 mda_transformations_setup_func,  # whether we use a setup func for more complex trafos
                 extractor_class,  # the FrameExtractor subclass to test
@@ -239,8 +241,8 @@ class TBase_FrameExtractors(TBase):
         ----------
         idx : int
             index to pass to extract
-        tmpdir : Fixture
-            pytest tempdir fixture
+        tmp_path : Fixture
+            pytest temp_path fixture
         use_async : bool
             whether to test the async or non-async version of extract method
         mda_transformations : bool
@@ -281,12 +283,12 @@ class TBase_FrameExtractors(TBase):
         # actual extraction
         if use_async:
             out_frame = await extractor.extract_async(
-                                        outfile=tmpdir + "/out_frame.trr",
+                                        outfile=os.path.join(tmp_path, "out_frame.trr"),
                                         traj_in=self.ala_traj,
                                         idx=idx,
                                                       )
         else:
-            out_frame = extractor.extract(outfile=tmpdir + "/out_frame.trr",
+            out_frame = extractor.extract(outfile=os.path.join(tmp_path, "out_frame.trr"),
                                           traj_in=self.ala_traj,
                                           idx=idx,
                                           )
@@ -320,7 +322,7 @@ class TBase_FrameExtractors(TBase):
 
 
 class Test_NoModificationFrameExtractor(TBase_FrameExtractors):
-    def test_init_and_extract_raises(self, tmpdir):
+    def test_init_and_extract_raises(self, tmp_path):
         # check for the errors raised by extract here once as they are the same
         # in all other classes that actually modify, its just that we can not
         # instanstiate the ABC that implements the extract method that raises
@@ -336,17 +338,17 @@ class Test_NoModificationFrameExtractor(TBase_FrameExtractors):
         # now check for raises from extract method
         extractor = NoModificationFrameExtractor()
         # extract the same frame twice to raise FileExistsError
-        _ = extractor.extract(outfile=tmpdir + "/out_frame.trr",
+        _ = extractor.extract(outfile=os.path.join(tmp_path, "out_frame.trr"),
                               traj_in=self.ala_traj,
                               idx=0,
                               )
         with pytest.raises(FileExistsError):
-            _ = extractor.extract(outfile=tmpdir + "/out_frame.trr",
+            _ = extractor.extract(outfile=os.path.join(tmp_path, "out_frame.trr"),
                                   traj_in=self.ala_traj,
                                   idx=0,
                                   )
         # check that it works if we pass overwrite=True
-        _ = extractor.extract(outfile=tmpdir + "/out_frame.trr",
+        _ = extractor.extract(outfile=os.path.join(tmp_path, "out_frame.trr"),
                               traj_in=self.ala_traj,
                               idx=0,
                               overwrite=True,
@@ -354,10 +356,10 @@ class Test_NoModificationFrameExtractor(TBase_FrameExtractors):
         # finally check for the FileNotFoundError raised if the structure file
         # does not exist
         with pytest.raises(FileNotFoundError):
-            _ = extractor.extract(outfile=tmpdir + "/out_frame2.trr",
+            _ = extractor.extract(outfile=os.path.join(tmp_path, "out_frame2.trr"),
                                   traj_in=self.ala_traj,
                                   idx=0,
-                                  struct_out=tmpdir + "/does_not_exist.tpr",
+                                  struct_out=os.path.join(tmp_path, "does_not_exist.tpr"),
                                   )
 
     @pytest.mark.parametrize("idx", [0, 5, 10, 17])
@@ -372,7 +374,7 @@ class Test_NoModificationFrameExtractor(TBase_FrameExtractors):
     @pytest.mark.asyncio
     # pylint: disable-next=arguments-differ
     async def test_extract(
-                self, idx, tmpdir, use_async,
+                self, idx, tmp_path, use_async,
                 mda_transformations,  # whether we use simple mda trafos
                 mda_transformations_setup_func,  # whether we use a setup func for more complex trafos
                            ):
@@ -380,7 +382,7 @@ class Test_NoModificationFrameExtractor(TBase_FrameExtractors):
          all_vels_original,
          all_atoms_extracted,
          ) = await super().test_extract(
-                    idx=idx, tmpdir=tmpdir, use_async=use_async,
+                    idx=idx, tmp_path=tmp_path, use_async=use_async,
                     mda_transformations=mda_transformations,
                     mda_transformations_setup_func=mda_transformations_setup_func,
                     extractor_class=NoModificationFrameExtractor,
@@ -409,7 +411,7 @@ class Test_InvertedVelocitiesFrameExtractor(TBase_FrameExtractors):
     @pytest.mark.asyncio
     # pylint: disable-next=arguments-differ
     async def test_extract(
-                self, idx, tmpdir, use_async,
+                self, idx, tmp_path, use_async,
                 mda_transformations,  # whether we use simple mda trafos
                 mda_transformations_setup_func,  # whether we use a setup func for more complex trafos
                            ):
@@ -417,7 +419,7 @@ class Test_InvertedVelocitiesFrameExtractor(TBase_FrameExtractors):
          all_vels_original,
          all_atoms_extracted,
          ) = await super().test_extract(
-                    idx=idx, tmpdir=tmpdir, use_async=use_async,
+                    idx=idx, tmp_path=tmp_path, use_async=use_async,
                     mda_transformations=mda_transformations,
                     mda_transformations_setup_func=mda_transformations_setup_func,
                     extractor_class=InvertedVelocitiesFrameExtractor,
@@ -451,7 +453,7 @@ class Test_RandomVelocitiesFrameExtractor(TBase_FrameExtractors):
     @pytest.mark.asyncio
     # pylint: disable-next=arguments-differ
     async def test_extract(
-                self, idx, tmpdir, use_async,
+                self, idx, tmp_path, use_async,
                 mda_transformations,  # whether we use simple mda trafos
                 mda_transformations_setup_func,  # whether we use a setup func for more complex trafos
                            ):
@@ -459,7 +461,7 @@ class Test_RandomVelocitiesFrameExtractor(TBase_FrameExtractors):
          all_vels_original,
          all_atoms_extracted,
          ) = await super().test_extract(
-                    idx=idx, tmpdir=tmpdir, use_async=use_async,
+                    idx=idx, tmp_path=tmp_path, use_async=use_async,
                     mda_transformations=mda_transformations,
                     mda_transformations_setup_func=mda_transformations_setup_func,
                     extractor_class=RandomVelocitiesFrameExtractor,
