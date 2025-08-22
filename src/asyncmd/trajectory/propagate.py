@@ -253,6 +253,7 @@ class _TrajectoryPropagator:
                                                 folder=workdir,
                                                 deffnm=deffnm,
                                                 file_ending=ending.lower(),
+                                                engine=self.engine_cls,
                                                        )
             # make sure we dont miss anything because we have different
             # capitalization
@@ -261,6 +262,7 @@ class _TrajectoryPropagator:
                                                     folder=workdir,
                                                     deffnm=deffnm,
                                                     file_ending=ending.upper(),
+                                                    engine=self.engine_cls,
                                                            )
             await asyncio.gather(*(aiofiles.os.unlink(f)
                                    for f in parts_to_remove
