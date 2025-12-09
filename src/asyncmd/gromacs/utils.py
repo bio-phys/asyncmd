@@ -18,6 +18,7 @@ This file implements gromacs-specific variants of the utility functions related 
 The general variants of these functions can be found in asyncmd.utils.
 """
 import os
+import math
 import logging
 import aiofiles.os
 
@@ -58,12 +59,12 @@ def nstout_from_mdp(mdp: MDP, traj_type: str = "TRR") -> int:
             v = mdp[k]
         except KeyError:
             # not set, defaults to 0
-            v = float("inf")
+            v = math.inf
         else:
-            # need to check for 0 (== no output!) in case somone puts the
+            # need to check for 0 (== no output!) in case someone puts the
             # defaults (or reads an mdout.mdp where gmx lists all the defaults)
             if not v:
-                v = float("inf")
+                v = math.inf
         return v
 
     if traj_type.upper() == "TRR":
@@ -75,7 +76,7 @@ def nstout_from_mdp(mdp: MDP, traj_type: str = "TRR") -> int:
     vals = []
     for k in keys:
         vals += [get_value_from_mdp(k=k)]
-    if (nstout := min(vals)) == float("inf"):
+    if (nstout := min(vals)) == math.inf:
         raise ValueError(f"The MDP you passed results in no {traj_type} "
                          + "trajectory output.")
     if traj_type.upper == "TRR":
@@ -83,7 +84,7 @@ def nstout_from_mdp(mdp: MDP, traj_type: str = "TRR") -> int:
         # (if they are defined)
         additional_keys = ["nstvout", "nstfout"]
         for k in additional_keys:
-            if (v := get_value_from_mdp(k=k)) != float("inf"):
+            if (v := get_value_from_mdp(k=k)) != math.inf:
                 if v % nstout:
                     logger.warning("%s trajectory output is not a multiple of "
                                    "the nstxout frequency (%s=%d, nstxout=%d).",
@@ -136,7 +137,7 @@ async def get_all_file_parts(folder: str, deffnm: str, file_ending: str) -> "lis
     deffnm : str
         deffnm (prefix of filenames) used in the simulation.
     file_ending : str
-        File ending of the requested filetype (with or without preceeding ".").
+        File ending of the requested filetype (with or without preceding ".").
 
     Returns
     -------
