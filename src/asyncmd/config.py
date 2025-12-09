@@ -315,6 +315,9 @@ def deregister_h5py_cache(h5py_group: "h5py.Group | h5py.File"):
         _deregister_h5py_cache_for_all_trajectories(h5py_group=h5py_group)
     if _GLOBALS.get(_GLOBALS_KEYS.H5PY_CACHE, None) is h5py_group:
         _GLOBALS[_GLOBALS_KEYS.H5PY_CACHE] = None
+        logger.warning("Deregistered global writeable h5py cache. No TrajectoryFunction"
+                       " values will be cached until a new h5py cache has been registered."
+                       )
     if h5py_group in _GLOBALS.get(_GLOBALS_KEYS.H5PY_CACHE_READ_ONLY_FALLBACKS, []):
         _GLOBALS[_GLOBALS_KEYS.H5PY_CACHE_READ_ONLY_FALLBACKS].remove(h5py_group)
 
