@@ -69,7 +69,7 @@ def set_all_slurm_settings(*, sinfo_executable: str = "sinfo",
         List of nodes to exclude in job submissions, by default None, which
         results in no excluded nodes.
     """
-    # pylint: disable-next=global-variable-not-assigned
+    # pylint: disable-next=global-statement
     global SlurmProcess
     SlurmProcess.slurm_cluster_mediator = SlurmClusterMediator(
                     sinfo_executable=sinfo_executable,
@@ -124,7 +124,7 @@ def set_slurm_settings(*, sinfo_executable: str | None = None,
         List of nodes to exclude in job submissions, by default None, which
         results in no excluded nodes.
     """
-    # pylint: disable-next=global-variable-not-assigned
+    # pylint: disable-next=global-statement
     global SlurmProcess
     # collect options for slurm cluster mediator
     mediator_options: dict[str, str | int | list[str]] = {}

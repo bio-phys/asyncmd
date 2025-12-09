@@ -64,7 +64,7 @@ def set_max_process(num: int | None = None, max_num: int | None = None) -> None:
         spawning hundreds of processes.
     """
     # NOTE: I think we should use a conservative default, e.g. 0.25*cpu_count()
-    # pylint: disable-next=global-variable-not-assigned
+    # pylint: disable-next=global-statement
     global _SEMAPHORES
     if num is None:
         if (logical_cpu_count := os.cpu_count()) is not None:
@@ -107,7 +107,7 @@ def set_max_files_open(num: int | None = None, margin: int = 30) -> None:
     # semaphores from non-async code, but sometimes use the sync subprocess.run
     # and subprocess.check_call [which also need files/pipes to work])
     # also maybe we need other open files like a storage :)
-    # pylint: disable-next=global-variable-not-assigned
+    # pylint: disable-next=global-statement
     global _SEMAPHORES
     rlim_soft = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
     if num is None:
@@ -157,7 +157,7 @@ def set_slurm_max_jobs(num: int | None) -> None:
         The maximum number of simultaneous SLURM jobs for this invocation of
         python/asyncmd. `None` means do not limit the maximum number of jobs.
     """
-    # pylint: disable-next=global-variable-not-assigned
+    # pylint: disable-next=global-statement
     global _OPT_SEMAPHORES
     if num is None:
         _OPT_SEMAPHORES[_OPT_SEMAPHORES_KEYS.SLURM_MAX_JOB] = None
@@ -195,7 +195,7 @@ def set_trajectory_cache_type(cache_type: str,
     ValueError
         Raised if ``cache_type`` is not one of the allowed values.
     """
-    # pylint: disable-next=global-variable-not-assigned
+    # pylint: disable-next=global-statement
     global _GLOBALS
     allowed_values = ["h5py", "npz", "memory"]
     if (cache_type := cache_type.lower()) not in allowed_values:
@@ -252,7 +252,7 @@ def register_h5py_cache(h5py_group: "h5py.Group | h5py.File", copy_h5py: bool = 
     clear_old_cache : bool, optional
         Whether to clear the old/previously set cache, by default False.
     """
-    # pylint: disable-next=global-variable-not-assigned
+    # pylint: disable-next=global-statement
     global _GLOBALS
     if _GLOBALS.get(_GLOBALS_KEYS.TRAJECTORY_FUNCTION_CACHE_TYPE, "not_set") != "h5py":
         # nothing to copy as h5py was not the old cache type
