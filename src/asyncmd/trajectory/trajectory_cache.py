@@ -500,9 +500,13 @@ class TrajectoryFunctionValueCacheInH5PY(TrajectoryFunctionValueCache):
                 )
         # setup (writeable) main cache if we have it
         if writeable_h5py_cache is None:
-            logger.warning("Initializing a Trajectory cache in h5py with only "
-                           "read-only h5py.Groups associated. Newly calculated "
-                           "function values will not be cached!")
+            # This can spam the log, because it happens once per trajectory that is
+            # read from a read-only storage, e.g. for analysis
+            logger.debug("Initializing h5py Trajectory cache with only "
+                         "read-only h5py.Groups associated. Newly calculated "
+                         "function values will not be cached! (trajectory files=%s)",
+                         traj_files,
+                         )
             self._main_cache = None
         else:
             self._main_cache = OneH5PYGroupTrajectoryFunctionValueCache(
@@ -542,10 +546,16 @@ class TrajectoryFunctionValueCacheInH5PY(TrajectoryFunctionValueCache):
         """
         if self._main_cache is not None:
             if self._main_cache.h5py_cache is h5py_cache:
-                logger.warning(
-                    "Deregistering the writeable (main) cache (%s). "
-                    "Newly calculated function values will not be cached!",
-                    h5py_cache
+                # This can spam the log, because it happens once per trajectory
+                # in existence when closing/deregistering a h5py cache.
+                # We warn once when deregistering the h5py cache (in central config.py)
+                # and use debug here for now
+                logger.debug(
+                    "Deregistering the writeable (main) cache (%s) for Trajectory "
+                    "consisting of files %s."
+                    "Newly calculated function values will not be cached until "
+                    "a new h5py cache group is registered or the cache type changed!",
+                    h5py_cache, self._traj_files,
                     )
                 self._main_cache = None
                 # found it so it can not be a fallback_cache, so get out of here

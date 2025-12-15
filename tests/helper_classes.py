@@ -28,13 +28,14 @@ class NoOpMDEngine(MDEngine):
     current_trajectory = None
     output_traj_type = "TEST"
     steps_done = 0
-    async def apply_constraints(self, conf_in: Trajectory, conf_out_name: str) -> Trajectory:
+    async def apply_constraints(self, conf_in: Trajectory, conf_out_name: str,
+                                *, workdir: str = ".") -> Trajectory:
         pass
     async def prepare(self, starting_configuration: Trajectory, workdir: str, deffnm: str) -> None:
         pass
     async def prepare_from_files(self, workdir: str, deffnm: str) -> None:
         pass
-    async def run_walltime(self, walltime: float) -> Trajectory:
+    async def run_walltime(self, walltime: float, max_steps: int | None = None) -> Trajectory:
         pass
     async def run_steps(self, nsteps: int, steps_per_part: bool = False) -> Trajectory:
         pass

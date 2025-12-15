@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- all `asyncmd.utils` methods now require a MDEngine (class) to dispatch to the correct engine submodule methods
 - GmxEngine `apply_constraints` and `generate_velocities` methods: rename `wdir` argument to `workdir` to make it consistent with `prepare` and `prepare_from_files` (also add the `workdir` argument to the MDEngine ABC).
 
 ### Fixed

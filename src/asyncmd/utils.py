@@ -20,6 +20,8 @@ to a given engine, naming scheme, and/or file-ending.
 It also includes various functions to retrieve or ensure important parameters from
 MDConfig/MDEngine combinations, such as nstout_from_mdconfig and ensure_mdconfig_options.
 """
+import logging
+
 from .mdengine import MDEngine
 from .mdconfig import MDConfig
 from .trajectory.trajectory import Trajectory
@@ -28,7 +30,11 @@ from .gromacs import mdengine as gmx_engine
 from .gromacs import mdconfig as gmx_config
 
 
-async def get_all_traj_parts(folder: str, deffnm: str, engine: MDEngine) -> list[Trajectory]:
+logger = logging.getLogger(__name__)
+
+
+async def get_all_traj_parts(folder: str, deffnm: str, engine: MDEngine | type[MDEngine],
+                             ) -> list[Trajectory]:
     """
     List all trajectories in folder by given engine class with given deffnm.
 
@@ -37,10 +43,12 @@ async def get_all_traj_parts(folder: str, deffnm: str, engine: MDEngine) -> list
     folder : str
         Absolute or relative path to a folder.
     deffnm : str
-        deffnm used by the engines simulation run from which we want the trajs.
-    engine : MDEngine
-        The engine that produced the trajectories
-        (or one from the same class and with similar init args)
+        deffnm used by the engines simulation run from which we want the trajectories.
+    engine : MDEngine | type[MDEngine]
+        The engine that produced the trajectories (or one from the same class
+        and with similar init args). Note that it is also possible to pass an
+        uninitialized engine class, but then the default trajectory output type
+        will be returned.
 
     Returns
     -------
@@ -52,7 +60,17 @@ async def get_all_traj_parts(folder: str, deffnm: str, engine: MDEngine) -> list
     ValueError
         Raised when the engine class is unknown.
     """
-    if isinstance(engine, (gmx_engine.GmxEngine, gmx_engine.SlurmGmxEngine)):
+    # test for uninitialized engine classes, we warn but return the default traj type
+    if isinstance(engine, type) and issubclass(engine, MDEngine):
+        logger.warning("Engine %s is not initialized, i.e. it is an engine class. "
+                       "Returning the default output trajectory type for this "
+                       "engine class.", engine)
+    if (
+        isinstance(engine, (gmx_engine.GmxEngine, gmx_engine.SlurmGmxEngine))
+        or (isinstance(engine, type)  # check that it is a type otherwise issubclass might not work
+            and issubclass(engine, (gmx_engine.GmxEngine, gmx_engine.SlurmGmxEngine))
+            )
+    ):
         return await gmx_utils.get_all_traj_parts(folder=folder, deffnm=deffnm,
                                                   traj_type=engine.output_traj_type,
                                                   )
@@ -61,6 +79,7 @@ async def get_all_traj_parts(folder: str, deffnm: str, engine: MDEngine) -> list
 
 
 async def get_all_file_parts(folder: str, deffnm: str, file_ending: str,
+                             engine: MDEngine | type[MDEngine],
                              ) -> list[str]:
     """
     Find and return all files with given ending produced by a `MDEngine`.
@@ -75,16 +94,24 @@ async def get_all_file_parts(folder: str, deffnm: str, file_ending: str,
         deffnm (prefix of filenames) used in the simulation.
     file_ending : str
         File ending of the requested filetype (with or without preceding ".").
+    engine : MDEngine | type[MDEngine]
+        The engine or engine class that produced the file parts.
 
     Returns
     -------
     list[str]
         Ordered list of filepaths for files with given ending.
     """
-    # TODO: we just use the function from the gromacs engines for now, i.e. we
-    #       assume that the filename scheme will be the same for other engines
-    return await gmx_utils.get_all_file_parts(folder=folder, deffnm=deffnm,
-                                              file_ending=file_ending)
+    if (
+        isinstance(engine, (gmx_engine.GmxEngine, gmx_engine.SlurmGmxEngine))
+        or (isinstance(engine, type)  # check that it is a type otherwise issubclass might not work
+            and issubclass(engine, (gmx_engine.GmxEngine, gmx_engine.SlurmGmxEngine))
+            )
+    ):
+        return await gmx_utils.get_all_file_parts(folder=folder, deffnm=deffnm,
+                                                  file_ending=file_ending)
+    raise ValueError(f"Engine {engine} is not a known MDEngine (class)."
+                     + " Maybe someone just forgot to add the function?")
 
 
 def nstout_from_mdconfig(mdconfig: MDConfig, output_traj_type: str) -> int:

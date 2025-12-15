@@ -508,8 +508,8 @@ class GmxEngine(MDEngine):
                                           k=6,
                                           )
                            )
-        swdir = os.path.join(wdir, run_name)
-        await aiofiles.os.mkdir(swdir)
+        wdir = os.path.join(wdir, run_name)
+        await aiofiles.os.mkdir(wdir)
         constraints_mdp = copy.deepcopy(self.mdp)
         constraints_mdp["continuation"] = "no" if constraints else "yes"
         constraints_mdp["gen-vel"] = "yes" if generate_velocities else "no"
@@ -523,12 +523,12 @@ class GmxEngine(MDEngine):
             # make sure we have draw a new/different random number for gen-vel
             constraints_mdp["gen-seed"] = -1
         constraints_mdp["nsteps"] = 0
-        await self._run_grompp(workdir=swdir, deffnm=run_name,
+        await self._run_grompp(workdir=wdir, deffnm=run_name,
                                trr_in=conf_in.trajectory_files[0],
-                               tpr_out=os.path.join(swdir, f"{run_name}.tpr"),
+                               tpr_out=os.path.join(wdir, f"{run_name}.tpr"),
                                mdp_obj=constraints_mdp)
-        cmd_str = self._mdrun_cmd(tpr=os.path.join(swdir, f"{run_name}.tpr"),
-                                  workdir=swdir,
+        cmd_str = self._mdrun_cmd(tpr=os.path.join(wdir, f"{run_name}.tpr"),
+                                  workdir=wdir,
                                   deffnm=run_name)
         logger.debug("About to execute gmx mdrun command for constraints and"
                      "/or velocity generation: %s",
@@ -537,7 +537,7 @@ class GmxEngine(MDEngine):
         stdout = bytes()
         await self._acquire_resources_gmx_mdrun()
         mdrun_proc = await self._start_gmx_mdrun(
-                        cmd_str=cmd_str, workdir=swdir,
+                        cmd_str=cmd_str, workdir=wdir,
                         run_name=run_name,
                         # TODO: we hardcode that the 0step MD runs can not be longer than 15 min
                         # (but i think this should be fine for randomizing velocities and/or
@@ -563,7 +563,7 @@ class GmxEngine(MDEngine):
             # the FrameExtractor (i.e. MDAnalysis) handle any potential conversions
             engine_traj = Trajectory(
                             trajectory_files=os.path.join(
-                                swdir, f"{run_name}{self._num_suffix(1)}.trr"
+                                wdir, f"{run_name}{self._num_suffix(1)}.trr"
                                 ),
                             structure_file=conf_in.structure_file,
                             )
@@ -571,17 +571,17 @@ class GmxEngine(MDEngine):
             # Note: we use extract (and not extract_async) because otherwise
             #       it can happen in super-rare circumstances that the Trajectory
             #       we just instantiated is "replaced" by a Trajectory with the
-            #       same hash but a different filename/path, then the extraction
+            #       same hash but a different filename/path. If then in addition
+            #       this trajectory is removed before extracting, the extraction
             #       fails. If we dont await this can not happen since we do not
             #       give up control in between.
-            out_traj = extractor.extract(outfile=conf_out_name,
-                                         traj_in=engine_traj,
-                                         idx=len(engine_traj) - 1,
-                                         )
-            return out_traj
+            return extractor.extract(outfile=conf_out_name,
+                                     traj_in=engine_traj,
+                                     idx=len(engine_traj) - 1,
+                                     )
         finally:
-            await self._cleanup_gmx_mdrun(workdir=swdir, run_name=run_name)
-            shutil.rmtree(swdir)  # remove the whole directory we used as wdir
+            await self._cleanup_gmx_mdrun(workdir=wdir, run_name=run_name)
+            shutil.rmtree(wdir)  # remove the whole directory we used as wdir
 
     async def prepare(self, starting_configuration: Trajectory | None | str,
                       workdir: str, deffnm: str) -> None:
