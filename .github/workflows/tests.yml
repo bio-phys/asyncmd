@@ -37,7 +37,7 @@ jobs:
           conda-remove-defaults: true
       - name: Install
         run: |
-          conda install gromacs
+          conda install "gromacs<=2025"
           python -m pip install -e .\[tests-all\]
       - name: List versions
         run: |
