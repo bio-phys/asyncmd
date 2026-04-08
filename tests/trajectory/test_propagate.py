@@ -15,6 +15,7 @@
 import pytest
 import logging
 import os
+from packaging.version import Version
 
 import numpy as np
 import MDAnalysis as mda
@@ -219,9 +220,32 @@ class Test_InPartsTrajectoryPropagator:
         n_files_beauty = 3
         # and we should have 0-2 concatenated out-trajs in the directory
         # depending on how many times we ran with n_steps != 0
-        # for each run/out_traj we the hidden offsets file and the hidden lock
-        # file from mdanalysis
-        n_files_beauty += sum(3 * int(steps != 0)
+        # for each run/out_traj we have the hidden offsets file and the hidden
+        # lock file from mdanalysis XDR-reader/writer depending on the MDAnalysis
+        # and filelock versions, so first figure out the filelock/mdanalysis version:
+        # - filelock is used since mdanalysis 2.9.0 (before that fasteners since
+        #    mda version 2.2.0 and fasteners does not remove lock files)
+        # - filelock removes lockfiles on win with filelock version >= 3.25.1
+        # - filelock removes lockfiles on unix with filelock version >= 3.20.4
+        try:
+            import filelock
+        except ImportError:
+            # filelock not installed so mdanalysis version < 2.9
+            # if mda version >= 2.2.0 we have lockfiles
+            files_per_traj = (3 if Version(mda.__version__) >= Version("2.2.0")
+                              else 2)
+        else:
+            # lockfile used instead of fasteners
+            if os.name == "posix":
+                files_per_traj = (
+                    2 if Version(filelock.__version__) >= Version("3.20.4")
+                    else 3)
+            elif os.name == "nt":
+                files_per_traj = (
+                    2 if Version(filelock.__version__) >= Version("3.25.1")
+                    else 3)
+        # now the actual tests
+        n_files_beauty += sum(files_per_traj * int(steps != 0)
                               for steps in [n_steps, continuation_n_steps]
                               )
         # the times we actually did a call to gmx mdrun, i.e. for the cases
