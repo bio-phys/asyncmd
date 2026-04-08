@@ -11,6 +11,7 @@ SlurmTrajectoryFunctionWrapper <02_TrajectoryFunctionWrappers/SlurmTrajectoryFun
 InPartsTrajectoryPropagator <03_trajectory_propagation_and_subtrajectory_extraction/InPartsTrajectoryPropagator>
 ConditionalTrajectoryPropagator <03_trajectory_propagation_and_subtrajectory_extraction/ConditionalTrajectoryPropagator>
 FrameExtractors <03_trajectory_propagation_and_subtrajectory_extraction/FrameExtractors>
+UmbrellaSampling <04_application_examples/UmbrellaSampling>
 WeightedEnsemble <04_application_examples/WeightedEnsemble>
 SlurmProcess <05_developer_topics/slurm/SlurmProcess>
 ```
@@ -43,6 +44,8 @@ How to use the molecular dynamics engines in `asyncmd`. The subfolders are for t
 ## `04_application_examples`
 
 Some example implementations of various enhanced sampling schemes or other useful applications of `asyncmd`. Currently in here:
+
+- {doc}`UmbrellaSampling <04_application_examples/UmbrellaSampling>`: Progressively populate the windows of an Umbrella Sampling simulation along a 1D collective variable starting from a configuration in a metastable state.
 
 - {doc}`WeightedEnsemble <04_application_examples/WeightedEnsemble>`: A simple implementation of the weighted ensemble method along one arbitrary ensemble CV possibly using unequal bin sizes.
 
