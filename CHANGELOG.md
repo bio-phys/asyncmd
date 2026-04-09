@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Umbrella Sampling example notebook: progressively populate the windows of an Umbrella Sampling simulation along a 1D collective variable
 - Link to [publication in Journal of Open Source Software](https://doi.org/10.21105/joss.08321)
 
 ### Changed
