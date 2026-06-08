@@ -38,7 +38,7 @@ jobs:
           path: ~/conda_pkgs_dir
           key:
             ${{ runner.os }}-python-${{ matrix.python-version }}-conda-${{ env.CACHE_NUMBER }}-${{
-            hashFiles('setup.py') }}
+            hashFiles('pyproject.toml') }}
       - uses: conda-incubator/setup-miniconda@v4
         with:
           auto-update-conda: true
