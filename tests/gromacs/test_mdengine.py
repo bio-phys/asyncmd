@@ -15,6 +15,7 @@
 import pytest
 import os
 import logging
+import asyncio
 
 import numpy as np
 import MDAnalysis as mda
@@ -33,7 +34,9 @@ class Test_GmxEngine:
         self.gro = "tests/test_data/gromacs/conf.gro"
         self.ndx = "tests/test_data/gromcas/index.ndx"
         self.top = "tests/test_data/gromacs/topol_amber99sbildn.top"
-        self.mdp_md_compressed_out = MDP("tests/test_data/gromacs/md_compressed_out.mdp")
+        self.mdp_md_compressed_out = MDP(
+            "tests/test_data/gromacs/md_compressed_out.mdp"
+        )
         self.mdp_md_full_prec_out = MDP("tests/test_data/gromacs/md_full_prec_out.mdp")
 
     @pytest.mark.parametrize("integrator", ["steep", "cg", "l-bfgs"])
@@ -41,11 +44,15 @@ class Test_GmxEngine:
         # init an engine so we can use its mdconfig property (which does the checks)
         with monkeypatch.context() as m:
             # monkeypatch so we dont need to find a gromacs executable
-            m.setattr("asyncmd.gromacs.mdengine.ensure_executable_available",
-                      lambda _: "/usr/bin/true")
-            engine = GmxEngine(mdconfig=self.mdp_md_compressed_out,
-                               gro_file=self.gro,
-                               top_file=self.top)
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=self.mdp_md_compressed_out,
+                gro_file=self.gro,
+                top_file=self.top,
+            )
         self.mdp_md_compressed_out["integrator"] = integrator
         with pytest.raises(ValueError):
             engine.mdp = self.mdp_md_compressed_out
@@ -58,11 +65,15 @@ class Test_GmxEngine:
         # init an engine so we can use its mdconfig property (which does the checks)
         with monkeypatch.context() as m:
             # monkeypatch so we dont need to find a gromacs executable
-            m.setattr("asyncmd.gromacs.mdengine.ensure_executable_available",
-                      lambda _: "/usr/bin/true")
-            engine = GmxEngine(mdconfig=self.mdp_md_compressed_out,
-                               gro_file=self.gro,
-                               top_file=self.top)
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=self.mdp_md_compressed_out,
+                gro_file=self.gro,
+                top_file=self.top,
+            )
         # check that an nsteps value that is not -1 (but set) is changed
         self.mdp_md_compressed_out["nsteps"] = 100
         with caplog.at_level(logging.INFO):
@@ -88,57 +99,71 @@ class Test_GmxEngine:
         # init should already fail
         with monkeypatch.context() as m:
             # monkeypatch so we dont need to find a gromacs executable
-            m.setattr("asyncmd.gromacs.mdengine.ensure_executable_available",
-                      lambda _: "/usr/bin/true")
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
             with pytest.raises(TypeError):
-                engine = GmxEngine(mdconfig=None,
-                                   gro_file=self.gro,
-                                   top_file=self.top)
+                engine = GmxEngine(mdconfig=None, gro_file=self.gro, top_file=self.top)
 
-    @pytest.mark.parametrize(["conversion_factor", "raises"],
-                             [(-1., True),
-                              (1.1, True),
-                              (0., True),
-                              (0.9, False),
-                              (0.1, False),
-                              ]
-                             )
+    @pytest.mark.parametrize(
+        ["conversion_factor", "raises"],
+        [
+            (-1.0, True),
+            (1.1, True),
+            (0.0, True),
+            (0.9, False),
+            (0.1, False),
+        ],
+    )
     def test_check_valid_and_invalid_mdrun_time_conversion_factor(
-                    self, monkeypatch, conversion_factor, raises,
-                    ):
+        self,
+        monkeypatch,
+        conversion_factor,
+        raises,
+    ):
         with monkeypatch.context() as m:
             # monkeypatch so we dont need to find a gromacs executable
-            m.setattr("asyncmd.gromacs.mdengine.ensure_executable_available",
-                      lambda _: "/usr/bin/true")
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
             if raises:
                 # init should already fail
                 with pytest.raises(ValueError):
-                    engine = GmxEngine(mdconfig=self.mdp_md_compressed_out,
-                                       gro_file=self.gro,
-                                       top_file=self.top,
-                                       mdrun_time_conversion_factor=conversion_factor,
-                                       )
+                    engine = GmxEngine(
+                        mdconfig=self.mdp_md_compressed_out,
+                        gro_file=self.gro,
+                        top_file=self.top,
+                        mdrun_time_conversion_factor=conversion_factor,
+                    )
             else:
-                engine = GmxEngine(mdconfig=self.mdp_md_compressed_out,
-                                   gro_file=self.gro,
-                                   top_file=self.top,
-                                   mdrun_time_conversion_factor=conversion_factor,
-                                   )
+                engine = GmxEngine(
+                    mdconfig=self.mdp_md_compressed_out,
+                    gro_file=self.gro,
+                    top_file=self.top,
+                    mdrun_time_conversion_factor=conversion_factor,
+                )
                 assert engine.mdrun_time_conversion_factor == conversion_factor
 
-    @pytest.mark.parametrize(["output_traj_type", "raises"],
-                             [("NOT_A_TRAJ_TYPE", True),
-                              ("also not a traj type", True),
-                              ("neither", True),
-                              ("xtc", False),
-                              ("XTC", False),
-                              ("trr", False),
-                              ("TRR", False),
-                              ]
-                             )
+    @pytest.mark.parametrize(
+        ["output_traj_type", "raises"],
+        [
+            ("NOT_A_TRAJ_TYPE", True),
+            ("also not a traj type", True),
+            ("neither", True),
+            ("xtc", False),
+            ("XTC", False),
+            ("trr", False),
+            ("TRR", False),
+        ],
+    )
     def test_check_valid_and_invalid_output_traj_type(
-                    self, monkeypatch, output_traj_type, raises,
-                    ):
+        self,
+        monkeypatch,
+        output_traj_type,
+        raises,
+    ):
         if output_traj_type.lower() == "trr":
             # use a MDP that has trajectory output configured for TRR
             mdconfig = self.mdp_md_full_prec_out
@@ -148,40 +173,48 @@ class Test_GmxEngine:
             mdconfig = self.mdp_md_compressed_out
         with monkeypatch.context() as m:
             # monkeypatch so we dont need to find a gromacs executable
-            m.setattr("asyncmd.gromacs.mdengine.ensure_executable_available",
-                      lambda _: "/usr/bin/true")
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
             if raises:
                 with pytest.raises(ValueError):
                     # init should already fail
-                    engine = GmxEngine(mdconfig=mdconfig,
-                                       gro_file=self.gro,
-                                       top_file=self.top,
-                                       output_traj_type=output_traj_type,
-                                       )
+                    engine = GmxEngine(
+                        mdconfig=mdconfig,
+                        gro_file=self.gro,
+                        top_file=self.top,
+                        output_traj_type=output_traj_type,
+                    )
             else:
-                engine = GmxEngine(mdconfig=mdconfig,
-                                   gro_file=self.gro,
-                                   top_file=self.top,
-                                   output_traj_type=output_traj_type,
-                                   )
+                engine = GmxEngine(
+                    mdconfig=mdconfig,
+                    gro_file=self.gro,
+                    top_file=self.top,
+                    output_traj_type=output_traj_type,
+                )
                 assert engine.output_traj_type == output_traj_type.lower()
 
     @pytest.mark.slow
     @needs_gmx_install
-    @pytest.mark.parametrize("starting_conf",
-                             [None,
-                              Trajectory("tests/test_data/trajectory/ala_traj.trr",
-                                         "tests/test_data/trajectory/ala.tpr")
-                              ]
-                             )
+    @pytest.mark.parametrize(
+        "starting_conf",
+        [
+            None,
+            Trajectory(
+                "tests/test_data/trajectory/ala_traj.trr",
+                "tests/test_data/trajectory/ala.tpr",
+            ),
+        ],
+    )
     @pytest.mark.asyncio
     async def test_run_MD_compressed_out(self, tmp_path, starting_conf):
-        engine = GmxEngine(mdconfig=self.mdp_md_compressed_out,
-                           gro_file=self.gro,
-                           top_file=self.top)
-        await engine.prepare(starting_configuration=starting_conf,
-                             workdir=tmp_path,
-                             deffnm="test")
+        engine = GmxEngine(
+            mdconfig=self.mdp_md_compressed_out, gro_file=self.gro, top_file=self.top
+        )
+        await engine.prepare(
+            starting_configuration=starting_conf, workdir=tmp_path, deffnm="test"
+        )
         nsteps = 10
         traj = await engine.run(nsteps=nsteps)
         # some basic checks
@@ -191,21 +224,27 @@ class Test_GmxEngine:
 
     @pytest.mark.slow
     @needs_gmx_install
-    @pytest.mark.parametrize("starting_conf",
-                             [None,
-                              Trajectory("tests/test_data/trajectory/ala_traj.trr",
-                                         "tests/test_data/trajectory/ala.tpr")
-                              ]
-                             )
+    @pytest.mark.parametrize(
+        "starting_conf",
+        [
+            None,
+            Trajectory(
+                "tests/test_data/trajectory/ala_traj.trr",
+                "tests/test_data/trajectory/ala.tpr",
+            ),
+        ],
+    )
     @pytest.mark.asyncio
     async def test_run_MD_full_prec_out(self, tmp_path, starting_conf):
-        engine = GmxEngine(mdconfig=self.mdp_md_full_prec_out,
-                           gro_file=self.gro,
-                           top_file=self.top,
-                           output_traj_type="trr")
-        await engine.prepare(starting_configuration=starting_conf,
-                             workdir=tmp_path,
-                             deffnm="test")
+        engine = GmxEngine(
+            mdconfig=self.mdp_md_full_prec_out,
+            gro_file=self.gro,
+            top_file=self.top,
+            output_traj_type="trr",
+        )
+        await engine.prepare(
+            starting_configuration=starting_conf, workdir=tmp_path, deffnm="test"
+        )
         nsteps = 10
         traj = await engine.run(nsteps=nsteps)
         # some basic checks
@@ -217,16 +256,18 @@ class Test_GmxEngine:
     @needs_gmx_install
     @pytest.mark.asyncio
     async def test_generate_velocities(self, tmp_path):
-        initial_conf = Trajectory("tests/test_data/trajectory/ala_traj.trr",
-                                  "tests/test_data/trajectory/ala.tpr")
-        engine = GmxEngine(mdconfig=self.mdp_md_compressed_out,
-                           gro_file=self.gro,
-                           top_file=self.top)
+        initial_conf = Trajectory(
+            "tests/test_data/trajectory/ala_traj.trr",
+            "tests/test_data/trajectory/ala.tpr",
+        )
+        engine = GmxEngine(
+            mdconfig=self.mdp_md_compressed_out, gro_file=self.gro, top_file=self.top
+        )
         new_conf = await engine.generate_velocities(
-                                    conf_in=initial_conf,
-                                    conf_out_name=os.path.join(tmp_path, "out.trr"),
-                                    workdir=tmp_path,
-                                    )
+            conf_in=initial_conf,
+            conf_out_name=os.path.join(tmp_path, "out.trr"),
+            workdir=tmp_path,
+        )
         # TODO: this is essentially a smoke test...
         #       ... what else can we test for except the length?!
         assert len(new_conf) == 1
@@ -235,16 +276,610 @@ class Test_GmxEngine:
     @needs_gmx_install
     @pytest.mark.asyncio
     async def test_apply_constraints(self, tmp_path):
-        initial_conf = Trajectory("tests/test_data/trajectory/ala_traj.trr",
-                                  "tests/test_data/trajectory/ala.tpr")
-        engine = GmxEngine(mdconfig=self.mdp_md_compressed_out,
-                           gro_file=self.gro,
-                           top_file=self.top)
+        initial_conf = Trajectory(
+            "tests/test_data/trajectory/ala_traj.trr",
+            "tests/test_data/trajectory/ala.tpr",
+        )
+        engine = GmxEngine(
+            mdconfig=self.mdp_md_compressed_out, gro_file=self.gro, top_file=self.top
+        )
         new_conf = await engine.apply_constraints(
-                                    conf_in=initial_conf,
-                                    conf_out_name=os.path.join(tmp_path, "out.trr"),
-                                    workdir=tmp_path,
-                                    )
+            conf_in=initial_conf,
+            conf_out_name=os.path.join(tmp_path, "out.trr"),
+            workdir=tmp_path,
+        )
         # TODO: this is essentially a smoke test...
         #       ... what else can we test for except the length?!
         assert len(new_conf) == 1
+
+
+class Test_GmxEngine_PropertySetters:
+    @pytest.mark.parametrize(
+        ["gro_file", "raises"],
+        [
+            ("tests/test_data/gromacs/conf.gro", False),
+            ("tests/test_data/gromacs/NON_EXISTING.gro", True),
+        ],
+    )
+    def test_gro_file_validator(self, gro_file, raises, monkeypatch):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            if raises:
+                with pytest.raises(FileNotFoundError):
+                    _ = GmxEngine(
+                        mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                        gro_file=gro_file,
+                        top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+                    )
+            else:
+                engine = GmxEngine(
+                    mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                    gro_file=gro_file,
+                    top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+                )
+                assert engine.gro_file == os.path.relpath(gro_file)
+
+    @pytest.mark.parametrize(
+        ["top_file", "raises"],
+        [
+            ("tests/test_data/gromacs/topol_amber99sbildn.top", False),
+            ("tests/test_data/gromacs/NON_EXISTING.top", True),
+        ],
+    )
+    def test_top_file_validator(self, top_file, raises, monkeypatch):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            if raises:
+                with pytest.raises(FileNotFoundError):
+                    _ = GmxEngine(
+                        mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                        gro_file="tests/test_data/gromacs/conf.gro",
+                        top_file=top_file,
+                    )
+            else:
+                engine = GmxEngine(
+                    mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                    gro_file="tests/test_data/gromacs/conf.gro",
+                    top_file=top_file,
+                )
+                assert engine.top_file == os.path.relpath(top_file)
+
+    @pytest.mark.parametrize(
+        ["ndx_file", "raises"],
+        [
+            ("tests/test_data/gromacs/index.ndx", False),
+            (None, False),
+            ("tests/test_data/gromacs/NON_EXISTING.ndx", True),
+        ],
+    )
+    def test_ndx_file_validator(self, ndx_file, raises, monkeypatch):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            if raises:
+                with pytest.raises(FileNotFoundError):
+                    _ = GmxEngine(
+                        mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                        gro_file="tests/test_data/gromacs/conf.gro",
+                        top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+                        ndx_file=ndx_file,
+                    )
+            else:
+                engine = GmxEngine(
+                    mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                    gro_file="tests/test_data/gromacs/conf.gro",
+                    top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+                    ndx_file=ndx_file,
+                )
+                if ndx_file is None:
+                    assert engine.ndx_file is None
+                else:
+                    assert engine.ndx_file == os.path.relpath(ndx_file)
+
+    @pytest.mark.parametrize(
+        ["workdir", "raises"],
+        [
+            ("tests/test_data", False),
+            ("tests/test_data/gromacs", False),
+            ("tests/test_data/gromacs/conf.gro", True),
+            ("tests/test_data/NON_EXISTING_DIR", True),
+        ],
+    )
+    def test_workdir_validator(self, workdir, raises, monkeypatch):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+            )
+            if raises:
+                with pytest.raises(TypeError):
+                    engine.workdir = workdir
+            else:
+                engine.workdir = workdir
+                assert engine.workdir == os.path.relpath(workdir)
+
+    @pytest.mark.parametrize(
+        ["output_traj_type", "raises"],
+        [
+            ("xtc", False),
+            ("XTC", False),
+            ("trr", False),
+            ("TRR", False),
+            ("NOT_A_TRAJ_TYPE", True),
+            ("also not a traj type", True),
+            ("neither", True),
+        ],
+    )
+    def test_output_traj_type_validator(self, monkeypatch, output_traj_type, raises):
+        if output_traj_type.lower() == "trr":
+            mdconfig = MDP("tests/test_data/gromacs/md_full_prec_out.mdp")
+        else:
+            mdconfig = MDP("tests/test_data/gromacs/md_compressed_out.mdp")
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            if raises:
+                with pytest.raises(ValueError):
+                    _ = GmxEngine(
+                        mdconfig=mdconfig,
+                        gro_file="tests/test_data/gromacs/conf.gro",
+                        top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+                        output_traj_type=output_traj_type,
+                    )
+            else:
+                engine = GmxEngine(
+                    mdconfig=mdconfig,
+                    gro_file="tests/test_data/gromacs/conf.gro",
+                    top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+                    output_traj_type=output_traj_type,
+                )
+                assert engine.output_traj_type == output_traj_type.lower()
+
+
+class Test_GmxEngine_StateProperties:
+    def test_current_trajectory_none_before_prepare(self, monkeypatch):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+            )
+            assert engine.current_trajectory is None
+
+    def test_state_properties_initial(self, monkeypatch):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+            )
+            assert engine.deffnm is None
+            assert engine.simulation_part == 0
+            assert engine.steps_done == 0
+            assert engine.frames_done == 0
+            assert engine.time_done == 0.0
+
+    @pytest.mark.asyncio
+    async def test_state_properties_after_prepare(self, tmp_path, monkeypatch):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+            )
+        await engine.prepare(
+            starting_configuration=None, workdir=str(tmp_path), deffnm="test"
+        )
+        assert engine.deffnm == "test"
+        assert engine.simulation_part == 0
+        assert engine.steps_done == 0
+        assert engine.frames_done == 0
+        assert engine.time_done == 0.0
+        assert engine.current_trajectory is None
+
+    @pytest.mark.asyncio
+    async def test_state_properties_after_run(self, tmp_path, monkeypatch):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+            )
+        await engine.prepare(
+            starting_configuration=None, workdir=str(tmp_path), deffnm="test"
+        )
+        traj = await engine.run(nsteps=10)
+        assert engine.steps_done == 10
+        assert engine.frames_done == 2
+        assert np.isclose(engine.time_done, 0.02)
+
+
+class Test_GmxEngine_CommandGeneration:
+    def test_grompp_cmd_basic(self, monkeypatch):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+            )
+            engine.workdir = "tests/test_data"
+        cmd = engine._grompp_cmd(
+            mdp_in="tests/test_data/gromacs/md_compressed_out.mdp",
+            tpr_out="tests/test_data/test.tpr",
+            workdir="tests/test_data",
+        )
+        assert "gmx grompp" in cmd
+        assert "-f gromacs/md_compressed_out.mdp" in cmd
+        assert "-c gromacs/conf.gro" in cmd
+        assert "-p gromacs/topol_amber99sbildn.top" in cmd
+        assert "-o test.tpr" in cmd
+
+    def test_grompp_cmd_with_ndx(self, monkeypatch):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+                ndx_file="tests/test_data/gromacs/index.ndx",
+            )
+            engine.workdir = "tests/test_data"
+        cmd = engine._grompp_cmd(
+            mdp_in="tests/test_data/gromacs/md_compressed_out.mdp",
+            tpr_out="tests/test_data/test.tpr",
+            workdir="tests/test_data",
+            trr_in=None,
+        )
+        assert "-n gromacs/index.ndx" in cmd
+
+    def test_grompp_cmd_with_trr_in(self, monkeypatch):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+            )
+            engine.workdir = "tests/test_data"
+        cmd = engine._grompp_cmd(
+            mdp_in="tests/test_data/gromacs/md_compressed_out.mdp",
+            tpr_out="tests/test_data/test.tpr",
+            workdir="tests/test_data",
+            trr_in="tests/test_data/trajectory/ala_traj.trr",
+        )
+        assert "-t trajectory/ala_traj.trr" in cmd
+
+    def test_grompp_cmd_with_mdp_out(self, monkeypatch):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+            )
+            engine.workdir = "tests/test_data"
+        cmd = engine._grompp_cmd(
+            mdp_in="tests/test_data/gromacs/md_compressed_out.mdp",
+            tpr_out="tests/test_data/test.tpr",
+            workdir="tests/test_data",
+            mdp_out="tests/test_data/test_mdout.mdp",
+        )
+        assert "-po test_mdout.mdp" in cmd
+
+    def test_mdrun_cmd_basic(self, monkeypatch):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+            )
+            engine.workdir = "tests/test_data"
+        cmd = engine._mdrun_cmd(
+            tpr="tests/test_data/test.tpr", workdir="tests/test_data", deffnm="test"
+        )
+        assert "gmx mdrun" in cmd
+        assert "-s test.tpr" in cmd
+        assert "-cpi test.cpt" in cmd
+        assert "-o test.trr" in cmd
+        assert "-x test.xtc" in cmd
+        assert "-c test.confout.gro" in cmd
+        assert "-e test.edr" in cmd
+        assert "-g test.log" in cmd
+
+    def test_mdrun_cmd_with_walltime(self, monkeypatch):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+            )
+            engine.workdir = "tests/test_data"
+        cmd = engine._mdrun_cmd(
+            tpr="tests/test_data/test.tpr",
+            workdir="tests/test_data",
+            deffnm="test",
+            maxh=1.0,
+        )
+        assert "-maxh 1.0" in cmd
+
+    def test_mdrun_cmd_with_nsteps(self, monkeypatch):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+            )
+            engine.workdir = "tests/test_data"
+        cmd = engine._mdrun_cmd(
+            tpr="tests/test_data/test.tpr",
+            workdir="tests/test_data",
+            deffnm="test",
+            nsteps=100,
+        )
+        assert "-nsteps 100" in cmd
+
+    def test_mdrun_cmd_with_extra_args(self, monkeypatch):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+                mdrun_extra_args="-ntomp 4",
+            )
+        cmd = engine._mdrun_cmd(
+            tpr="tests/test_data/test.tpr", workdir="tests/test_data", deffnm="test"
+        )
+        assert "-ntomp 4" in cmd
+
+    def test_deffnm_fallback(self, monkeypatch):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+            )
+            engine.workdir = "tests/test_data"
+        cmd = engine._mdrun_cmd(
+            tpr="tests/test_data/test.tpr", workdir="tests/test_data"
+        )
+        assert "-cpi test.cpt" in cmd
+        assert "-cpo test.cpt" in cmd
+        assert "-o test.trr" in cmd
+        assert "-x test.xtc" in cmd
+
+
+class Test_GmxEngine_RunEdgeCases:
+    @pytest.mark.asyncio
+    async def test_run_raises_without_prepare(self, monkeypatch, tmp_path):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+            )
+        with pytest.raises(RuntimeError):
+            await engine.run(nsteps=10)
+
+    @pytest.mark.asyncio
+    async def test_run_raises_invalid_starting_configuration(
+        self, monkeypatch, tmp_path
+    ):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+            )
+        await engine.prepare(
+            starting_configuration=None, workdir=str(tmp_path), deffnm="test"
+        )
+        with pytest.raises(TypeError):
+            await engine.prepare(
+                starting_configuration=123, workdir=str(tmp_path), deffnm="test2"
+            )
+
+    @pytest.mark.asyncio
+    async def test_prepare_raises_invalid_workdir(self, monkeypatch, tmp_path):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+            )
+        with pytest.raises(TypeError):
+            await engine.prepare(
+                starting_configuration=None,
+                workdir="tests/test_data/gromacs/conf.gro",
+                deffnm="test",
+            )
+
+    @pytest.mark.asyncio
+    async def test_run_nsteps_not_multiple_of_nstout(self, monkeypatch, tmp_path):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+            )
+        await engine.prepare(
+            starting_configuration=None, workdir=str(tmp_path), deffnm="test"
+        )
+        with pytest.raises(ValueError):
+            await engine.run(nsteps=7)
+
+    @pytest.mark.asyncio
+    async def test_run_nsteps_negative(self, monkeypatch, tmp_path):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+            )
+        await engine.prepare(
+            starting_configuration=None, workdir=str(tmp_path), deffnm="test"
+        )
+        with pytest.raises(ValueError):
+            await engine.run(nsteps=-10)
+
+    @pytest.mark.asyncio
+    async def test_run_walltime_without_nsteps(self, monkeypatch, tmp_path):
+        # Test that calling run with neither nsteps nor walltime raises ValueError
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+            )
+        await engine.prepare(
+            starting_configuration=None, workdir=str(tmp_path), deffnm="test"
+        )
+        with pytest.raises(ValueError):
+            await engine.run()
+
+
+class Test_GmxEngine_TrajectorySingleton:
+    def test_trajectory_singleton_same_object(self):
+        from asyncmd.trajectory import _forget_all_trajectories
+
+        _forget_all_trajectories()
+        traj1 = Trajectory(
+            "tests/test_data/trajectory/ala_traj.trr",
+            "tests/test_data/trajectory/ala.tpr",
+        )
+        traj2 = Trajectory(
+            "tests/test_data/trajectory/ala_traj.trr",
+            "tests/test_data/trajectory/ala.tpr",
+        )
+        assert traj1 is traj2
+        assert id(traj1) == id(traj2)
+
+    def test_trajectory_singleton_different_files(self):
+        traj1 = Trajectory(
+            "tests/test_data/trajectory/ala_traj.trr",
+            "tests/test_data/trajectory/ala.tpr",
+        )
+        traj2 = Trajectory(
+            "tests/test_data/trajectory/ala_traj.xtc",
+            "tests/test_data/trajectory/ala.tpr",
+        )
+        assert traj1 is not traj2
+
+
+class Test_GmxEngine_PrepareFromFile:
+    @pytest.mark.slow
+    @needs_gmx_install
+    @pytest.mark.asyncio
+    async def test_prepare_from_files_basic(self, tmp_path, monkeypatch):
+        with monkeypatch.context() as m:
+            m.setattr(
+                "asyncmd.gromacs.mdengine.ensure_executable_available",
+                lambda _: "/usr/bin/true",
+            )
+            engine = GmxEngine(
+                mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+                gro_file="tests/test_data/gromacs/conf.gro",
+                top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+            )
+        await engine.prepare(
+            starting_configuration=None, workdir=str(tmp_path), deffnm="test"
+        )
+        traj1 = await engine.run(nsteps=10)
+        assert traj1 is not None
+        steps_after_first_run = engine.steps_done
+
+        engine2 = GmxEngine(
+            mdconfig=MDP("tests/test_data/gromacs/md_compressed_out.mdp"),
+            gro_file="tests/test_data/gromacs/conf.gro",
+            top_file="tests/test_data/gromacs/topol_amber99sbildn.top",
+        )
+        await engine2.prepare_from_files(workdir=str(tmp_path), deffnm="test")
+        assert engine2.deffnm == "test"
+        assert engine2.simulation_part > 0

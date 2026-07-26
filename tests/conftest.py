@@ -26,6 +26,13 @@ needs_gmx_install = pytest.mark.skipif(shutil.which("gmx") is None,
                                        reason="Need gromacs (gmx) executable.")
 
 
+@pytest.fixture
+def h5py():
+    """Fixture to import h5py."""
+    return pytest.importorskip("h5py", minversion=None,
+                               reason="Requires 'h5py' to run.")
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--runslow", action="store_true", default=False, help="run slow tests"

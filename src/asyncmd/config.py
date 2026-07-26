@@ -73,7 +73,11 @@ def set_max_process(num: int | None = None, max_num: int | None = None) -> None:
             # fallback if os.cpu_count() can not determine the number of cpus
             # play it save and not have more than 2?
             num = 2
+    elif num < 1:
+        raise ValueError("`num` must be at least 1!")
     if max_num is not None:
+        if max_num < 1:
+            raise ValueError("`max_num` must be at least 1!")
         num = min((num, max_num))
     _SEMAPHORES[_SEMAPHORES_KEYS.MAX_PROCESS] = asyncio.BoundedSemaphore(num)
 
